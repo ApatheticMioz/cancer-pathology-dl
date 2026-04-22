@@ -380,9 +380,11 @@ def _siim_layout(root: Path) -> dict:
     image_dir = pre_dir / "images"
     mask_dir = pre_dir / "masks"
 
+    # Check multiple possible DICOM locations
+    dcm_pneumothorax = count_files(root / "pneumothorax" / "dicom-images-train", ["*.dcm"])
     dcm_train = count_files(root / "dicom-images-train", ["*.dcm"])
     dcm_stage2 = count_files(root / "stage_2_images", ["*.dcm"])
-    dcm_total = max(dcm_train, dcm_stage2)
+    dcm_total = max(dcm_pneumothorax, dcm_train, dcm_stage2)
 
     image_count = count_files(image_dir, ["*.png"])
     mask_count = count_files(mask_dir, ["*.png"])
@@ -438,6 +440,8 @@ def _siim_rle_lookup(root: Path) -> dict[str, list[str]]:
         raise FileNotFoundError("SIIM train-rle.csv/stage_2_train.csv missing")
 
     df = pd.read_csv(csv_path)
+    # Strip whitespace from column names (some downloads have " EncodedPixels" with leading space)
+    df.columns = df.columns.str.strip()
     if "ImageId" not in df.columns or "EncodedPixels" not in df.columns:
         raise ValueError(f"Invalid SIIM CSV columns in {csv_path}")
 
@@ -464,7 +468,10 @@ def _build_siim_preprocessed(root: Path) -> dict:
     image_dir.mkdir(parents=True, exist_ok=True)
     mask_dir.mkdir(parents=True, exist_ok=True)
 
-    dcm_candidates = sorted((root / "dicom-images-train").rglob("*.dcm"))
+    # Try multiple possible DICOM locations
+    dcm_candidates = sorted((root / "pneumothorax" / "dicom-images-train").rglob("*.dcm"))
+    if len(dcm_candidates) < 5000:
+        dcm_candidates = sorted((root / "dicom-images-train").rglob("*.dcm"))
     if len(dcm_candidates) < 5000:
         dcm_candidates = sorted((root / "stage_2_images").rglob("*.dcm"))
 

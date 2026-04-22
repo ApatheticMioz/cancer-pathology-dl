@@ -35,3 +35,6 @@ kaggle_files_*.txt
 .DS_Store
 .vscode/
 .idea/
+.aider*
+
+.env

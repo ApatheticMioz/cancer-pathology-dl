@@ -38,6 +38,7 @@ DEFAULT_DATASETS = ["tcga", "isic", "panda", "siim"]
 # Paper table values for quick side-by-side comparison.
 PAPER_TARGETS = {
     "tcga_vgg16": {"acc": 0.89, "dice": 0.97},
+    "tcga_mobilenet_v2": {"acc": 0.90, "dice": 0.98},
     "isic_vgg16": {"acc": 0.83, "dice": 0.95},
     "panda_vgg16": {"acc": 0.87, "dice": 0.98},
     "siim_vgg16": {"acc": 0.82, "dice": 0.99},

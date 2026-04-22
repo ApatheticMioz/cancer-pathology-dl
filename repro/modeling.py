@@ -282,6 +282,10 @@ def train_single_run(
         best_val_dice = 0.0
         patience_ctr = 0
 
+        # Use validation accuracy for checkpoint selection (matching paper's primary metric)
+        best_monitor_metric = 0.0
+        use_acc_as_metric = True  # Use accuracy as primary metric per paper's evaluation
+
         ckpt_path = args.checkpoint_dir / f"{dataset}_{encoder}_best.pth"
 
         print(
@@ -322,12 +326,15 @@ def train_single_run(
                 )
 
                 ep_s = time.time() - t0
-                is_best = vl_loss < best_val_loss
+                
+                # Use validation accuracy for checkpoint selection (paper's primary metric)
+                is_best = vl_acc > best_monitor_metric
 
                 if is_best:
                     best_val_loss = vl_loss
                     best_val_acc = vl_acc
                     best_val_dice = vl_dice
+                    best_monitor_metric = vl_acc
                     patience_ctr = 0
                     _save_checkpoint(model, ckpt_path)
                     marker = "*"
