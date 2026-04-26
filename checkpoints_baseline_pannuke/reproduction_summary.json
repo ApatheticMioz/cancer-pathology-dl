@@ -1,0 +1,128 @@
+{
+  "timestamp": "2026-04-26T19:20:50",
+  "status": "completed",
+  "device": "cuda",
+  "hardware": {
+    "cpu_logical": 12,
+    "cpu_affinity": 12,
+    "ram_total_gb": 19.53,
+    "ram_available_gb": 15.56,
+    "gpu": {
+      "name": "NVIDIA GeForce RTX 3080",
+      "total_mem_gb": 10.0,
+      "free_mem_gb": 8.86,
+      "capability": "8.6"
+    }
+  },
+  "duration_sec": 2508.393279314041,
+  "duration_hms": "0:41:48",
+  "args": {
+    "datasets": [
+      "pannuke"
+    ],
+    "encoders": [
+      "vgg16",
+      "mobilenet_v2"
+    ],
+    "matrix": "required",
+    "epochs": 50,
+    "patience": 10,
+    "batch_size": 32,
+    "lr": 0.001,
+    "lambda_seg": 5.0,
+    "lambda_cls": 1.0,
+    "num_workers": -1,
+    "cache_size": -1,
+    "compile": false,
+    "seed": 42,
+    "force_redownload_all": false
+  },
+  "dataset_audit": {
+    "timestamp": "2026-04-26T18:39:01",
+    "datasets": {
+      "pannuke": {
+        "index_csv": "/home/apath/Work/temp/final/pannuke/preprocessed/index.csv",
+        "image_dir": "/home/apath/Work/temp/final/pannuke/preprocessed/images",
+        "mask_dir": "/home/apath/Work/temp/final/pannuke/preprocessed/masks",
+        "index_rows": 7835,
+        "image_count": 7835,
+        "mask_count": 7835,
+        "ready": true
+      }
+    }
+  },
+  "runs": {
+    "pannuke_vgg16": {
+      "status": "completed",
+      "dataset": "pannuke",
+      "encoder": "vgg16",
+      "samples": 7835,
+      "train_samples": 6268,
+      "val_samples": 1567,
+      "batch_size": 32,
+      "loader_workers": 8,
+      "loader_prefetch_factor": 2,
+      "loader_persistent_workers": false,
+      "loader_cache_size": 0,
+      "available_ram_gb": 15.44,
+      "cpu_budget": 12,
+      "best_val_loss": 0.0,
+      "best_val_acc": 0.6770899808551372,
+      "best_val_dice": 0.10973674274322126,
+      "final_val_acc": 0.6770899808551372,
+      "final_val_dice": 0.10973674274322126,
+      "checkpoint": "/home/apath/Work/temp/final/checkpoints_baseline_pannuke/pannuke_vgg16_best.pth",
+      "duration_sec": 1503.9177975654602,
+      "duration_hms": "0:25:03",
+      "attempt": 1,
+      "compile_enabled": false,
+      "compile_backend": null,
+      "compile_mode": "reduce-overhead"
+    },
+    "pannuke_mobilenet_v2": {
+      "status": "completed",
+      "dataset": "pannuke",
+      "encoder": "mobilenet_v2",
+      "samples": 7835,
+      "train_samples": 6268,
+      "val_samples": 1567,
+      "batch_size": 32,
+      "loader_workers": 8,
+      "loader_prefetch_factor": 2,
+      "loader_persistent_workers": false,
+      "loader_cache_size": 0,
+      "available_ram_gb": 13.89,
+      "cpu_budget": 12,
+      "best_val_loss": 1.307145213594242,
+      "best_val_acc": 0.9170389278876835,
+      "best_val_dice": 0.6464053720337193,
+      "final_val_acc": 0.9170389278876835,
+      "final_val_dice": 0.6464053720337193,
+      "checkpoint": "/home/apath/Work/temp/final/checkpoints_baseline_pannuke/pannuke_mobilenet_v2_best.pth",
+      "duration_sec": 1004.0101335048676,
+      "duration_hms": "0:16:44",
+      "attempt": 1,
+      "compile_enabled": false,
+      "compile_backend": null,
+      "compile_mode": "reduce-overhead"
+    }
+  },
+  "table": [
+    {
+      "dataset": "pannuke",
+      "encoder": "vgg16",
+      "acc": 67.71,
+      "dice": 10.97,
+      "paper_acc": null,
+      "paper_dice": null
+    },
+    {
+      "dataset": "pannuke",
+      "encoder": "mobilenet_v2",
+      "acc": 91.7,
+      "dice": 64.64,
+      "paper_acc": null,
+      "paper_dice": null
+    }
+  ]
+}
