@@ -1,20 +1,10 @@
 # --- Data and Weights (Crucial) ---
+# Don't track raw datasets or heavy model weights
 ISIC_raw/
 PANDA_raw/
 SIIM_raw/
 TCGA/
-
-# Ignore everything in checkpoints, BUT whitelist lightweight logs/configs
-checkpoints/*
-checkpoints_v2/*
-!checkpoints/*.json
-!checkpoints/*.jsonl
-!checkpoints/*.txt
-!checkpoints/*.yaml
-!checkpoints_v2/*.json
-!checkpoints_v2/*.jsonl
-!checkpoints_v2/*.txt
-!checkpoints_v2/*.yaml
+checkpoints/
 
 # --- Python / Environment ---
 __pycache__/
@@ -49,8 +39,3 @@ kaggle_files_*.txt
 
 .env
 pannuke
-.ipynb_checkpoints/
-ipynb_checkpoints/
-.ipynb_checkpoints/
-**/.ipynb_checkpoints/
-*-checkpoint.ipynb   

@@ -1,0 +1,43 @@
+{
+  "timestamp": "2026-04-26T16:22:09",
+  "datasets": {
+    "panda": {
+      "train_csv": "/home/apath/Work/temp/final/PANDA_raw/train.csv",
+      "image_dir": "/home/apath/Work/temp/final/PANDA_raw/train_images/train_images",
+      "mask_dir": "/home/apath/Work/temp/final/PANDA_raw/train_label_masks/train_label_masks",
+      "macenko_image_dir": "/home/apath/Work/temp/final/PANDA_raw/preprocessed_macenko/images",
+      "image_count": 10616,
+      "mask_count": 10516,
+      "macenko_image_count": 10616,
+      "ready": true
+    },
+    "pannuke": {
+      "index_csv": "/home/apath/Work/temp/final/pannuke/preprocessed/index.csv",
+      "image_dir": "/home/apath/Work/temp/final/pannuke/preprocessed/images",
+      "mask_dir": "/home/apath/Work/temp/final/pannuke/preprocessed/masks",
+      "macenko_image_dir": "/home/apath/Work/temp/final/pannuke/preprocessed_macenko/images",
+      "image_count": 7835,
+      "mask_count": 7835,
+      "macenko_image_count": 7835,
+      "index_rows": 7835,
+      "ready": true
+    },
+    "siim": {
+      "index_csv": "/home/apath/Work/temp/final/SIIM_raw/preprocessed/index.csv",
+      "image_dir": "/home/apath/Work/temp/final/SIIM_raw/preprocessed/images",
+      "mask_dir": "/home/apath/Work/temp/final/SIIM_raw/preprocessed/masks",
+      "dcm_count": 10712,
+      "image_count": 10675,
+      "mask_count": 10675,
+      "index_rows": 10675,
+      "ready": true
+    },
+    "tcga": {
+      "root": "/home/apath/Work/temp/final/TCGA",
+      "image_count": 3929,
+      "mask_count": 3929,
+      "pair_count": 3929,
+      "ready": true
+    }
+  }
+}
