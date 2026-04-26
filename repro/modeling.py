@@ -13,11 +13,44 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 
 try:
+    from repro.config import DEFAULT_BATCH_SIZE
     from repro.data import MultiTaskDataset, build_transforms, make_group_split
     from repro.utils import append_jsonl, fmt_seconds, now_iso
 except ImportError:
+    from .config import DEFAULT_BATCH_SIZE
     from .data import MultiTaskDataset, build_transforms, make_group_split
     from .utils import append_jsonl, fmt_seconds, now_iso
+
+
+def _logical_cpu_count() -> int:
+    try:
+        affinity = os.sched_getaffinity(0)
+        if affinity:
+            return max(1, len(affinity))
+    except Exception:
+        pass
+    return max(1, os.cpu_count() or 8)
+
+
+def _available_ram_gb() -> float:
+    meminfo = Path("/proc/meminfo")
+    if not meminfo.exists():
+        return 0.0
+
+    available_kb = None
+    total_kb = None
+    try:
+        for line in meminfo.read_text().splitlines():
+            if line.startswith("MemAvailable:"):
+                available_kb = float(line.split()[1])
+            elif line.startswith("MemTotal:"):
+                total_kb = float(line.split()[1])
+        value_kb = available_kb if available_kb is not None else total_kb
+        if value_kb is None:
+            return 0.0
+        return float(value_kb) / (1024.0 * 1024.0)
+    except Exception:
+        return 0.0
 
 def _env_flag(name: str, default: bool = False) -> bool:
     raw = os.getenv(name)
@@ -26,22 +59,10 @@ def _env_flag(name: str, default: bool = False) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
-def estimate_batch_size(dataset: str, encoder: str, img_size: int, requested: int | None) -> int:
-    if requested and requested > 0:
+def resolve_batch_size(requested: int | None) -> int:
+    if requested and int(requested) > 0:
         return int(requested)
-
-    if encoder == "mobilenet_v2":
-        if img_size <= 128:
-            return 48
-        if img_size <= 224:
-            return 32
-        return 24
-
-    if img_size <= 128:
-        return 36
-    if img_size <= 224:
-        return 20
-    return 12
+    return int(DEFAULT_BATCH_SIZE)
 
 
 class MultiTaskUNet(nn.Module):
@@ -77,11 +98,14 @@ class MultiTaskUNet(nn.Module):
 def dice_coefficient(seg_pred: torch.Tensor, seg_target: torch.Tensor, seg_classes: int) -> float:
     if seg_classes == 1:
         pred = (torch.sigmoid(seg_pred) > 0.5).float()
-        intersection = (pred * seg_target).sum()
-        union = pred.sum() + seg_target.sum()
-        if float(union) == 0.0:
-            return 1.0
-        return float((2.0 * intersection) / (union + 1e-8))
+        intersection = (pred * seg_target).sum(dim=(1, 2, 3))
+        union = pred.sum(dim=(1, 2, 3)) + seg_target.sum(dim=(1, 2, 3))
+        scores = torch.where(
+            union == 0,
+            torch.ones_like(union),
+            (2.0 * intersection) / (union + 1e-8),
+        )
+        return float(scores.mean().item())
 
     pred = torch.argmax(seg_pred, dim=1)
     scores = []
@@ -117,13 +141,49 @@ def _run_epoch(
     correct = 0
     dice_vals: list[float] = []
     steps = 0
+    strict_checks = _env_flag("REPRO_STRICT_BATCH_CHECKS", default=False)
     use_amp = device == "cuda"
 
     with torch.set_grad_enabled(train):
-        for images, masks, labels in loader:
+        for batch_idx, (images, masks, labels) in enumerate(loader):
             images = images.to(device, non_blocking=True)
             masks = masks.to(device, non_blocking=True)
             labels = labels.to(device, non_blocking=True)
+
+            if strict_checks:
+                # Proactively fail on invalid data to avoid opaque CUDA kernel crashes.
+                if not torch.isfinite(images).all():
+                    raise RuntimeError(f"Non-finite image values at batch {batch_idx}")
+                if not torch.isfinite(masks).all():
+                    raise RuntimeError(f"Non-finite mask values at batch {batch_idx}")
+                if not torch.isfinite(labels.float()).all():
+                    raise RuntimeError(f"Non-finite label values at batch {batch_idx}")
+
+                labels_min = int(labels.min().item())
+                labels_max = int(labels.max().item())
+                cls_classes = None
+                # cls_classes isn't known until forward, so validate against criterion weights when present.
+                if hasattr(cls_criterion, "weight") and cls_criterion.weight is not None:
+                    cls_classes = int(cls_criterion.weight.numel())
+                if cls_classes is not None and (labels_min < 0 or labels_max >= cls_classes):
+                    raise RuntimeError(
+                        f"Classification label out of range at batch {batch_idx}: min={labels_min}, max={labels_max}, classes={cls_classes}"
+                    )
+
+                if seg_classes == 1:
+                    masks_min = float(masks.min().item())
+                    masks_max = float(masks.max().item())
+                    if masks_min < -1e-6 or masks_max > 1.000001:
+                        raise RuntimeError(
+                            f"Binary mask out of range at batch {batch_idx}: min={masks_min}, max={masks_max}"
+                        )
+                else:
+                    masks_min = int(masks.min().item())
+                    masks_max = int(masks.max().item())
+                    if masks_min < 0 or masks_max >= seg_classes:
+                        raise RuntimeError(
+                            f"Segmentation mask out of range at batch {batch_idx}: min={masks_min}, max={masks_max}, classes={seg_classes}"
+                        )
 
             with torch.amp.autocast(device_type="cuda", enabled=use_amp):
                 seg_out, cls_out = model(images)
@@ -164,6 +224,75 @@ def _compute_class_weights(labels: np.ndarray, num_classes: int, device: str) ->
     return torch.tensor(weights, dtype=torch.float32, device=device)
 
 
+def _select_cache_size(
+    dataset: str,
+    requested_cache: int,
+    available_ram_gb: float,
+    workers: int,
+    allow_big_cache: bool,
+) -> int:
+    if requested_cache == 0:
+        return 0
+
+    if requested_cache > 0:
+        if dataset in {"panda", "siim"} and not allow_big_cache:
+            return 0
+        return int(requested_cache)
+
+    if dataset in {"tcga", "isic"} and available_ram_gb >= 18.0 and workers > 0:
+        return 48 if dataset == "tcga" else 64
+
+    return 0
+
+
+def _initial_loader_tuning(
+    dataset_name: str,
+    requested_workers: int,
+    available_ram_gb: float,
+    cpu_budget: int,
+) -> tuple[int, int, bool]:
+    """Return (num_workers, prefetch_factor, persistent_workers)."""
+    requested_workers = int(requested_workers)
+    cpu_budget = max(1, int(cpu_budget))
+
+    if requested_workers == 0:
+        return 0, 0, False
+
+    if requested_workers < 0:
+        if dataset_name == "tcga":
+            target = 12 if available_ram_gb >= 20.0 else 8
+            workers = min(cpu_budget, target)
+            return workers, 4, True
+
+        if dataset_name == "isic":
+            target = 10 if available_ram_gb >= 20.0 else 8
+            workers = min(cpu_budget, target)
+            return workers, 4, True
+
+        if dataset_name in {"panda", "siim"}:
+            target = 10 if available_ram_gb >= 24.0 else 8
+            workers = min(cpu_budget, target)
+            return workers, 2, False
+
+        workers = min(cpu_budget, 8)
+        return workers, 2, True
+
+    if dataset_name == "tcga":
+        workers = min(requested_workers, min(cpu_budget, 12))
+        return workers, 4, True
+
+    if dataset_name == "isic":
+        workers = min(requested_workers, min(cpu_budget, 10))
+        return workers, 4, True
+
+    if dataset_name in {"panda", "siim"}:
+        workers = min(requested_workers, min(cpu_budget, 10))
+        return workers, 2, False
+
+    workers = min(requested_workers, min(cpu_budget, 8))
+    return workers, 2, True
+
+
 def _save_checkpoint(model, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     state = model._orig_mod.state_dict() if hasattr(model, "_orig_mod") else model.state_dict()
@@ -171,11 +300,62 @@ def _save_checkpoint(model, path: Path) -> None:
 
 
 def _load_checkpoint(model, path: Path, device: str) -> None:
-    state = torch.load(path, map_location=device, weights_only=True)
+    state = torch.load(path, map_location=device)
     if hasattr(model, "_orig_mod"):
         model._orig_mod.load_state_dict(state)
     else:
         model.load_state_dict(state)
+
+
+def _save_training_state(
+    model,
+    optimizer,
+    path: Path,
+    epoch: int,
+    best_val_loss: float,
+    best_val_acc: float,
+    best_val_dice: float,
+    best_monitor_metric: float,
+    patience_ctr: int,
+    batch_size: int,
+) -> None:
+    model_state = model._orig_mod.state_dict() if hasattr(model, "_orig_mod") else model.state_dict()
+    torch.save(
+        {
+            "epoch": int(epoch),
+            "batch_size": int(batch_size),
+            "model_state": model_state,
+            "optimizer_state": optimizer.state_dict(),
+            "best_val_loss": float(best_val_loss),
+            "best_val_acc": float(best_val_acc),
+            "best_val_dice": float(best_val_dice),
+            "best_monitor_metric": float(best_monitor_metric),
+            "patience_ctr": int(patience_ctr),
+        },
+        path.with_suffix(".state.pt"),
+    )
+
+
+def _load_training_state(model, optimizer, path: Path, device: str) -> dict | None:
+    state_path = path.with_suffix(".state.pt")
+    if not state_path.exists():
+        return None
+
+    state = torch.load(state_path, map_location=device)
+    model_state = state.get("model_state")
+    if model_state is None:
+        return None
+
+    if hasattr(model, "_orig_mod"):
+        model._orig_mod.load_state_dict(model_state)
+    else:
+        model.load_state_dict(model_state)
+
+    optimizer_state = state.get("optimizer_state")
+    if optimizer_state is not None:
+        optimizer.load_state_dict(optimizer_state)
+
+    return state
 
 
 def train_single_run(
@@ -193,6 +373,8 @@ def train_single_run(
     masks = bundle["masks"]
     labels = bundle["labels"]
     groups = bundle["groups"]
+    cpu_budget = _logical_cpu_count()
+    available_ram_gb = _available_ram_gb()
 
     if len(images) < 100:
         raise RuntimeError(f"{dataset}: too few samples ({len(images)})")
@@ -200,19 +382,47 @@ def train_single_run(
     train_idx, val_idx = make_group_split(labels, groups, seed=args.seed, test_size=0.2)
     train_tf, val_tf = build_transforms(meta["img_size"])
 
-    batch_size = estimate_batch_size(dataset, encoder, meta["img_size"], args.batch_size)
+    batch_size = resolve_batch_size(args.batch_size)
     attempt = 0
+    binary_positive_min = int(meta.get("binary_positive_min", 1))
+    crop_to_mask_bbox = bool(meta.get("crop_to_mask_bbox", False))
+
+    # PANDA and SIIM samples can be large on disk; caching raw decoded arrays in RAM
+    # (especially with multiple DataLoader workers + prefetch) can trigger host OOM kills
+    # in WSL. Disabling cache does not change model math or hyperparameters.
+    requested_cache = int(getattr(args, "cache_size", -1))
+    train_cache_size = requested_cache
+    allow_big_cache = _env_flag("REPRO_ALLOW_BIG_CACHE", default=False)
+    if dataset in {"panda", "siim"} and train_cache_size > 0 and not allow_big_cache:
+        print(f"  {dataset.upper()}: disabling dataset cache to avoid RAM OOM (cache_size was {train_cache_size})")
+        train_cache_size = 0
 
     # Multiprocess workers can hang on Windows when reading from UNC WSL paths.
     sample_paths = [str(p) for p in images[: min(len(images), 32)]]
     use_unc_paths = os.name == "nt" and any(p.startswith("\\\\wsl.localhost\\") for p in sample_paths)
     allow_unc_workers = _env_flag("REPRO_ALLOW_UNC_WORKERS", default=False)
-    effective_workers = int(args.num_workers)
+    effective_workers, prefetch_factor, persistent_workers = _initial_loader_tuning(
+        dataset,
+        int(getattr(args, "num_workers", -1)),
+        available_ram_gb,
+        cpu_budget,
+    )
     if use_unc_paths and effective_workers > 0 and not allow_unc_workers:
         print("  Detected UNC/WSL dataset paths on Windows; forcing num_workers=0")
         effective_workers = 0
     elif use_unc_paths and effective_workers > 0 and allow_unc_workers:
         print(f"  UNC worker override enabled; using num_workers={effective_workers}")
+    if effective_workers == 0:
+        prefetch_factor = 0
+        persistent_workers = False
+
+    train_cache_size = _select_cache_size(
+        dataset,
+        requested_cache,
+        available_ram_gb,
+        effective_workers,
+        allow_big_cache,
+    )
 
     while batch_size >= 2:
         attempt += 1
@@ -233,14 +443,18 @@ def train_single_run(
             masks[train_idx],
             labels[train_idx],
             seg_classes=meta["seg_classes"],
+            binary_positive_min=binary_positive_min,
+            crop_to_mask_bbox=crop_to_mask_bbox,
             transform=train_tf,
-            cache_size=args.cache_size,
+            cache_size=train_cache_size,
         )
         val_ds = MultiTaskDataset(
             images[val_idx],
             masks[val_idx],
             labels[val_idx],
             seg_classes=meta["seg_classes"],
+            binary_positive_min=binary_positive_min,
+            crop_to_mask_bbox=crop_to_mask_bbox,
             transform=val_tf,
             cache_size=0,
         )
@@ -248,10 +462,10 @@ def train_single_run(
         loader_kwargs = {
             "num_workers": effective_workers,
             "pin_memory": device == "cuda",
-            "persistent_workers": effective_workers > 0,
+            "persistent_workers": (effective_workers > 0) and bool(persistent_workers),
         }
         if effective_workers > 0:
-            loader_kwargs["prefetch_factor"] = 4
+            loader_kwargs["prefetch_factor"] = int(prefetch_factor)
 
         train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, **loader_kwargs)
         val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, **loader_kwargs)
@@ -263,13 +477,24 @@ def train_single_run(
             num_classes=meta["num_classes"],
             seg_classes=meta["seg_classes"],
         ).to(device)
+        
+        compile_active = False
 
         if args.compile and device == "cuda":
             try:
-                model = torch.compile(model)
-                print("  torch.compile enabled")
+                compile_backend = os.getenv("REPRO_TORCH_COMPILE_BACKEND", "").strip() or None
+                compile_mode = os.getenv("REPRO_TORCH_COMPILE_MODE", "reduce-overhead").strip() or "reduce-overhead"
+
+                if compile_backend:
+                    model = torch.compile(model, backend=compile_backend)
+                    print(f"  torch.compile enabled (backend={compile_backend})")
+                else:
+                    model = torch.compile(model, mode=compile_mode)
+                    print(f"  torch.compile enabled (mode={compile_mode})")
+                compile_active = True
             except Exception as ex:
                 print(f"  torch.compile unavailable, continuing uncompiled: {ex}")
+                compile_active = False
 
         seg_criterion = nn.BCEWithLogitsLoss() if meta["seg_classes"] == 1 else nn.CrossEntropyLoss()
         cls_criterion = nn.CrossEntropyLoss(weight=cls_w)
@@ -282,20 +507,36 @@ def train_single_run(
         best_val_dice = 0.0
         patience_ctr = 0
 
-        # Use validation accuracy for checkpoint selection (matching paper's primary metric)
-        best_monitor_metric = 0.0
-        use_acc_as_metric = True  # Use accuracy as primary metric per paper's evaluation
+        # Use the joint objective (validation loss) for checkpoint selection.
+        # This matches the paper's weighted multi-task loss optimization.
+        best_monitor_metric = float("inf")
 
         ckpt_path = args.checkpoint_dir / f"{dataset}_{encoder}_best.pth"
+        state_path = ckpt_path.with_suffix(".state.pt")
+        start_epoch = 1
+        resume_state = None
 
         print(
             f"[{run_index}/{total_runs}] {dataset.upper()} x {encoder} | "
-            f"samples={len(images)} train={len(train_idx)} val={len(val_idx)} bs={batch_size}"
+            f"samples={len(images)} train={len(train_idx)} val={len(val_idx)} bs={batch_size} | "
+            f"workers={effective_workers} prefetch={prefetch_factor} persistent={persistent_workers} cache={train_cache_size}"
         )
+        if args.resume and state_path.exists():
+            resume_state = _load_training_state(model, optimizer, ckpt_path, device)
+
+        if resume_state is not None:
+            start_epoch = int(resume_state.get("epoch", 0)) + 1
+            best_val_loss = float(resume_state.get("best_val_loss", float("inf")))
+            best_val_acc = float(resume_state.get("best_val_acc", 0.0))
+            best_val_dice = float(resume_state.get("best_val_dice", 0.0))
+            best_monitor_metric = float(resume_state.get("best_monitor_metric", best_val_loss))
+            patience_ctr = int(resume_state.get("patience_ctr", 0))
+            print(f"  Resuming from epoch {start_epoch} using {state_path.name}")
+
         print("  Ep | TrLoss TrAcc TrDice | VlLoss VlAcc VlDice | sec")
 
         try:
-            for epoch in range(1, args.epochs + 1):
+            for epoch in range(start_epoch, args.epochs + 1):
                 t0 = time.time()
                 tr_loss, tr_acc, tr_dice = _run_epoch(
                     model,
@@ -327,14 +568,14 @@ def train_single_run(
 
                 ep_s = time.time() - t0
                 
-                # Use validation accuracy for checkpoint selection (paper's primary metric)
-                is_best = vl_acc > best_monitor_metric
+                # Keep the checkpoint with the best joint objective.
+                is_best = vl_loss < best_monitor_metric
 
                 if is_best:
                     best_val_loss = vl_loss
                     best_val_acc = vl_acc
                     best_val_dice = vl_dice
-                    best_monitor_metric = vl_acc
+                    best_monitor_metric = vl_loss
                     patience_ctr = 0
                     _save_checkpoint(model, ckpt_path)
                     marker = "*"
@@ -369,6 +610,19 @@ def train_single_run(
                     },
                 )
 
+                _save_training_state(
+                    model,
+                    optimizer,
+                    ckpt_path,
+                    epoch,
+                    best_val_loss,
+                    best_val_acc,
+                    best_val_dice,
+                    best_monitor_metric,
+                    patience_ctr,
+                    batch_size,
+                )
+
                 if patience_ctr >= args.patience:
                     print(f"  Early stop at epoch {epoch} (patience={args.patience})")
                     break
@@ -401,6 +655,12 @@ def train_single_run(
                 "train_samples": int(len(train_idx)),
                 "val_samples": int(len(val_idx)),
                 "batch_size": int(batch_size),
+                "loader_workers": int(effective_workers),
+                "loader_prefetch_factor": int(prefetch_factor),
+                "loader_persistent_workers": bool(persistent_workers),
+                "loader_cache_size": int(train_cache_size),
+                "available_ram_gb": float(round(available_ram_gb, 2)),
+                "cpu_budget": int(cpu_budget),
                 "best_val_loss": float(best_val_loss),
                 "best_val_acc": float(best_val_acc),
                 "best_val_dice": float(best_val_dice),
@@ -410,14 +670,54 @@ def train_single_run(
                 "duration_sec": float(duration),
                 "duration_hms": fmt_seconds(duration),
                 "attempt": attempt,
+                "compile_enabled": bool(compile_active),
+                "compile_backend": os.getenv("REPRO_TORCH_COMPILE_BACKEND", "").strip() or None,
+                "compile_mode": os.getenv("REPRO_TORCH_COMPILE_MODE", "reduce-overhead").strip() or "reduce-overhead",
             }
 
         except RuntimeError as ex:
-            if "out of memory" in str(ex).lower() and device == "cuda" and batch_size > 2:
-                print(f"  OOM at batch_size={batch_size}; retrying with {batch_size // 2}")
-                batch_size = max(2, batch_size // 2)
-            else:
-                raise
+            msg = str(ex).lower()
+
+            # Host-side loader failures (commonly from RAM pressure / OOM-killed workers).
+            loader_failed = (
+                "dataloader worker" in msg
+                or "killed" in msg
+                or "sigkill" in msg
+                or "bus error" in msg
+                or "broken pipe" in msg
+            )
+            if loader_failed and effective_workers > 0:
+                new_workers = max(0, effective_workers // 2)
+                print(
+                    f"  DataLoader instability detected (likely host RAM pressure). "
+                    f"Retrying with num_workers {effective_workers} -> {new_workers}, prefetch_factor -> 1, cache -> 0"
+                )
+                effective_workers = new_workers
+                prefetch_factor = 1
+                persistent_workers = False
+                train_cache_size = 0
+                continue
+
+            # GPU OOM: keep paper batch size if explicitly requested; instead reduce input
+            # pipeline RAM/worker pressure and retry. Only reduce batch size if auto-sized.
+            if "out of memory" in msg and device == "cuda":
+                if int(getattr(args, "batch_size", 0) or 0) > 0:
+                    if effective_workers > 0:
+                        new_workers = max(0, effective_workers // 2)
+                        print(f"  CUDA OOM: keeping batch_size={batch_size}; reducing num_workers {effective_workers}->{new_workers}")
+                        effective_workers = new_workers
+                        prefetch_factor = 1
+                        persistent_workers = False
+                        train_cache_size = 0
+                        continue
+                    raise
+
+                if batch_size > 2:
+                    print(f"  CUDA OOM at batch_size={batch_size}; retrying with {batch_size // 2}")
+                    batch_size = max(2, batch_size // 2)
+                    continue
+
+            raise
         finally:
             if model is not None:
                 del model
@@ -439,6 +739,11 @@ def train_single_run(
                 del val_ds
             gc.collect()
             if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+                try:
+                    torch.cuda.empty_cache()
+                except Exception as ex:
+                    # After a CUDA illegal-access failure the context can be poisoned;
+                    # avoid masking the original error during teardown.
+                    print(f"  CUDA cache cleanup skipped: {ex}")
 
     raise RuntimeError(f"Failed to train {dataset} x {encoder}: minimum batch size exhausted")

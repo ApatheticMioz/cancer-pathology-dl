@@ -8,6 +8,8 @@ DATASET_AUDIT_FILE = CHECKPOINT_DIR / "dataset_audit.json"
 EPOCH_LOG_FILE = CHECKPOINT_DIR / "epoch_log.jsonl"
 REPRO_SUMMARY_FILE = CHECKPOINT_DIR / "reproduction_summary.json"
 
+DEFAULT_BATCH_SIZE = 32
+
 DATASET_ROOTS = {
     "tcga": BASE_DIR / "TCGA",
     "isic": BASE_DIR / "ISIC_raw",
@@ -16,24 +18,24 @@ DATASET_ROOTS = {
 }
 
 DATASET_META = {
-    "tcga": {"num_classes": 2, "img_size": 256, "seg_classes": 1},
-    "isic": {"num_classes": 7, "img_size": 224, "seg_classes": 1},
+    "tcga": {"num_classes": 2, "img_size": 256, "seg_classes": 1, "binary_positive_min": 1},
+    "isic": {"num_classes": 7, "img_size": 224, "seg_classes": 1, "binary_positive_min": 1},
+    # Paper tables report six prostate grading categories for both tasks.
     "panda": {"num_classes": 6, "img_size": 128, "seg_classes": 6},
-    "siim": {"num_classes": 2, "img_size": 224, "seg_classes": 1},
+    "siim": {"num_classes": 2, "img_size": 224, "seg_classes": 1, "binary_positive_min": 1},
 }
 
 REQUIRED_MATRIX = [
     ("tcga", "vgg16"),
-    ("isic", "vgg16"),
+    ("tcga", "mobilenet_v2"),
     ("panda", "vgg16"),
-    ("siim", "vgg16"),
-    ("isic", "mobilenet_v2"),
     ("panda", "mobilenet_v2"),
+    ("siim", "vgg16"),
     ("siim", "mobilenet_v2"),
 ]
 
 DEFAULT_ENCODERS = ["vgg16", "mobilenet_v2"]
-DEFAULT_DATASETS = ["tcga", "isic", "panda", "siim"]
+DEFAULT_DATASETS = ["tcga", "panda", "siim"]
 
 # Paper table values for quick side-by-side comparison.
 PAPER_TARGETS = {

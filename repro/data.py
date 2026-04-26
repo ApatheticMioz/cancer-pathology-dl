@@ -11,6 +11,7 @@ import torch
 from albumentations.pytorch import ToTensorV2
 from PIL import Image
 from sklearn.model_selection import GroupShuffleSplit
+from sklearn.model_selection import StratifiedShuffleSplit
 from torch.utils.data import Dataset
 
 try:
@@ -44,6 +45,15 @@ def build_transforms(img_size: int):
 
 
 def make_group_split(labels: np.ndarray, groups: np.ndarray, seed: int, test_size: float = 0.2):
+    # If groups are effectively unique per sample (e.g., PANDA image_id),
+    # use stratified splitting to preserve class balance in train/val.
+    if len(np.unique(groups)) == len(labels):
+        splitter = StratifiedShuffleSplit(n_splits=1, test_size=test_size, random_state=seed)
+        splits = list(splitter.split(np.zeros(len(labels)), labels))
+        if not splits:
+            raise RuntimeError("Could not create stratified split")
+        return splits[0]
+
     splitter = GroupShuffleSplit(n_splits=1, test_size=test_size, random_state=seed)
     splits = list(splitter.split(np.zeros(len(labels)), labels, groups))
     if not splits:
@@ -299,9 +309,17 @@ def parse_panda(root: Path) -> dict:
         if image_path is None or mask_path is None:
             continue
 
+        try:
+            isup_grade = int(row["isup_grade"])
+        except Exception:
+            continue
+
+        if isup_grade < 0 or isup_grade > 5:
+            continue
+
         images.append(image_path)
         masks.append(mask_path)
-        labels.append(int(row["isup_grade"]))
+        labels.append(isup_grade)
         groups.append(image_id)
 
     if not images:
@@ -379,6 +397,8 @@ class MultiTaskDataset(Dataset):
         mask_paths,
         labels,
         seg_classes: int,
+        binary_positive_min: int = 1,
+        crop_to_mask_bbox: bool = False,
         transform=None,
         cache_size: int = 0,
     ):
@@ -386,6 +406,8 @@ class MultiTaskDataset(Dataset):
         self.mask_paths = mask_paths
         self.labels = labels
         self.seg_classes = seg_classes
+        self.binary_positive_min = max(1, int(binary_positive_min))
+        self.crop_to_mask_bbox = bool(crop_to_mask_bbox)
         self.transform = transform
         self.cache_size = max(0, int(cache_size))
         self.cache: OrderedDict[int, tuple[np.ndarray, np.ndarray]] = OrderedDict()
@@ -411,8 +433,24 @@ class MultiTaskDataset(Dataset):
     def __getitem__(self, idx):
         image, mask = self._load_pair(idx)
 
+        if self.crop_to_mask_bbox:
+            ys, xs = np.where(mask > 0)
+            if ys.size > 0 and xs.size > 0:
+                y0, y1 = int(ys.min()), int(ys.max()) + 1
+                x0, x1 = int(xs.min()), int(xs.max()) + 1
+                # Small margin to preserve local context around annotated tissue.
+                h, w = mask.shape[:2]
+                dy = max(1, (y1 - y0) // 20)
+                dx = max(1, (x1 - x0) // 20)
+                y0 = max(0, y0 - dy)
+                y1 = min(h, y1 + dy)
+                x0 = max(0, x0 - dx)
+                x1 = min(w, x1 + dx)
+                image = image[y0:y1, x0:x1]
+                mask = mask[y0:y1, x0:x1]
+
         if self.seg_classes == 1:
-            mask = (mask > 0).astype(np.float32)
+            mask = (mask >= self.binary_positive_min).astype(np.float32)
         else:
             mask = mask.astype(np.float32)
             if float(mask.max()) > float(self.seg_classes - 1):

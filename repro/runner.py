@@ -10,6 +10,7 @@ import torch
 
 from repro.config import (
     CHECKPOINT_DIR,
+    DEFAULT_BATCH_SIZE,
     DATASET_META,
     DATASET_ROOTS,
     DEFAULT_DATASETS,
@@ -94,10 +95,68 @@ def _paper_compare(dataset: str, encoder: str, result: dict) -> dict:
     }
 
 
+def _read_meminfo() -> dict[str, float]:
+    meminfo = Path("/proc/meminfo")
+    if not meminfo.exists():
+        return {}
+
+    values: dict[str, float] = {}
+    try:
+        for line in meminfo.read_text().splitlines():
+            parts = line.split()
+            if len(parts) >= 2 and parts[0].endswith(":"):
+                values[parts[0][:-1]] = float(parts[1])
+    except Exception:
+        return {}
+    return values
+
+
+def _hardware_profile() -> dict:
+    cpu_affinity = None
+    try:
+        cpu_affinity = len(os.sched_getaffinity(0))
+    except Exception:
+        cpu_affinity = None
+
+    cpu_logical = os.cpu_count() or 0
+    meminfo = _read_meminfo()
+    ram_total_gb = meminfo.get("MemTotal", 0.0) / (1024.0 * 1024.0)
+    ram_available_gb = meminfo.get("MemAvailable", 0.0) / (1024.0 * 1024.0)
+
+    gpu_profile = {"name": None, "total_mem_gb": 0.0, "free_mem_gb": 0.0, "capability": None}
+    if torch.cuda.is_available():
+        try:
+            props = torch.cuda.get_device_properties(0)
+            free_bytes, total_bytes = torch.cuda.mem_get_info()
+            gpu_profile = {
+                "name": props.name,
+                "total_mem_gb": round(float(total_bytes) / (1024.0**3), 2),
+                "free_mem_gb": round(float(free_bytes) / (1024.0**3), 2),
+                "capability": f"{props.major}.{props.minor}",
+            }
+        except Exception:
+            gpu_profile = {"name": torch.cuda.get_device_name(0), "total_mem_gb": 0.0, "free_mem_gb": 0.0, "capability": None}
+
+    return {
+        "cpu_logical": int(cpu_logical),
+        "cpu_affinity": int(cpu_affinity) if cpu_affinity is not None else None,
+        "ram_total_gb": round(float(ram_total_gb), 2),
+        "ram_available_gb": round(float(ram_available_gb), 2),
+        "gpu": gpu_profile,
+    }
+
+
 def run_reproduction(args) -> dict:
     CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
 
-    torch.backends.cudnn.benchmark = True
+    # Prefer stable CuDNN kernel selection (fast enough, avoids autotune-induced crashes).
+    torch.backends.cudnn.benchmark = False
+    if os.getenv("REPRO_DISABLE_CUDNN", "").strip().lower() in {"1", "true", "yes", "on"}:
+        torch.backends.cudnn.enabled = False
+        print("CuDNN disabled via REPRO_DISABLE_CUDNN for stability")
+    if torch.cuda.is_available():
+        torch.backends.cuda.matmul.allow_tf32 = False
+        torch.backends.cudnn.allow_tf32 = False
     torch.set_float32_matmul_precision("high")
 
     np.random.seed(args.seed)
@@ -106,8 +165,17 @@ def run_reproduction(args) -> dict:
         torch.cuda.manual_seed_all(args.seed)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    hardware = _hardware_profile()
     print(f"Device: {device.upper()}")
     print(f"Checkpoints: {CHECKPOINT_DIR}")
+    print(
+        "Hardware: "
+        f"cpu={hardware['cpu_logical']} "
+        f"affinity={hardware['cpu_affinity']} "
+        f"ram_avail_gb={hardware['ram_available_gb']} "
+        f"gpu={hardware['gpu']['name']} "
+        f"gpu_free_gb={hardware['gpu']['free_mem_gb']}"
+    )
 
     datasets = args.datasets if args.datasets else DEFAULT_DATASETS
     encoders = args.encoders if args.encoders else DEFAULT_ENCODERS
@@ -154,9 +222,17 @@ def run_reproduction(args) -> dict:
 
         existing_entry = existing_runs.get(run_key)
         if args.resume and isinstance(existing_entry, dict) and existing_entry.get("status") == "completed" and ckpt.exists():
-            print(f"[{i}/{len(runs)}] {run_key}: already completed, skipping")
-            run_results[run_key] = existing_entry
-            continue
+            # Ensure we don't skip runs that were completed under different core hyperparameters.
+            # This preserves strict reproducibility when the user requests a fixed batch size.
+            if args.batch_size and int(existing_entry.get("batch_size", -1)) != int(args.batch_size):
+                print(
+                    f"[{i}/{len(runs)}] {run_key}: prior run batch_size={existing_entry.get('batch_size')} "
+                    f"!= requested {args.batch_size}; rerunning"
+                )
+            else:
+                print(f"[{i}/{len(runs)}] {run_key}: already completed, skipping")
+                run_results[run_key] = existing_entry
+                continue
 
         result = train_single_run(
             dataset=dataset,
@@ -176,6 +252,7 @@ def run_reproduction(args) -> dict:
             "timestamp": now_iso(),
             "status": "running",
             "device": device,
+            "hardware": hardware,
             "args": {
                 "datasets": datasets,
                 "encoders": encoders,
@@ -218,6 +295,7 @@ def run_reproduction(args) -> dict:
         "timestamp": now_iso(),
         "status": "completed",
         "device": device,
+        "hardware": hardware,
         "duration_sec": float(total_sec),
         "duration_hms": fmt_seconds(total_sec),
         "args": {
@@ -258,9 +336,6 @@ def run_reproduction(args) -> dict:
 def build_arg_parser():
     import argparse
 
-    cpu_count = os.cpu_count() or 8
-    default_workers = max(2, min(16, cpu_count - 2))
-
     p = argparse.ArgumentParser(description="Rhanoui et al. 2025 multi-task UNet reproduction")
     p.add_argument("--datasets", nargs="*", default=DEFAULT_DATASETS)
     p.add_argument("--encoders", nargs="*", default=DEFAULT_ENCODERS)
@@ -268,22 +343,22 @@ def build_arg_parser():
 
     p.add_argument("--epochs", type=int, default=50)
     p.add_argument("--patience", type=int, default=10)
-    p.add_argument("--batch-size", type=int, default=0, help="0 = auto per dataset/encoder")
+    p.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE, help="Paper default is 32")
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--lambda-seg", type=float, default=5.0)
     p.add_argument("--lambda-cls", type=float, default=1.0)
-    p.add_argument("--num-workers", type=int, default=default_workers)
-    p.add_argument("--cache-size", type=int, default=256)
+    p.add_argument("--num-workers", type=int, default=-1, help="<0 = auto based on host and dataset")
+    p.add_argument("--cache-size", type=int, default=-1, help="<0 = auto based on host and dataset")
     p.add_argument("--seed", type=int, default=RANDOM_SEED)
 
     p.add_argument("--force-redownload-all", action="store_true")
-    p.add_argument("--resume", action="store_true", default=True)
+    p.add_argument("--resume", action="store_true", default=False)
     p.add_argument("--no-resume", dest="resume", action="store_false")
     p.add_argument("--dry-run", action="store_true")
 
     compile_group = p.add_mutually_exclusive_group()
     compile_group.add_argument("--compile", dest="compile", action="store_true")
     compile_group.add_argument("--no-compile", dest="compile", action="store_false")
-    p.set_defaults(compile=True)
+    p.set_defaults(compile=False)
 
     return p
