@@ -147,7 +147,10 @@ def _hardware_profile() -> dict:
 
 
 def run_reproduction(args) -> dict:
-    CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
+    checkpoint_dir = Path(getattr(args, "checkpoint_dir", CHECKPOINT_DIR))
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    epoch_log_file = checkpoint_dir / "epoch_log.jsonl"
+    repro_summary_file = checkpoint_dir / "reproduction_summary.json"
 
     # Prefer stable CuDNN kernel selection (fast enough, avoids autotune-induced crashes).
     torch.backends.cudnn.benchmark = False
@@ -167,7 +170,7 @@ def run_reproduction(args) -> dict:
     device = "cuda" if torch.cuda.is_available() else "cpu"
     hardware = _hardware_profile()
     print(f"Device: {device.upper()}")
-    print(f"Checkpoints: {CHECKPOINT_DIR}")
+    print(f"Checkpoints: {checkpoint_dir}")
     print(
         "Hardware: "
         f"cpu={hardware['cpu_logical']} "
@@ -183,7 +186,11 @@ def run_reproduction(args) -> dict:
 
     # Hard rule: missing/incomplete datasets are purged and redownloaded.
     print("Preparing datasets...")
-    audit = prepare_datasets(datasets=sorted(set(datasets)), force_redownload_all=args.force_redownload_all)
+    audit = prepare_datasets(
+        datasets=sorted(set(datasets)),
+        force_redownload_all=args.force_redownload_all,
+        checkpoint_dir=checkpoint_dir,
+    )
     print("Dataset preparation completed.")
 
     # Parse each dataset once and reuse across encoders.
@@ -207,10 +214,10 @@ def run_reproduction(args) -> dict:
             "runs": [f"{d}_{e}" for d, e in runs],
             "dataset_audit": audit,
         }
-        atomic_json_write(REPRO_SUMMARY_FILE, summary)
+        atomic_json_write(repro_summary_file, summary)
         return summary
 
-    existing = _load_existing_summary(REPRO_SUMMARY_FILE) if args.resume else {}
+    existing = _load_existing_summary(repro_summary_file) if args.resume else {}
     existing_runs = _normalize_existing_runs(existing)
 
     start_wall = time.time()
@@ -218,7 +225,7 @@ def run_reproduction(args) -> dict:
 
     for i, (dataset, encoder) in enumerate(runs, start=1):
         run_key = f"{dataset}_{encoder}"
-        ckpt = CHECKPOINT_DIR / f"{dataset}_{encoder}_best.pth"
+        ckpt = checkpoint_dir / f"{dataset}_{encoder}_best.pth"
 
         existing_entry = existing_runs.get(run_key)
         if args.resume and isinstance(existing_entry, dict) and existing_entry.get("status") == "completed" and ckpt.exists():
@@ -241,7 +248,7 @@ def run_reproduction(args) -> dict:
             meta=DATASET_META[dataset],
             args=args,
             device=device,
-            epoch_log_file=EPOCH_LOG_FILE,
+            epoch_log_file=epoch_log_file,
             run_index=i,
             total_runs=len(runs),
         )
@@ -272,7 +279,7 @@ def run_reproduction(args) -> dict:
             "dataset_audit": audit,
             "runs": run_results,
         }
-        atomic_json_write(REPRO_SUMMARY_FILE, checkpoint_summary)
+        atomic_json_write(repro_summary_file, checkpoint_summary)
 
     total_sec = time.time() - start_wall
 
@@ -319,7 +326,7 @@ def run_reproduction(args) -> dict:
         "table": table,
     }
 
-    atomic_json_write(REPRO_SUMMARY_FILE, final_summary)
+    atomic_json_write(repro_summary_file, final_summary)
 
     print("\nFinal metrics")
     print("Dataset  Encoder         Acc(%)  Dice(%)")
@@ -328,7 +335,7 @@ def run_reproduction(args) -> dict:
         print(f"{row['dataset']:<8} {row['encoder']:<14} {row['acc']:>6.2f}   {row['dice']:>6.2f}")
     print("-----------------------------------------")
     print(f"Total wall time: {fmt_seconds(total_sec)}")
-    print(f"Summary: {REPRO_SUMMARY_FILE}")
+    print(f"Summary: {repro_summary_file}")
 
     return final_summary
 

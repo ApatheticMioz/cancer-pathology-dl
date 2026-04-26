@@ -333,6 +333,32 @@ def parse_panda(root: Path) -> dict:
     }
 
 
+def parse_pannuke(root: Path) -> dict:
+    index_csv = first_existing([root / "preprocessed" / "index.csv", root / "index.csv"])
+    if index_csv is None:
+        raise FileNotFoundError("PanNuke preprocessed/index.csv missing")
+
+    df = pd.read_csv(index_csv)
+    required = {"image_path", "mask_path", "label_int", "group_id"}
+    if not required.issubset(df.columns):
+        raise ValueError("PanNuke preprocessed/index.csv has invalid columns")
+
+    df["image_path"] = df["image_path"].astype(str).map(_normalize_path_string)
+    df["mask_path"] = df["mask_path"].astype(str).map(_normalize_path_string)
+    valid = df["image_path"].map(os.path.exists) & df["mask_path"].map(os.path.exists)
+    df = df[valid].drop_duplicates(subset=["group_id"], keep="last").reset_index(drop=True)
+
+    if df.empty:
+        raise RuntimeError("No PanNuke image/mask pairs available")
+
+    return {
+        "images": df["image_path"].astype(str).to_numpy(),
+        "masks": df["mask_path"].astype(str).to_numpy(),
+        "labels": df["label_int"].astype(np.int64).to_numpy(),
+        "groups": df["group_id"].astype(str).to_numpy(),
+    }
+
+
 def _normalize_path_string(path: str) -> str:
     path = str(path).strip().strip('"').strip("'")
     if os.path.exists(path):
@@ -377,6 +403,8 @@ def load_dataset_bundle(dataset: str, root: Path) -> dict:
         bundle = parse_isic(root)
     elif dataset == "panda":
         bundle = parse_panda(root)
+    elif dataset == "pannuke":
+        bundle = parse_pannuke(root)
     elif dataset == "siim":
         bundle = parse_siim(root)
     else:

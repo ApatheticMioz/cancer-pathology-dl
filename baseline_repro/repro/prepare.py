@@ -16,7 +16,6 @@ from PIL import Image
 try:
     from repro.config import (
         CHECKPOINT_DIR,
-        DATASET_AUDIT_FILE,
         DATASET_ROOTS,
         ISIC_KAGGLE_FALLBACK_REFS,
         ISIC_URLS,
@@ -27,7 +26,6 @@ try:
 except ImportError:
     from .config import (
         CHECKPOINT_DIR,
-        DATASET_AUDIT_FILE,
         DATASET_ROOTS,
         ISIC_KAGGLE_FALLBACK_REFS,
         ISIC_URLS,
@@ -371,6 +369,43 @@ def _panda_layout(root: Path) -> dict:
         "image_count": int(image_count),
         "mask_count": int(mask_count),
         "ready": bool(train_csv.exists() and image_dir and mask_dir and image_count >= 10000 and mask_count >= 10000),
+    }
+
+
+def _pannuke_layout(root: Path) -> dict:
+    pre_dir = first_existing([root / "preprocessed", root])
+    if pre_dir is None:
+        return {
+            "index_csv": None,
+            "image_dir": None,
+            "mask_dir": None,
+            "index_rows": 0,
+            "image_count": 0,
+            "mask_count": 0,
+            "ready": False,
+        }
+
+    index_csv = pre_dir / "index.csv"
+    image_dir = pre_dir / "images"
+    mask_dir = pre_dir / "masks"
+    image_count = count_files(image_dir, ["*.png"]) if image_dir.exists() else 0
+    mask_count = count_files(mask_dir, ["*.png"]) if mask_dir.exists() else 0
+
+    row_count = 0
+    if index_csv.exists():
+        try:
+            row_count = int(sum(1 for _ in index_csv.open("r", encoding="utf-8")) - 1)
+        except Exception:
+            row_count = 0
+
+    return {
+        "index_csv": str(index_csv) if index_csv.exists() else None,
+        "image_dir": str(image_dir) if image_dir.exists() else None,
+        "mask_dir": str(mask_dir) if mask_dir.exists() else None,
+        "index_rows": int(max(0, row_count)),
+        "image_count": int(image_count),
+        "mask_count": int(mask_count),
+        "ready": bool(index_csv.exists() and image_count >= 1000 and mask_count >= 1000 and row_count >= 1000),
     }
 
 
@@ -781,6 +816,34 @@ def prepare_panda(root: Path, force_redownload: bool = False) -> dict:
     return state
 
 
+def prepare_pannuke(root: Path, force_redownload: bool = False) -> dict:
+    state = _pannuke_layout(root)
+    if state["ready"] and not force_redownload:
+        print(
+            f"  [PANNUKE] ready with rows={state['index_rows']} images={state['image_count']} masks={state['mask_count']}"
+        )
+        return state
+
+    root.mkdir(parents=True, exist_ok=True)
+
+    extracted_local = _extract_all_zips(root, delete_after=False)
+    if extracted_local > 0:
+        print(f"  [PANNUKE] extracted {extracted_local} local archive(s)")
+
+    state = _pannuke_layout(root)
+    if state["ready"] and not force_redownload:
+        print(
+            f"  [PANNUKE] ready after local recovery with rows={state['index_rows']} images={state['image_count']} masks={state['mask_count']}"
+        )
+        return state
+
+    if not state["ready"]:
+        raise RuntimeError(
+            f"PanNuke dataset incomplete: rows={state['index_rows']} images={state['image_count']} masks={state['mask_count']}"
+        )
+    return state
+
+
 def prepare_siim(root: Path, force_redownload: bool = False) -> dict:
     state = _siim_layout(root)
     if state["ready"] and not force_redownload:
@@ -822,8 +885,10 @@ def prepare_siim(root: Path, force_redownload: bool = False) -> dict:
 def prepare_datasets(
     datasets: list[str],
     force_redownload_all: bool = False,
+    checkpoint_dir: Path | None = None,
 ) -> dict:
-    CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
+    out_dir = checkpoint_dir or CHECKPOINT_DIR
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     results = {
         "timestamp": now_iso(),
@@ -838,10 +903,12 @@ def prepare_datasets(
             results["datasets"][dataset] = prepare_isic(root, force_redownload=force_redownload_all)
         elif dataset == "panda":
             results["datasets"][dataset] = prepare_panda(root, force_redownload=force_redownload_all)
+        elif dataset == "pannuke":
+            results["datasets"][dataset] = prepare_pannuke(root, force_redownload=force_redownload_all)
         elif dataset == "siim":
             results["datasets"][dataset] = prepare_siim(root, force_redownload=force_redownload_all)
         else:
             raise ValueError(f"Unsupported dataset: {dataset}")
 
-    atomic_json_write(DATASET_AUDIT_FILE, results)
+    atomic_json_write(out_dir / "dataset_audit.json", results)
     return results

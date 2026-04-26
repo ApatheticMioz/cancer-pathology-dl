@@ -14,6 +14,7 @@ DATASET_ROOTS = {
     "tcga": BASE_DIR / "TCGA",
     "isic": BASE_DIR / "ISIC_raw",
     "panda": BASE_DIR / "PANDA_raw",
+    "pannuke": BASE_DIR.parent / "pannuke",
     "siim": BASE_DIR / "SIIM_raw",
 }
 
@@ -22,6 +23,7 @@ DATASET_META = {
     "isic": {"num_classes": 7, "img_size": 224, "seg_classes": 1, "binary_positive_min": 1},
     # Paper tables report six prostate grading categories for both tasks.
     "panda": {"num_classes": 6, "img_size": 128, "seg_classes": 6},
+    "pannuke": {"num_classes": 19, "img_size": 256, "seg_classes": 6},
     "siim": {"num_classes": 2, "img_size": 224, "seg_classes": 1, "binary_positive_min": 1},
 }
 
@@ -30,6 +32,8 @@ REQUIRED_MATRIX = [
     ("tcga", "mobilenet_v2"),
     ("panda", "vgg16"),
     ("panda", "mobilenet_v2"),
+    ("pannuke", "vgg16"),
+    ("pannuke", "mobilenet_v2"),
     ("siim", "vgg16"),
     ("siim", "mobilenet_v2"),
 ]

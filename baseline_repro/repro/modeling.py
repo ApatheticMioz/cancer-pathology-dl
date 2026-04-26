@@ -235,7 +235,7 @@ def _select_cache_size(
         return 0
 
     if requested_cache > 0:
-        if dataset in {"panda", "siim"} and not allow_big_cache:
+        if dataset in {"panda", "pannuke", "siim"} and not allow_big_cache:
             return 0
         return int(requested_cache)
 
@@ -269,7 +269,7 @@ def _initial_loader_tuning(
             workers = min(cpu_budget, target)
             return workers, 4, True
 
-        if dataset_name in {"panda", "siim"}:
+        if dataset_name in {"panda", "pannuke", "siim"}:
             target = 10 if available_ram_gb >= 24.0 else 8
             workers = min(cpu_budget, target)
             return workers, 2, False
@@ -285,7 +285,7 @@ def _initial_loader_tuning(
         workers = min(requested_workers, min(cpu_budget, 10))
         return workers, 4, True
 
-    if dataset_name in {"panda", "siim"}:
+    if dataset_name in {"panda", "pannuke", "siim"}:
         workers = min(requested_workers, min(cpu_budget, 10))
         return workers, 2, False
 
@@ -387,13 +387,13 @@ def train_single_run(
     binary_positive_min = int(meta.get("binary_positive_min", 1))
     crop_to_mask_bbox = bool(meta.get("crop_to_mask_bbox", False))
 
-    # PANDA and SIIM samples can be large on disk; caching raw decoded arrays in RAM
+    # PANDA, PanNuke, and SIIM samples can be large on disk; caching raw decoded arrays in RAM
     # (especially with multiple DataLoader workers + prefetch) can trigger host OOM kills
     # in WSL. Disabling cache does not change model math or hyperparameters.
     requested_cache = int(getattr(args, "cache_size", -1))
     train_cache_size = requested_cache
     allow_big_cache = _env_flag("REPRO_ALLOW_BIG_CACHE", default=False)
-    if dataset in {"panda", "siim"} and train_cache_size > 0 and not allow_big_cache:
+    if dataset in {"panda", "pannuke", "siim"} and train_cache_size > 0 and not allow_big_cache:
         print(f"  {dataset.upper()}: disabling dataset cache to avoid RAM OOM (cache_size was {train_cache_size})")
         train_cache_size = 0
 

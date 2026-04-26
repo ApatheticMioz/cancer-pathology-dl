@@ -16,7 +16,10 @@ def main() -> int:
 
     parser = build_arg_parser()
     args = parser.parse_args()
-    args.checkpoint_dir = CHECKPOINT_DIR
+    if any(d.strip().lower() == "pannuke" for d in args.datasets):
+        args.checkpoint_dir = Path(__file__).resolve().parent.parent / "checkpoints_baseline_pannuke"
+    else:
+        args.checkpoint_dir = CHECKPOINT_DIR
 
     run_reproduction(args)
     return 0

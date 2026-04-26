@@ -7,6 +7,7 @@ TCGA/
 # Ignore everything in checkpoints, BUT whitelist lightweight logs/configs
 checkpoints/*
 checkpoints_v2/*
+checkpoints_baseline_pannuke/*
 !checkpoints/*.json
 !checkpoints/*.jsonl
 !checkpoints/*.txt
@@ -15,6 +16,10 @@ checkpoints_v2/*
 !checkpoints_v2/*.jsonl
 !checkpoints_v2/*.txt
 !checkpoints_v2/*.yaml
+!checkpoints_baseline_pannuke/*.json    
+!checkpoints_baseline_pannuke/*.jsonl
+!checkpoints_baseline_pannuke/*.txt
+!checkpoints_baseline_pannuke/*.yaml
 
 # --- Python / Environment ---
 __pycache__/
