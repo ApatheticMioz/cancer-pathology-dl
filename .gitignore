@@ -40,3 +40,8 @@ kaggle_files_*.txt
 
 .env
 pannuke
+.ipynb_checkpoints/
+ipynb_checkpoints/
+.ipynb_checkpoints/
+**/.ipynb_checkpoints/
+*-checkpoint.ipynb   
