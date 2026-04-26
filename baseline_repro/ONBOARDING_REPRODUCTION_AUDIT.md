@@ -1,5 +1,7 @@
 # Onboarding Guide: Reproduction and Scientific Audit
 
+## THIS FILE DOES NOT REFLECT THE FACT THAT PANNUKE WAS ALSO LATER RAN ON THE CODE IN BASELINE-REPRO
+
 ## 1) Project Overview
 
 This repository is a literal, implementation-level reproduction of the paper:
