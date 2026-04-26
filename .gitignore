@@ -60,3 +60,16 @@ ipynb_checkpoints/
 **/.ipynb_checkpoints/
 *-checkpoint.ipynb   
 *:Zone.Identifier
+
+# --- LaTeX Build Artifacts ---
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.lof
+*.log
+*.lot
+*.out
+*.synctex.gz
+*.toc
