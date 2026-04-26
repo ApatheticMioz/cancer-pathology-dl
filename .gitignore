@@ -5,6 +5,7 @@ PANDA_raw/
 SIIM_raw/
 TCGA/
 checkpoints/
+checkpoints_v2/
 
 # --- Python / Environment ---
 __pycache__/
