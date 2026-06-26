@@ -1,0 +1,12 @@
+torch
+torchvision
+streamlit
+numpy
+pandas
+albumentations
+segmentation-models-pytorch
+matplotlib
+scikit-learn
+Pillow
+pydicom
+kaggle
