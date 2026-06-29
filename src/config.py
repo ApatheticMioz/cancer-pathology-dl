@@ -1,7 +1,8 @@
 """Centralized configuration and hyperparameters for all experimental phases.
 
 Defines dataset metadata, phase-specific hyperparameters (V1, V2, V2.1),
-and file paths for checkpoints, logs, and audit records.
+environment variable defaults, and file paths for checkpoints, logs, and
+audit records.
 
 Phase configurations per the research paper:
     V1  - Fixed loss weights (lambda_seg=5, lambda_cls=1), lr=1e-3,
@@ -12,6 +13,7 @@ Phase configurations per the research paper:
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -22,6 +24,22 @@ CHECKPOINT_DIR = BASE_DIR / "checkpoints"
 DATASET_AUDIT_FILE = CHECKPOINT_DIR / "dataset_audit.json"
 EPOCH_LOG_FILE = CHECKPOINT_DIR / "epoch_log.jsonl"
 REPRO_SUMMARY_FILE = CHECKPOINT_DIR / "optimized_summary.json"
+
+# ---------------------------------------------------------------------------
+# Environment variable defaults (centralized from main.py / training.py)
+# ---------------------------------------------------------------------------
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+REPRO_DISABLE_CUDNN = _env_bool("REPRO_DISABLE_CUDNN", default=False)
+REPRO_STRICT_BATCH_CHECKS = _env_bool("REPRO_STRICT_BATCH_CHECKS", default=False)
+REPRO_ALLOW_BIG_CACHE = _env_bool("REPRO_ALLOW_BIG_CACHE", default=False)
+REPRO_ALLOW_UNC_WORKERS = _env_bool("REPRO_ALLOW_UNC_WORKERS", default=False)
+REPRO_TORCH_COMPILE_BACKEND = os.getenv("REPRO_TORCH_COMPILE_BACKEND", "").strip() or None
 
 # ---------------------------------------------------------------------------
 # Dataset roots (relative to project root)
@@ -133,21 +151,7 @@ PAPER_TARGETS = {
 }
 
 # ---------------------------------------------------------------------------
-# External dataset download references
+# External dataset competition references
 # ---------------------------------------------------------------------------
-ISIC_URLS = {
-    "ISIC2018_Task1-2_Training_Input.zip": "https://isic-challenge-data.s3.amazonaws.com/2018/ISIC2018_Task1-2_Training_Input.zip",
-    "ISIC2018_Task1_Training_GroundTruth.zip": "https://isic-challenge-data.s3.amazonaws.com/2018/ISIC2018_Task1_Training_GroundTruth.zip",
-    "ISIC2018_Task3_Training_GroundTruth.zip": "https://isic-challenge-data.s3.amazonaws.com/2018/ISIC2018_Task3_Training_GroundTruth.zip",
-}
-
-ISIC_KAGGLE_FALLBACK_REFS = [
-    "shonenkov/isic2018",
-    "ceenen/isic-2018-challenge-task-1-segmentation",
-    "tschandl/isic2018-challenge-task1-data-segmentation",
-    "xxc025/isic2018",
-    "yupanliu999/isic2018",
-]
-
 PANDA_COMPETITION = "prostate-cancer-grade-assessment"
 SIIM_COMPETITION = "siim-acr-pneumothorax-segmentation"

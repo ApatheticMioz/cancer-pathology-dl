@@ -49,7 +49,8 @@ launch_job() {
     echo "        Log:      ${log_file}"
     echo "        Summary: ${summary_file}"
 
-    "${cmd[@]}" --summary-out "${summary_file}" >> "${log_file}" 2>&1 &
+    run_with_safe_healing "$run_id" "$run_name" "$log_file" \
+        "${cmd[@]}" --summary-out "${summary_file}" >> /dev/null 2>&1 &
     local pid=$!
     PIDS+=("$pid")
     echo " [${run_id}] PID: ${pid}"
@@ -88,11 +89,113 @@ wait_all() {
     PIDS=()
 }
 
+# Scan log files for a given group range and report any permanent failures
+check_group_failures() {
+    local group_label="$1"
+    local start_id="$2"
+    local end_id="$3"
+    local failures=0
+
+    for id in $(seq "$start_id" "$end_id"); do
+        local log_file
+        log_file=$(ls "logs/run_$(printf '%02d' ${id})_*.log" 2>/dev/null | head -1)
+        if [ -n "$log_file" ] && grep -q "PERMANENT FAILURE" "$log_file"; then
+            echo "  ${RED}[${id}] PERMANENT FAILURE detected: $log_file${NC}"
+            failures=$((failures + 1))
+        fi
+    done
+
+    if [ "$failures" -gt 0 ]; then
+        echo -e "  ${RED}WARNING: $failures run(s) in ${group_label} failed permanently.${NC}"
+        echo -e "  ${RED}Continuing with remaining groups. Review logs/ after pipeline completes.${NC}"
+    fi
+    return 0
+}
+
 # ---------------------------------------------------------------------------
 # Helper: timestamped echo
 # ---------------------------------------------------------------------------
 ts() {
     echo " [$1] $(date '+%Y-%m-%d %H:%M:%S') - $2"
+}
+
+# ---------------------------------------------------------------------------
+# Safe Auto-Healing Wrapper
+# ---------------------------------------------------------------------------
+# Retries a failed run with reduced system-level optimizations to handle
+# transient OOM, torch.compile crashes, or DataLoader worker spikes.
+# Does NOT alter any hyperparameters (batch size, LR, epochs, loss weights).
+#
+# Sequence:
+#   Attempt 1 — Run command as-is.
+#   Attempt 2 — Sleep 10s for VRAM flush, then retry with:
+#     REPRO_TORCH_COMPILE_BACKEND="none"     (disables torch.compile)
+#     REPRO_ALLOW_BIG_CACHE="false"          (limits RAM cache)
+#     REPRO_ALLOW_UNC_WORKERS="0"            (disables DataLoader workers)
+#   Failure  — Log permanent error; caller decides whether to abort.
+# ---------------------------------------------------------------------------
+run_with_safe_healing() {
+    local run_id="$1"
+    local run_name="$2"
+    local log_file="$3"
+    shift 3
+    local cmd=("$@")
+
+    # ── Attempt 1: Standard run ──────────────────────────────────────────
+    {
+        echo "[$run_id] $(date '+%Y-%m-%d %H:%M:%S') - [ATTEMPT 1/2] Starting standard run..."
+        echo "[$run_id] Command: ${cmd[*]}"
+    } >> "$log_file" 2>&1
+
+    "${cmd[@]}" >> "$log_file" 2>&1
+    local rc=$?
+
+    if [ $rc -eq 0 ]; then
+        {
+            echo "[$run_id] $(date '+%Y-%m-%d %H:%M:%S') - [ATTEMPT 1/2] SUCCESS"
+        } >> "$log_file" 2>&1
+        return 0
+    fi
+
+    {
+        echo "[$run_id] $(date '+%Y-%m-%d %H:%M:%S') - [ATTEMPT 1/2] FAILED (exit code $rc)"
+        echo "[$run_id] Last 30 lines of Attempt 1:"
+        tail -n 30 "$log_file"
+        echo "[$run_id] Sleeping 10s for GPU VRAM flush before Attempt 2..."
+    } >> "$log_file" 2>&1
+
+    sleep 10
+
+    # ── Attempt 2: Safe Memory/Compile Fallback ─────────────────────────
+    {
+        echo "[$run_id] $(date '+%Y-%m-%d %H:%M:%S') - [ATTEMPT 2/2] Starting safe fallback run..."
+        echo "[$run_id] Env: REPRO_TORCH_COMPILE_BACKEND=none REPRO_ALLOW_BIG_CACHE=false REPRO_ALLOW_UNC_WORKERS=0"
+        echo "[$run_id] Command: ${cmd[*]}"
+    } >> "$log_file" 2>&1
+
+    REPRO_TORCH_COMPILE_BACKEND="none" \
+    REPRO_ALLOW_BIG_CACHE="false" \
+    REPRO_ALLOW_UNC_WORKERS="0" \
+    "${cmd[@]}" >> "$log_file" 2>&1
+    rc=$?
+
+    if [ $rc -eq 0 ]; then
+        {
+            echo "[$run_id] $(date '+%Y-%m-%d %H:%M:%S') - [ATTEMPT 2/2] SUCCESS (recovered from Attempt 1 failure)"
+        } >> "$log_file" 2>&1
+        return 0
+    fi
+
+    # ── Permanent Failure ────────────────────────────────────────────────
+    {
+        echo "[$run_id] $(date '+%Y-%m-%d %H:%M:%S') - [ATTEMPT 2/2] FAILED (exit code $rc)"
+        echo "[$run_id] *** PERMANENT FAILURE for ${run_name} ***"
+        echo "[$run_id] Both attempts exhausted. Check $log_file for details."
+        echo "[$run_id] Last 30 lines of Attempt 2:"
+        tail -n 30 "$log_file"
+    } >> "$log_file" 2>&1
+
+    return $rc
 }
 
 # ---------------------------------------------------------------------------
@@ -117,6 +220,7 @@ wait_for_slot; launch_job 6  "g1_siim_mobilenet_v2" python main.py --phase v1 --
 
 ts "GROUP 1" "All 6 jobs launched. Waiting for completion ..."
 wait_all
+check_group_failures "GROUP 1" 1 6
 ts "GROUP 1" "=== DONE ==="
 
 ###############################################################################
@@ -135,6 +239,7 @@ wait_for_slot; launch_job 12 "g2_siim_mobilenet_v2" python main.py --phase v2 --
 
 ts "GROUP 2" "All 6 jobs launched. Waiting for completion ..."
 wait_all
+check_group_failures "GROUP 2" 7 12
 ts "GROUP 2" "=== DONE ==="
 
 ###############################################################################
@@ -152,6 +257,7 @@ wait_for_slot; launch_job 16 "g3_pannuke_mobilenet_v2_final" python main.py --ph
 
 ts "GROUP 3" "All 4 jobs launched. Waiting for completion ..."
 wait_all
+check_group_failures "GROUP 3" 13 16
 ts "GROUP 3" "=== DONE ==="
 
 ###############################################################################
@@ -173,6 +279,7 @@ wait_for_slot; launch_job 22 "g4_panda_lambda_10_1"    python main.py --phase v1
 
 ts "GROUP 4" "All 6 jobs launched. Waiting for completion ..."
 wait_all
+check_group_failures "GROUP 4" 17 22
 ts "GROUP 4" "=== DONE ==="
 
 ###############################################################################
@@ -190,6 +297,7 @@ wait_for_slot; launch_job 26 "g5_panda_noskip"         python main.py --phase v2
 
 ts "GROUP 5" "All 4 jobs launched. Waiting for completion ..."
 wait_all
+check_group_failures "GROUP 5" 23 26
 ts "GROUP 5" "=== DONE ==="
 
 ###############################################################################
@@ -200,4 +308,16 @@ ts "PIPELINE" "ALL 26 RUNS COMPLETED"
 ts "PIPELINE" "=========================================="
 ts "PIPELINE" "Logs:      logs/run_*.log"
 ts "PIPELINE" "Summaries: checkpoints/summary_*.json"
-ts "PIPELINE" "Run 'python src/aggregate_results.py' to generate paper tables."
+
+# ---------------------------------------------------------------------------
+# Aggregate results into paper-ready CSV and LaTeX tables
+# ---------------------------------------------------------------------------
+ts "PIPELINE" "Running results aggregator ..."
+if python src/aggregate_results.py; then
+    ts "PIPELINE" "Aggregation successful."
+    ts "PIPELINE" "CSV:   paper/paper_results_matrix.csv"
+    ts "PIPELINE" "LaTeX: paper/paper_results_latex_table.txt"
+else
+    ts "PIPELINE" "Aggregation failed (some runs may not have completed)."
+    ts "PIPELINE" "Re-run failed jobs manually, then execute 'python src/aggregate_results.py'."
+fi

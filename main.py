@@ -41,11 +41,12 @@ from src.config import (
     PHASE_CONFIGS,
     PAPER_TARGETS,
     RANDOM_SEED,
+    REPRO_DISABLE_CUDNN,
     REPRO_SUMMARY_FILE,
     REQUIRED_MATRIX,
 )
 from src.data import load_dataset_bundle
-from src.modeling import train_single_run
+from src.training import train_single_run
 from src.utils import atomic_json_write, fmt_seconds, now_iso
 
 logger = logging.getLogger(__name__)
@@ -286,7 +287,7 @@ def run_reproduction(args: argparse.Namespace) -> dict:
     # CuDNN benchmarking: input sizes per dataset are fixed, so CuDNN can profile
     # and select the fastest convolution algorithms.
     torch.backends.cudnn.benchmark = True
-    if os.getenv("REPRO_DISABLE_CUDNN", "").strip().lower() in {"1", "true", "yes", "on"}:
+    if REPRO_DISABLE_CUDNN:
         torch.backends.cudnn.enabled = False
         logger.info("CuDNN disabled via REPRO_DISABLE_CUDNN for stability")
 

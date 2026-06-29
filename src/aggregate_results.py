@@ -261,13 +261,18 @@ def parse_summary_file(filepath: Path, lr: str = "") -> list[dict]:
         print(f"  [WARN] No runs found in {filepath.name}", file=sys.stderr)
         return []
 
+    # Known encoder names (order matters: longest first to avoid partial matches)
+    _KNOWN_ENCODERS = ("mobilenet_v2", "vgg16")
+
+    def _split_run_key(key: str) -> tuple[str, str]:
+        for enc in _KNOWN_ENCODERS:
+            if key.endswith(f"_{enc}"):
+                return key[: -len(enc) - 1], enc
+        return key, "unknown"
+
     records: list[dict] = []
     for run_key, run_data in runs.items():
-        parts = run_key.rsplit("_", 1)
-        if len(parts) == 2:
-            dataset, encoder = parts
-        else:
-            dataset, encoder = run_key, "unknown"
+        dataset, encoder = _split_run_key(run_key)
 
         acc = round(100.0 * run_data.get("final_val_acc", 0.0), 2)
         dice = round(100.0 * run_data.get("final_val_dice", 0.0), 2)
