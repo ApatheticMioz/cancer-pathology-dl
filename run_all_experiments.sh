@@ -40,17 +40,22 @@ launch_job() {
     shift 2
     local cmd=("$@")
 
-    local log_file="logs/run_$(printf '%02d' ${run_id})_${run_name}.log"
-    local summary_file="checkpoints/summary_$(printf '%02d' ${run_id})_${run_name}.json"
+    local padded_id
+    padded_id=$(printf '%02d' ${run_id})
+    local run_label="${padded_id}_${run_name}"
+    local log_file="logs/run_${padded_id}_${run_name}.log"
+    local summary_file="checkpoints/summary_${padded_id}_${run_name}.json"
+    local ckpt_file="checkpoints/ckpt_${padded_id}_${run_name}_best.pth"
 
     mkdir -p logs checkpoints
 
     echo " [${run_id}] $(date '+%Y-%m-%d %H:%M:%S') - START: ${run_name}"
     echo "        Log:      ${log_file}"
     echo "        Summary: ${summary_file}"
+    echo "        Checkpt: ${ckpt_file}"
 
     run_with_safe_healing "$run_id" "$run_name" "$log_file" \
-        "${cmd[@]}" --summary-out "${summary_file}" >> /dev/null 2>&1 &
+        "${cmd[@]}" --summary-out "${summary_file}" --run-label "${run_label}" >> /dev/null 2>&1 &
     local pid=$!
     PIDS+=("$pid")
     echo " [${run_id}] PID: ${pid}"

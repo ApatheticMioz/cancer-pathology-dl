@@ -137,6 +137,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Path for the output summary JSON (default: checkpoints/optimized_summary.json)",
     )
 
+    # Run label for consistent checkpoint/summary naming
+    p.add_argument(
+        "--run-label",
+        type=str,
+        default=None,
+        help="Run label for checkpoint naming (e.g. '01_g1_tcga_vgg16'). "
+        "When set, checkpoints are named ckpt_<run-label>_best.pth to match summary files.",
+    )
+
     return p
 
 # ---------------------------------------------------------------------------
@@ -343,9 +352,15 @@ def run_reproduction(args: argparse.Namespace) -> dict:
 
     for i, (dataset, encoder) in enumerate(runs, start=1):
         run_key = f"{dataset}_{encoder}"
-        ckpt = CHECKPOINT_DIR / f"{dataset}_{encoder}_best.pth"
 
-        if args.resume and ckpt.exists():
+        if args.resume and args.run_label:
+            ckpt = CHECKPOINT_DIR / f"ckpt_{args.run_label}_best.pth"
+        elif args.resume:
+            ckpt = CHECKPOINT_DIR / f"{dataset}_{encoder}_best.pth"
+        else:
+            ckpt = None
+
+        if ckpt and ckpt.exists():
             logger.info("[%d/%d] %s: checkpoint exists; resuming if state available", i, len(runs), run_key)
 
         result = train_single_run(
@@ -361,6 +376,7 @@ def run_reproduction(args: argparse.Namespace) -> dict:
             skip_connections=args.no_skip_connections,
             static_weights=getattr(args, "static_weights", False),
             smoke_test=args.smoke_test,
+            run_label=getattr(args, "run_label", None),
         )
         result.update(_paper_compare(dataset, encoder, result))
         run_results[run_key] = result

@@ -222,6 +222,7 @@ def train_single_run(
     skip_connections: bool = False,
     static_weights: bool = False,
     smoke_test: bool = False,
+    run_label: str | None = None,
 ) -> dict:
     """Train a single (dataset, encoder) run.
 
@@ -360,7 +361,9 @@ def train_single_run(
         patience_ctr = 0
         best_monitor_metric = float("inf")
 
-        ckpt_base = args.checkpoint_dir / f"{dataset}_{encoder}_best.pth"
+        ckpt_base = args.checkpoint_dir / (
+            f"ckpt_{run_label}_best.pth" if run_label else f"{dataset}_{encoder}_best.pth"
+        )
         ckpt_path = _make_collision_free_path(ckpt_base)
         state_path = ckpt_path.with_suffix(".state.pt")
         start_epoch = 1
