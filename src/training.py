@@ -361,9 +361,7 @@ def train_single_run(
         patience_ctr = 0
         best_monitor_metric = float("inf")
 
-        ckpt_base = args.checkpoint_dir / (
-            f"ckpt_{run_label}_best.pth" if run_label else f"{dataset}_{encoder}_best.pth"
-        )
+        ckpt_base = args.checkpoint_dir / f"ckpt_{run_label}_best.pth"
         ckpt_path = _make_collision_free_path(ckpt_base)
         state_path = ckpt_path.with_suffix(".state.pt")
         start_epoch = 1
