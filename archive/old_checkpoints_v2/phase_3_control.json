@@ -1,0 +1,122 @@
+{
+  "timestamp": "2026-06-27T07:06:09",
+  "status": "completed",
+  "phase": "v2.1",
+  "device": "cuda",
+  "hardware": {
+    "cpu_logical": 4,
+    "cpu_affinity": 4,
+    "ram_total_gb": 19.53,
+    "ram_available_gb": 16.94,
+    "gpu": {
+      "name": "NVIDIA GeForce RTX 3090",
+      "total_mem_gb": 24.0,
+      "free_mem_gb": 22.75,
+      "capability": "8.6"
+    }
+  },
+  "duration_sec": 2519.344827890396,
+  "duration_hms": "0:41:59",
+  "args": {
+    "datasets": [
+      "pannuke"
+    ],
+    "encoders": [
+      "vgg16",
+      "mobilenet_v2"
+    ],
+    "phase": "v2.1",
+    "epochs": 50,
+    "patience": 10,
+    "batch_size": 32,
+    "lr": 0.001,
+    "lambda_seg": 5.0,
+    "lambda_cls": 1.0,
+    "gradnorm_alpha": 0.0,
+    "use_gradnorm": false,
+    "num_workers": -1,
+    "cache_size": -1,
+    "compile": true,
+    "no_skip_connections": false,
+    "no_macenko": false,
+    "seed": 42
+  },
+  "runs": {
+    "pannuke_vgg16": {
+      "status": "completed",
+      "dataset": "pannuke",
+      "encoder": "vgg16",
+      "samples": 7835,
+      "train_samples": 6268,
+      "val_samples": 1567,
+      "batch_size": 32,
+      "loader_workers": 4,
+      "loader_prefetch_factor": 2,
+      "loader_persistent_workers": false,
+      "loader_cache_size": 0,
+      "available_ram_gb": 16.83,
+      "cpu_budget": 4,
+      "best_val_loss": 2.037555923267287,
+      "best_val_acc": 0.6024250159540523,
+      "best_val_dice": 0.40810439757191813,
+      "final_val_acc": 0.6024250159540523,
+      "final_val_dice": 0.40810439757191813,
+      "checkpoint": "/home/apath/Work/temp/final/checkpoints_v2/pannuke_vgg16_best.pth",
+      "duration_sec": 1614.2106795310974,
+      "duration_hms": "0:26:54",
+      "attempt": 1,
+      "compile_enabled": true,
+      "compile_backend": null,
+      "compile_mode": "max-autotune",
+      "skip_connections_ablated": false,
+      "smoke_test": false
+    },
+    "pannuke_mobilenet_v2": {
+      "status": "completed",
+      "dataset": "pannuke",
+      "encoder": "mobilenet_v2",
+      "samples": 7835,
+      "train_samples": 6268,
+      "val_samples": 1567,
+      "batch_size": 32,
+      "loader_workers": 4,
+      "loader_prefetch_factor": 2,
+      "loader_persistent_workers": false,
+      "loader_cache_size": 0,
+      "available_ram_gb": 14.07,
+      "cpu_budget": 4,
+      "best_val_loss": 1.424349062296809,
+      "best_val_acc": 0.7370772176132737,
+      "best_val_dice": 0.45522385785359326,
+      "final_val_acc": 0.7370772176132737,
+      "final_val_dice": 0.45522385785359326,
+      "checkpoint": "/home/apath/Work/temp/final/checkpoints_v2/pannuke_mobilenet_v2_best.pth",
+      "duration_sec": 903.7305414676666,
+      "duration_hms": "0:15:03",
+      "attempt": 1,
+      "compile_enabled": true,
+      "compile_backend": null,
+      "compile_mode": "max-autotune",
+      "skip_connections_ablated": false,
+      "smoke_test": false
+    }
+  },
+  "table": [
+    {
+      "dataset": "pannuke",
+      "encoder": "vgg16",
+      "acc": 60.24,
+      "dice": 40.81,
+      "paper_acc": null,
+      "paper_dice": null
+    },
+    {
+      "dataset": "pannuke",
+      "encoder": "mobilenet_v2",
+      "acc": 73.71,
+      "dice": 45.52,
+      "paper_acc": null,
+      "paper_dice": null
+    }
+  ]
+}

@@ -1,0 +1,88 @@
+{
+  "timestamp": "2026-06-27T18:52:38",
+  "status": "completed",
+  "phase": "v2",
+  "device": "cuda",
+  "hardware": {
+    "cpu_logical": 12,
+    "cpu_affinity": 12,
+    "ram_total_gb": 17.56,
+    "ram_available_gb": 13.6,
+    "gpu": {
+      "name": "NVIDIA GeForce RTX 3090",
+      "total_mem_gb": 24.0,
+      "free_mem_gb": 22.75,
+      "capability": "8.6"
+    }
+  },
+  "duration_sec": 1628.8495008945465,
+  "duration_hms": "0:27:08",
+  "args": {
+    "datasets": [
+      "panda"
+    ],
+    "encoders": [
+      "vgg16"
+    ],
+    "phase": "v2",
+    "epochs": 50,
+    "patience": 10,
+    "batch_size": 32,
+    "lr": 0.0001,
+    "lambda_seg": 5.0,
+    "lambda_cls": 1.0,
+    "gradnorm_alpha": 1.5,
+    "use_gradnorm": true,
+    "num_workers": 3,
+    "cache_size": -1,
+    "compile": false,
+    "no_skip_connections": false,
+    "no_macenko": false,
+    "seed": 42
+  },
+  "runs": {
+    "panda_vgg16": {
+      "status": "completed",
+      "dataset": "panda",
+      "encoder": "vgg16",
+      "samples": 10516,
+      "train_samples": 8412,
+      "val_samples": 2104,
+      "batch_size": 32,
+      "loader_workers": 3,
+      "loader_prefetch_factor": 2,
+      "loader_persistent_workers": false,
+      "loader_cache_size": 0,
+      "available_ram_gb": 13.28,
+      "cpu_budget": 12,
+      "best_val_loss": 0.7931453116012342,
+      "best_val_acc": 0.3279467680608365,
+      "best_val_dice": 0.3444893531991649,
+      "final_val_acc": 0.3279467680608365,
+      "final_val_dice": 0.3444893531991649,
+      "checkpoint": "/home/apath/Work/temp/final/checkpoints/panda_vgg16_best.pth",
+      "duration_sec": 1628.5915036201477,
+      "duration_hms": "0:27:08",
+      "attempt": 1,
+      "compile_enabled": false,
+      "compile_backend": null,
+      "compile_mode": "max-autotune",
+      "skip_connections_ablated": false,
+      "smoke_test": false,
+      "paper_acc": 0.87,
+      "paper_dice": 0.98,
+      "acc_delta": -0.5420532319391635,
+      "dice_delta": -0.6355106468008351
+    }
+  },
+  "table": [
+    {
+      "dataset": "panda",
+      "encoder": "vgg16",
+      "acc": 32.79,
+      "dice": 34.45,
+      "paper_acc": 87.0,
+      "paper_dice": 98.0
+    }
+  ]
+}

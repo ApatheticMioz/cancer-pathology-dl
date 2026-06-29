@@ -1,75 +1,180 @@
-# --- Data and Weights (Crucial) ---
-ISIC_raw/
-PANDA_raw/
-SIIM_raw/
-TCGA/
-
-# Ignore everything in checkpoints, BUT whitelist lightweight logs/configs
-checkpoints/*
-checkpoints_v2/*
-checkpoints_baseline_pannuke/*
-!checkpoints/*.json
-!checkpoints/*.jsonl
-!checkpoints/*.txt
-!checkpoints/*.yaml
-!checkpoints_v2/*.json
-!checkpoints_v2/*.jsonl
-!checkpoints_v2/*.txt
-!checkpoints_v2/*.yaml
-!checkpoints_baseline_pannuke/*.json    
-!checkpoints_baseline_pannuke/*.jsonl
-!checkpoints_baseline_pannuke/*.txt
-!checkpoints_baseline_pannuke/*.yaml
-
-# --- Python / Environment ---
+# ============================================================
+# Python
+# ============================================================
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+*.egg-info
+.eggs/
+*.whl
+
+# Virtual environments
+venv/
 .venv/
 env/
-venv/
-ENV/
+.env/
 
-# --- Logs and Outputs ---
-# Your image shows several .log and .txt output files
+# ============================================================
+# Data and raw datasets
+# ============================================================
+data/
+TCGA/
+PANDA_raw/
+SIIM_raw/
+pannuke/
+subset_10_images/
+subset_10_images*/
+
+# ============================================================
+# Model checkpoints and weights
+# ============================================================
+checkpoints/
+checkpoints_baseline_pannuke/
+checkpoints_v2/
+*.pth
+*.pt
+*.bin
+*.ckpt
+*.h5
+*.onnx
+
+# ============================================================
+# Logs
+# ============================================================
+logs/
+smoke_test_logs/
+smoke_test.log
 *.log
-stdout.txt
-stderr.txt
-matrix_run_console.log
-smoke_run_log
 
-# --- Large CSVs and Inventories ---
-# These look like generated metadata/indices which can be large
-*.csv
-inventory_*.txt
-panda_all_names.txt
-siim_all_names.txt
-kaggle_files_*.txt
+# ============================================================
+# Audit and runtime JSON
+# ============================================================
+*.jsonl
+dataset_audit.json
+reproduction_summary.json
+optimized_summary.json
+epoch_log.jsonl
 
-# --- OS / IDE Specific ---
-.DS_Store
+# ============================================================
+# Temporary files
+# ============================================================
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+*~
+
+# ============================================================
+# IDE and editors
+# ============================================================
 .vscode/
 .idea/
-.aider*
+*.sublime-*
+*.sublime-project
+*.sublime-workspace
 
+# ============================================================
+# OS files
+# ============================================================
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ============================================================
+# Environment and secrets
+# ============================================================
 .env
-pannuke
-.ipynb_checkpoints/
-ipynb_checkpoints/
-.ipynb_checkpoints/
-**/.ipynb_checkpoints/
-*-checkpoint.ipynb   
-*:Zone.Identifier
+.env.*
+*.key
+*.pem
 
-# --- LaTeX Build Artifacts ---
+# ============================================================
+# PDFs and LaTeX build artifacts
+# ============================================================
+*.pdf
 *.aux
-*.bbl
-*.blg
-*.fdb_latexmk
-*.fls
-*.lof
-*.log
-*.lot
 *.out
+*.fls
+*.fdb_latexmk
 *.synctex.gz
-*.toc
+
+# ============================================================
+# Image files
+# ============================================================
+*.png
+*.jpg
+*.jpeg
+*.tif
+*.tiff
+*.bmp
+*.webp
+
+# ============================================================
+# Exceptions: paper figures are tracked
+# ============================================================
+!paper/figures/
+!paper/figures/*.pdf
+!paper/figures/*.jpeg
+
+# ============================================================
+# Zip and tar archives
+# ============================================================
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.rar
+
+# ============================================================
+# Baseline repro (moved to archive/)
+# ============================================================
+baseline_repro/
+repro/
+
+# ============================================================
+# Old script utilities
+# ============================================================
+fix_typos.py
+fix_typos2.py
+select_subset_images.py
+
+# ============================================================
+# Archive heavy subdirectories (keep only JSON summaries)
+# ============================================================
+archive/old_checkpoints_v2/*.pth
+archive/old_checkpoints_v2/*.pt
+archive/old_checkpoints_v2/*.bin
+archive/old_checkpoints_v2/*.ckpt
+archive/old_checkpoints_v2/*.h5
+archive/old_checkpoints_v2/*.png
+archive/old_checkpoints_v2/*.jpg
+archive/old_checkpoints_v2/*.jpeg
+archive/old_checkpoints_v2/*.tif
+archive/old_checkpoints_v2/*.tiff
+archive/old_checkpoints_v2/*.pdf
+
+# ============================================================
+# IPython checkpoints
+# ============================================================
+.ipynb_checkpoints/
+
+# ============================================================
+# Coverage and testing
+# ============================================================
+.coverage
+coverage/
+htmlcov/
+.pytest_cache/
+.tox/
+.mypy_cache/
+
+# ============================================================
+# Jupyter notebooks (keep only if explicitly needed)
+# ============================================================
+*.ipynb_checkpoints

@@ -1,0 +1,88 @@
+{
+  "timestamp": "2026-06-27T06:18:57",
+  "status": "completed",
+  "phase": "v1",
+  "device": "cuda",
+  "hardware": {
+    "cpu_logical": 4,
+    "cpu_affinity": 4,
+    "ram_total_gb": 19.53,
+    "ram_available_gb": 16.85,
+    "gpu": {
+      "name": "NVIDIA GeForce RTX 3090",
+      "total_mem_gb": 24.0,
+      "free_mem_gb": 22.75,
+      "capability": "8.6"
+    }
+  },
+  "duration_sec": 2317.399753808975,
+  "duration_hms": "0:38:37",
+  "args": {
+    "datasets": [
+      "siim"
+    ],
+    "encoders": [
+      "mobilenet_v2"
+    ],
+    "phase": "v1",
+    "epochs": 50,
+    "patience": 10,
+    "batch_size": 32,
+    "lr": 0.001,
+    "lambda_seg": 5.0,
+    "lambda_cls": 1.0,
+    "gradnorm_alpha": 0.0,
+    "use_gradnorm": false,
+    "num_workers": -1,
+    "cache_size": -1,
+    "compile": true,
+    "no_skip_connections": false,
+    "no_macenko": false,
+    "seed": 42
+  },
+  "runs": {
+    "siim_mobilenet_v2": {
+      "status": "completed",
+      "dataset": "siim",
+      "encoder": "mobilenet_v2",
+      "samples": 10675,
+      "train_samples": 8540,
+      "val_samples": 2135,
+      "batch_size": 32,
+      "loader_workers": 4,
+      "loader_prefetch_factor": 2,
+      "loader_persistent_workers": false,
+      "loader_cache_size": 0,
+      "available_ram_gb": 16.74,
+      "cpu_budget": 4,
+      "best_val_loss": 0.42002624562427177,
+      "best_val_acc": 0.7864168618266979,
+      "best_val_dice": 0.7774375410222295,
+      "final_val_acc": 0.7864168618266979,
+      "final_val_dice": 0.7774375410222295,
+      "checkpoint": "/home/apath/Work/temp/final/checkpoints_v2/siim_mobilenet_v2_best.pth",
+      "duration_sec": 2316.42999124527,
+      "duration_hms": "0:38:36",
+      "attempt": 1,
+      "compile_enabled": true,
+      "compile_backend": null,
+      "compile_mode": "max-autotune",
+      "skip_connections_ablated": false,
+      "smoke_test": false,
+      "paper_acc": 0.87,
+      "paper_dice": 0.99,
+      "acc_delta": -0.0835831381733021,
+      "dice_delta": -0.21256245897777049
+    }
+  },
+  "table": [
+    {
+      "dataset": "siim",
+      "encoder": "mobilenet_v2",
+      "acc": 78.64,
+      "dice": 77.74,
+      "paper_acc": 87.0,
+      "paper_dice": 99.0
+    }
+  ]
+}
