@@ -18,6 +18,10 @@
 ###############################################################################
 set -euo pipefail
 
+# Define colors for warnings
+RED='\033[0;31m'
+NC='\033[0m'
+
 # ---------------------------------------------------------------------------
 # Environment activation
 # ---------------------------------------------------------------------------
@@ -41,7 +45,7 @@ launch_job() {
     local cmd=("$@")
 
     local padded_id
-    padded_id=$(printf '%02d' ${run_id})
+    padded_id=$(printf '%02d' "${run_id}")
     local run_label="${padded_id}_${run_name}"
     local log_file="logs/run_${padded_id}_${run_name}.log"
     local summary_file="checkpoints/summary_${padded_id}_${run_name}.json"
@@ -103,9 +107,10 @@ check_group_failures() {
 
     for id in $(seq "$start_id" "$end_id"); do
         local log_file
-        log_file=$(ls "logs/run_$(printf '%02d' ${id})_*.log" 2>/dev/null | head -1)
+        # Swapped `ls` for `find` to safely handle globs without tripping pipefail
+        log_file=$(find logs -maxdepth 1 -name "run_$(printf '%02d' "${id}")_*.log" 2>/dev/null | head -n 1)
         if [ -n "$log_file" ] && grep -q "PERMANENT FAILURE" "$log_file"; then
-            echo "  ${RED}[${id}] PERMANENT FAILURE detected: $log_file${NC}"
+            echo -e "  ${RED}[${id}] PERMANENT FAILURE detected: $log_file${NC}"
             failures=$((failures + 1))
         fi
     done
@@ -152,8 +157,9 @@ run_with_safe_healing() {
         echo "[$run_id] Command: ${cmd[*]}"
     } >> "$log_file" 2>&1
 
-    "${cmd[@]}" >> "$log_file" 2>&1
-    local rc=$?
+    # Catch the exit code safely before `set -e` triggers
+    local rc=0
+    "${cmd[@]}" >> "$log_file" 2>&1 || rc=$?
 
     if [ $rc -eq 0 ]; then
         {
@@ -181,8 +187,7 @@ run_with_safe_healing() {
     REPRO_TORCH_COMPILE_BACKEND="none" \
     REPRO_ALLOW_BIG_CACHE="false" \
     REPRO_ALLOW_UNC_WORKERS="0" \
-    "${cmd[@]}" >> "$log_file" 2>&1
-    rc=$?
+    "${cmd[@]}" >> "$log_file" 2>&1 || rc=$?
 
     if [ $rc -eq 0 ]; then
         {

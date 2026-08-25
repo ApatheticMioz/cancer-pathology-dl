@@ -20,7 +20,13 @@ import pandas as pd
 import torch
 from albumentations.pytorch import ToTensorV2
 from PIL import Image
-from sklearn.model_selection import GroupShuffleSplit, StratifiedShuffleSplit
+from sklearn.model_selection import (
+    GroupKFold,
+    GroupShuffleSplit,
+    StratifiedGroupKFold,
+    StratifiedKFold,
+    StratifiedShuffleSplit,
+)
 from torch.utils.data import Dataset
 
 from src.config import DATASET_META
@@ -62,8 +68,63 @@ def build_transforms(img_size: int):
     return train_tf, val_tf
 
 # ---------------------------------------------------------------------------
-# Train/Val splitting
+# Train/Val splitting (Group-aware & 5-Fold CV with Zero-Leakage Guarantee)
 # ---------------------------------------------------------------------------
+
+def make_group_kfold_splits(
+    labels: np.ndarray,
+    groups: np.ndarray,
+    n_splits: int = 5,
+    seed: int = 42,
+) -> list[tuple[np.ndarray, np.ndarray]]:
+    """Create bulletproof group-aware K-Fold cross-validation splits.
+
+    Guarantees strict zero-leakage across folds by ensuring no patient group
+    spans both the training and validation sets of any fold.
+
+    Args:
+        labels: Classification labels array.
+        groups: Group identifiers (e.g. patient ID or slide ID).
+        n_splits: Number of folds (default 5).
+        seed: Random seed for reproducible shuffling.
+
+    Returns:
+        List of (train_indices, val_indices) tuples of length n_splits.
+    """
+    n_samples = len(labels)
+    unique_groups = np.unique(groups)
+    n_unique_groups = len(unique_groups)
+
+    if n_unique_groups == n_samples:
+        # Fallback when each sample is its own independent group
+        splitter = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
+        splits = list(splitter.split(np.zeros(n_samples), labels))
+    else:
+        # Attempt StratifiedGroupKFold for balanced class-group partitioning
+        try:
+            splitter = StratifiedGroupKFold(n_splits=n_splits, shuffle=True, random_state=seed)
+            splits = list(splitter.split(np.zeros(n_samples), labels, groups))
+        except Exception:
+            splitter = GroupKFold(n_splits=n_splits)
+            splits = list(splitter.split(np.zeros(n_samples), labels, groups))
+
+    # Strict zero-leakage mathematical assertion
+    for fold_idx, (tr_idx, vl_idx) in enumerate(splits):
+        tr_g = set(groups[tr_idx])
+        vl_g = set(groups[vl_idx])
+        overlap = tr_g & vl_g
+        if overlap:
+            raise RuntimeError(
+                f"FATAL LEAKAGE DEFECT: Fold {fold_idx} has {len(overlap)} overlapping groups! "
+                f"Samples in train={len(tr_idx)}, val={len(vl_idx)}."
+            )
+        logger.debug(
+            "Fold %d/%d: train=%d samples (%d groups), val=%d samples (%d groups), overlap=0",
+            fold_idx + 1, n_splits, len(tr_idx), len(tr_g), len(vl_idx), len(vl_g)
+        )
+
+    return splits
+
 
 def make_group_split(
     labels: np.ndarray,
@@ -71,7 +132,7 @@ def make_group_split(
     seed: int = 42,
     test_size: float = 0.2,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Create a group-aware or stratified train/val split.
+    """Create a single group-aware or stratified train/val split with zero-leakage check.
 
     Uses GroupShuffleSplit when groups have meaningful cardinality
     (fewer unique groups than samples). Falls back to StratifiedShuffleSplit
@@ -97,7 +158,13 @@ def make_group_split(
     splits = list(splitter.split(np.zeros(len(labels)), labels, groups))
     if not splits:
         raise RuntimeError("Could not create group split")
-    return splits[0]
+
+    tr_idx, vl_idx = splits[0]
+    overlap = set(groups[tr_idx]) & set(groups[vl_idx])
+    if overlap:
+        raise RuntimeError(f"FATAL LEAKAGE DEFECT: make_group_split has {len(overlap)} overlapping groups!")
+
+    return tr_idx, vl_idx
 
 # ---------------------------------------------------------------------------
 # Dataset parsers

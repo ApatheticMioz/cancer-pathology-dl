@@ -28,7 +28,7 @@ from src.config import (
     REPRO_STRICT_BATCH_CHECKS,
     REPRO_TORCH_COMPILE_BACKEND,
 )
-from src.data import MultiTaskDataset, build_transforms, make_group_split
+from src.data import MultiTaskDataset, build_transforms, make_group_kfold_splits, make_group_split
 from src.loader_tuning import (
     _available_ram_gb,
     _initial_loader_tuning,
@@ -36,7 +36,7 @@ from src.loader_tuning import (
     _select_cache_size,
     resolve_batch_size,
 )
-from src.metrics import dice_coefficient
+from src.metrics import dice_coefficient, iou_coefficient, positive_slice_dice
 from src.models import GradNormBalancer, MultiTaskUNet
 from src.utils import append_jsonl, fmt_seconds, now_iso
 
@@ -223,6 +223,10 @@ def train_single_run(
     static_weights: bool = False,
     smoke_test: bool = False,
     run_label: str | None = None,
+    train_idx: np.ndarray | None = None,
+    val_idx: np.ndarray | None = None,
+    fold_idx: int | None = None,
+    k_folds: int | None = None,
 ) -> dict:
     """Train a single (dataset, encoder) run.
 
@@ -236,6 +240,14 @@ def train_single_run(
         epoch_log_file: Path for JSONL epoch logging.
         run_index: 1-based index among total runs.
         total_runs: Total number of runs in the matrix.
+        skip_connections: Ablation flag to zero UNet skip connections.
+        static_weights: Use fixed lambda weights without dynamic balance.
+        smoke_test: Run fast 1-epoch 2-batch smoke test.
+        run_label: Run label identifier.
+        train_idx: Optional precomputed training indices (for K-Fold CV).
+        val_idx: Optional precomputed validation indices (for K-Fold CV).
+        fold_idx: Optional fold index (0-indexed).
+        k_folds: Optional total number of folds.
 
     Returns:
         Dict with training metrics and metadata.
@@ -250,7 +262,16 @@ def train_single_run(
     if len(images) < 100:
         raise RuntimeError(f"{dataset}: too few samples ({len(images)})")
 
-    train_idx, val_idx = make_group_split(labels, groups, seed=args.seed, test_size=0.2)
+    if train_idx is None or val_idx is None:
+        train_idx, val_idx = make_group_split(labels, groups, seed=args.seed, test_size=0.2)
+    else:
+        # Zero-leakage check on supplied fold indices
+        tr_g = set(groups[train_idx])
+        vl_g = set(groups[val_idx])
+        overlap = tr_g & vl_g
+        if overlap:
+            raise RuntimeError(f"FATAL LEAKAGE DEFECT: fold {fold_idx} has {len(overlap)} overlapping groups!")
+
     train_tf, val_tf = build_transforms(meta["img_size"])
     batch_size = resolve_batch_size(args.batch_size)
     attempt = 0
@@ -504,6 +525,8 @@ def train_single_run(
                 "best_val_dice": float(best_val_dice),
                 "final_val_acc": float(final_acc),
                 "final_val_dice": float(final_dice),
+                "fold_idx": int(fold_idx) if fold_idx is not None else None,
+                "k_folds": int(k_folds) if k_folds is not None else None,
                 "checkpoint": str(ckpt_path),
                 "duration_sec": float(duration),
                 "duration_hms": fmt_seconds(duration),
@@ -563,6 +586,123 @@ def train_single_run(
                     logger.warning("CUDA cache cleanup skipped: %s", ex)
 
     raise RuntimeError(f"Failed to train {dataset} x {encoder}: minimum batch size exhausted")
+
+
+def train_kfold_cv(
+    dataset: str,
+    encoder: str,
+    bundle: dict,
+    meta: dict,
+    args,
+    device: str,
+    epoch_log_file: Path,
+    k_folds: int = 5,
+    skip_connections: bool = False,
+    static_weights: bool = False,
+    smoke_test: bool = False,
+    run_label: str | None = None,
+) -> dict:
+    """Run full K-fold cross-validation with zero patient leakage and compute mean +/- std metrics.
+
+    Args:
+        dataset: Dataset key (tcga, panda, siim, pannuke).
+        encoder: Encoder backbone name.
+        bundle: Pre-loaded dataset bundle from ``load_dataset_bundle``.
+        meta: Dataset metadata from ``DATASET_META``.
+        args: Parsed CLI arguments.
+        device: 'cuda' or 'cpu'.
+        epoch_log_file: Path for JSONL epoch logging.
+        k_folds: Number of folds (default 5).
+        skip_connections: Ablation flag for UNet skip connections.
+        static_weights: Static loss balancing flag.
+        smoke_test: Fast smoke test mode.
+        run_label: Base run label identifier.
+
+    Returns:
+        Consolidated dict with per-fold results, mean, and standard deviation.
+    """
+    labels = bundle["labels"]
+    groups = bundle["groups"]
+    splits = make_group_kfold_splits(labels, groups, n_splits=k_folds, seed=args.seed)
+
+    base_label = run_label or f"{dataset}_{encoder}"
+    fold_results = []
+    target_folds = [int(args.fold)] if getattr(args, "fold", None) is not None else list(range(k_folds))
+
+    logger.info(
+        "================================================================================"
+    )
+    logger.info(
+        "STARTING %d-FOLD GROUP-AWARE CROSS-VALIDATION: %s x %s (target folds: %s)",
+        k_folds, dataset.upper(), encoder, target_folds,
+    )
+    logger.info(
+        "================================================================================"
+    )
+
+    for fold_idx in target_folds:
+        tr_idx, vl_idx = splits[fold_idx]
+        fold_run_label = f"{base_label}_fold{fold_idx + 1}of{k_folds}"
+        logger.info(
+            ">>> Running Fold %d/%d (train=%d samples, val=%d samples) <<<",
+            fold_idx + 1, k_folds, len(tr_idx), len(vl_idx)
+        )
+
+        fold_res = train_single_run(
+            dataset=dataset,
+            encoder=encoder,
+            bundle=bundle,
+            meta=meta,
+            args=args,
+            device=device,
+            epoch_log_file=epoch_log_file,
+            run_index=fold_idx + 1,
+            total_runs=len(target_folds),
+            skip_connections=skip_connections,
+            static_weights=static_weights,
+            smoke_test=smoke_test,
+            run_label=fold_run_label,
+            train_idx=tr_idx,
+            val_idx=vl_idx,
+            fold_idx=fold_idx,
+            k_folds=k_folds,
+        )
+        fold_results.append(fold_res)
+
+    val_accs = [r["final_val_acc"] for r in fold_results]
+    val_dices = [r["final_val_dice"] for r in fold_results]
+    val_losses = [r["best_val_loss"] for r in fold_results]
+
+    mean_acc = float(np.mean(val_accs))
+    std_acc = float(np.std(val_accs, ddof=1)) if len(val_accs) > 1 else 0.0
+    mean_dice = float(np.mean(val_dices))
+    std_dice = float(np.std(val_dices, ddof=1)) if len(val_dices) > 1 else 0.0
+    mean_loss = float(np.mean(val_losses))
+    std_loss = float(np.std(val_losses, ddof=1)) if len(val_losses) > 1 else 0.0
+
+    logger.info("================================================================================")
+    logger.info("CROSS-VALIDATION SUMMARY [%s x %s (%d folds completed)]:", dataset.upper(), encoder, len(fold_results))
+    for idx, r in enumerate(fold_results):
+        logger.info("  Fold %d: Acc = %.4f, Dice = %.4f, ValLoss = %.4f", idx + 1, r["final_val_acc"], r["final_val_dice"], r["best_val_loss"])
+    logger.info("--------------------------------------------------------------------------------")
+    logger.info("MEAN +/- STD: Acc = %.4f +/- %.4f | Dice = %.4f +/- %.4f | ValLoss = %.4f +/- %.4f",
+                mean_acc, std_acc, mean_dice, std_dice, mean_loss, std_loss)
+    logger.info("================================================================================")
+
+    return {
+        "status": "completed",
+        "dataset": dataset,
+        "encoder": encoder,
+        "k_folds": k_folds,
+        "completed_folds": len(fold_results),
+        "mean_val_acc": mean_acc,
+        "std_val_acc": std_acc,
+        "mean_val_dice": mean_dice,
+        "std_val_dice": std_dice,
+        "mean_val_loss": mean_loss,
+        "std_val_loss": std_loss,
+        "fold_results": fold_results,
+    }
 
 
 def _compute_class_weights(labels: np.ndarray, num_classes: int, device: str) -> torch.Tensor:

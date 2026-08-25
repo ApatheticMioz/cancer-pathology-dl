@@ -46,7 +46,7 @@ from src.config import (
     REQUIRED_MATRIX,
 )
 from src.data import load_dataset_bundle
-from src.training import train_single_run
+from src.training import train_kfold_cv, train_single_run
 from src.utils import atomic_json_write, fmt_seconds, now_iso
 
 logger = logging.getLogger(__name__)
@@ -71,6 +71,20 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--datasets", nargs="*", default=None)
     p.add_argument("--encoders", nargs="*", default=None)
     p.add_argument("--matrix", choices=["required", "cartesian"], default="required")
+
+    # K-Fold Cross-Validation flags
+    p.add_argument(
+        "--k-folds",
+        type=int,
+        default=None,
+        help="Number of folds for group-aware cross-validation (e.g., 5 for 5-fold GroupKFold)",
+    )
+    p.add_argument(
+        "--fold",
+        type=int,
+        default=None,
+        help="Specific fold index to run (0-indexed) when --k-folds is enabled. If omitted, runs all folds.",
+    )
 
     # Training hyperparameters (overridden by --phase unless explicitly set)
     p.add_argument("--epochs", type=int, default=None)
@@ -360,21 +374,40 @@ def run_reproduction(args: argparse.Namespace) -> dict:
             if ckpt.exists():
                 logger.info("[%d/%d] %s: checkpoint exists; resuming if state available", i, len(runs), run_key)
 
-        result = train_single_run(
-            dataset=dataset,
-            encoder=encoder,
-            bundle=bundles[dataset],
-            meta=DATASET_META[dataset],
-            args=args,
-            device=device,
-            epoch_log_file=EPOCH_LOG_FILE,
-            run_index=i,
-            total_runs=len(runs),
-            skip_connections=args.no_skip_connections,
-            static_weights=getattr(args, "static_weights", False),
-            smoke_test=args.smoke_test,
-            run_label=run_label,
-        )
+        if args.k_folds is not None and args.k_folds > 1:
+            result = train_kfold_cv(
+                dataset=dataset,
+                encoder=encoder,
+                bundle=bundles[dataset],
+                meta=DATASET_META[dataset],
+                args=args,
+                device=device,
+                epoch_log_file=EPOCH_LOG_FILE,
+                k_folds=args.k_folds,
+                skip_connections=args.no_skip_connections,
+                static_weights=getattr(args, "static_weights", False),
+                smoke_test=args.smoke_test,
+                run_label=run_label,
+            )
+            # Compare mean metrics to paper target
+            result["final_val_acc"] = result["mean_val_acc"]
+            result["final_val_dice"] = result["mean_val_dice"]
+        else:
+            result = train_single_run(
+                dataset=dataset,
+                encoder=encoder,
+                bundle=bundles[dataset],
+                meta=DATASET_META[dataset],
+                args=args,
+                device=device,
+                epoch_log_file=EPOCH_LOG_FILE,
+                run_index=i,
+                total_runs=len(runs),
+                skip_connections=args.no_skip_connections,
+                static_weights=getattr(args, "static_weights", False),
+                smoke_test=args.smoke_test,
+                run_label=run_label,
+            )
         result.update(_paper_compare(dataset, encoder, result))
         run_results[run_key] = result
 
@@ -388,6 +421,8 @@ def run_reproduction(args: argparse.Namespace) -> dict:
                 "datasets": datasets,
                 "encoders": encoders,
                 "phase": args.phase,
+                "k_folds": args.k_folds,
+                "fold": args.fold,
                 "epochs": args.epochs,
                 "patience": args.patience,
                 "batch_size": args.batch_size,
@@ -414,12 +449,19 @@ def run_reproduction(args: argparse.Namespace) -> dict:
     for dataset, encoder in runs:
         key = f"{dataset}_{encoder}"
         r = run_results[key]
+        if "std_val_acc" in r and "std_val_dice" in r:
+            acc_str = f"{100.0 * r['mean_val_acc']:.2f} +/- {100.0 * r['std_val_acc']:.2f}"
+            dice_str = f"{100.0 * r['mean_val_dice']:.2f} +/- {100.0 * r['std_val_dice']:.2f}"
+        else:
+            acc_str = f"{100.0 * r['final_val_acc']:.2f}"
+            dice_str = f"{100.0 * r['final_val_dice']:.2f}"
+
         table.append(
             {
                 "dataset": dataset,
                 "encoder": encoder,
-                "acc": round(100.0 * r["final_val_acc"], 2),
-                "dice": round(100.0 * r["final_val_dice"], 2),
+                "acc": acc_str,
+                "dice": dice_str,
                 "paper_acc": round(100.0 * r.get("paper_acc", 0.0), 2) if "paper_acc" in r else None,
                 "paper_dice": round(100.0 * r.get("paper_dice", 0.0), 2) if "paper_dice" in r else None,
             }
@@ -437,6 +479,8 @@ def run_reproduction(args: argparse.Namespace) -> dict:
             "datasets": datasets,
             "encoders": encoders,
             "phase": args.phase,
+            "k_folds": args.k_folds,
+            "fold": args.fold,
             "epochs": args.epochs,
             "patience": args.patience,
             "batch_size": args.batch_size,
@@ -459,11 +503,11 @@ def run_reproduction(args: argparse.Namespace) -> dict:
     atomic_json_write(summary_path, final_summary)
 
     logger.info("\nFinal metrics")
-    logger.info("Dataset  Encoder         Acc(%)  Dice(%)")
-    logger.info("-----------------------------------------")
+    logger.info("Dataset  Encoder         Acc(%)             Dice(%)")
+    logger.info("-----------------------------------------------------------------")
     for row in table:
-        logger.info("%-8s %-14s %6.2f   %6.2f", row["dataset"], row["encoder"], row["acc"], row["dice"])
-    logger.info("-----------------------------------------")
+        logger.info("%-8s %-14s %-18s %-18s", row["dataset"], row["encoder"], str(row["acc"]), str(row["dice"]))
+    logger.info("-----------------------------------------------------------------")
     logger.info("Total wall time: %s", fmt_seconds(total_sec))
     logger.info("Summary: %s", summary_path)
 

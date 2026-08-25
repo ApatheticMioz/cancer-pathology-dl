@@ -1,0 +1,38 @@
+\begin{table*}[t]
+\centering
+\caption{Experimental results across all 26 runs. V1 uses static loss weights; V2 uses GradNorm with Macenko normalization. Ablation rows test skip connections, loss balancing, GradNorm alpha, and color normalization.}
+\label{tab:results_matrix}
+
+\begin{tabular}{lcccccccccccc}
+\toprule
+\textbf{Run} & \textbf{Phase} & \textbf{Dataset} & \textbf{Encoder} & \textbf{LR} & \textbf{GradNorm} & \textbf{$\alpha$} & \textbf{Acc \%(\%)} & \textbf{Dice \%(\%)} & \textbf{Paper Acc \%(\%)} & \textbf{Paper Dice \%(\%)} & \textbf{Acc $\Delta$ \%(\%)} & \textbf{Dice $\Delta$ \%(\%)} \\
+\midrule
+PANDA/mobilenet_v2 $\times$ & v2 & PANDA & mobilenet_v2 & 1e-4 & \checkmark & 1.5 & 36.60 & 32.20 & 88.0 & 99.0 & -51.4 & -66.8 \\
+TCGA/mobilenet_v2 $\times$ & v2 & TCGA & mobilenet_v2 & 1e-4 & \checkmark & 1.5 & 94.22 & 83.47 & 90.0 & 98.0 & 4.22 & -14.53 \\
+PANDA/vgg16 (seg:cls=1:1) & v1 & PANDA & vgg16 & 1e-3 &  & 0.0 & 39.92 & 38.72 & 87.0 & 98.0 & -47.08 & -59.28 \\
+PANDA/vgg16 (seg:cls=1:10) & v1 & PANDA & vgg16 & 1e-3 &  & 0.0 & 40.59 & 38.08 & 87.0 & 98.0 & -46.41 & -59.92 \\
+PANDA/vgg16 (seg:cls=10:1) & v1 & PANDA & vgg16 & 1e-3 &  & 0.0 & 40.30 & 41.31 & 87.0 & 98.0 & -46.7 & -56.69 \\
+TCGA/vgg16 ($\alpha$=0.0) & v1 & TCGA & vgg16 & 1e-3 &  & 0.0 & 82.78 & 73.12 & 89.0 & 97.0 & -6.22 & -23.88 \\
+TCGA/mobilenet_v2 ($\alpha$=0.0) & v1 & TCGA & mobilenet_v2 & 1e-3 &  & 0.0 & 93.83 & 83.47 & 90.0 & 98.0 & 3.83 & -14.53 \\
+SIIM/vgg16 ($\alpha$=0.0) & v1 & SIIM & vgg16 & 1e-3 &  & 0.0 & 77.70 & 77.74 & 82.0 & 99.0 & -4.3 & -21.26 \\
+SIIM/mobilenet_v2 ($\alpha$=0.0) & v1 & SIIM & mobilenet_v2 & 1e-3 &  & 0.0 & 74.24 & 77.74 & 87.0 & 99.0 & -12.76 & -21.26 \\
+PANDA/vgg16 ($\alpha$=0.0) & v1 & PANDA & vgg16 & 1e-3 &  & 0.0 & 41.68 & 43.41 & 87.0 & 98.0 & -45.32 & -54.59 \\
+PANDA/mobilenet_v2 ($\alpha$=0.0) & v1 & PANDA & mobilenet_v2 & 1e-3 &  & 0.0 & 42.21 & 44.18 & 88.0 & 99.0 & -45.79 & -54.82 \\
+PANNUKE/mobilenet_v2 ($\alpha$=0.0) & v1 & PANNUKE & mobilenet_v2 & 1e-3 &  & 0.0 & 93.11 & 65.41 & --- & --- & --- & --- \\
+PANNUKE/vgg16 ($\alpha$=0.0) & v1 & PANNUKE & vgg16 & 1e-3 &  & 0.0 & 79.96 & 61.76 & --- & --- & --- & --- \\
+TCGA/mobilenet_v2 ($\alpha$=1.5) & v2 & TCGA & mobilenet_v2 & 1e-4 & \checkmark & 1.5 & 93.19 & 84.76 & 90.0 & 98.0 & 3.19 & -13.24 \\
+TCGA/vgg16 ($\alpha$=1.5) & v2 & TCGA & vgg16 & 1e-4 & \checkmark & 1.5 & 92.03 & 84.88 & 89.0 & 97.0 & 3.03 & -12.12 \\
+PANDA/vgg16 ($\alpha$=1.5) & v2 & PANDA & vgg16 & 1e-4 & \checkmark & 1.5 & 33.98 & 17.40 & 87.0 & 98.0 & -53.02 & -80.6 \\
+PANDA/mobilenet_v2 ($\alpha$=1.5) & v2 & PANDA & mobilenet_v2 & 1e-4 & \checkmark & 1.5 & 37.07 & 35.27 & 88.0 & 99.0 & -50.93 & -63.73 \\
+SIIM/mobilenet_v2 ($\alpha$=1.5) & v2 & SIIM & mobilenet_v2 & 1e-4 & \checkmark & 1.5 & 80.42 & 77.74 & 87.0 & 99.0 & -6.58 & -21.26 \\
+SIIM/vgg16 ($\alpha$=1.5) & v2 & SIIM & vgg16 & 1e-4 & \checkmark & 1.5 & 82.30 & 77.74 & 82.0 & 99.0 & 0.3 & -21.26 \\
+PANNUKE/vgg16 ($\alpha$=1.5) & v2 & PANNUKE & vgg16 & 1e-4 & \checkmark & 1.5 & 73.45 & 10.97 & --- & --- & --- & --- \\
+PANNUKE/mobilenet_v2 ($\alpha$=1.5) & v2 & PANNUKE & mobilenet_v2 & 1e-4 & \checkmark & 1.5 & 97.89 & 65.53 & --- & --- & --- & --- \\
+PANDA/vgg16 ($\alpha$=1.5) & v2 & PANDA & vgg16 & 1e-4 &  & 1.5 & 43.63 & 41.30 & 87.0 & 98.0 & -43.37 & -56.7 \\
+PANDA/mobilenet_v2 ($\alpha$=1.5) & v2 & PANDA & mobilenet_v2 & 1e-4 & \checkmark & 1.5 & 39.54 & 37.24 & 88.0 & 99.0 & -48.46 & -61.76 \\
+PANNUKE/mobilenet_v2 ($\alpha$=1.5) & v2 & PANNUKE & mobilenet_v2 & 1e-4 & \checkmark & 1.5 & 99.49 & 74.66 & --- & --- & --- & --- \\
+\bottomrule
+\end{tabular}
+
+\small{Notes: $\times$ = skip connections ablated; $\diamond$ = Macenko normalization disabled; $\alpha$ = GradNorm weighting parameter. Acc $\Delta$ and Dice $\Delta$ are differences from paper reference targets.}
+\end{table*}

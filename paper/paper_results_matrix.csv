@@ -1,0 +1,25 @@
+Run Label,Phase,Dataset,Encoder,LR,Use GradNorm,GradNorm Alpha,Skip Connections,Macenko,Seg Weight,Cls Weight,Lambda Ratio (Seg:Cls),Accuracy (%),Macro Dice (%),Paper Acc (%),Paper Dice (%),Acc Delta (%),Dice Delta (%),Status,Timestamp
+TCGA-vgg16-no-macenko,v1,TCGA,vgg16,1e-3,False,0.0,True,False,5.0,1.0,5:1,82.78,73.12,89.0,97.0,-6.22,-23.88,completed,2026-06-30T04:04:30
+TCGA-mobilenet_v2-no-macenko,v1,TCGA,mobilenet_v2,1e-3,False,0.0,True,False,5.0,1.0,5:1,93.83,83.47,90.0,98.0,3.83,-14.53,completed,2026-06-30T04:04:30
+SIIM-vgg16-no-macenko,v1,SIIM,vgg16,1e-3,False,0.0,True,False,5.0,1.0,5:1,77.7,77.74,82.0,99.0,-4.3,-21.26,completed,2026-06-30T05:00:57
+SIIM-mobilenet_v2-no-macenko,v1,SIIM,mobilenet_v2,1e-3,False,0.0,True,False,5.0,1.0,5:1,74.24,77.74,87.0,99.0,-12.76,-21.26,completed,2026-06-30T05:23:07
+PANDA-vgg16-no-macenko,v1,PANDA,vgg16,1e-3,False,0.0,True,False,5.0,1.0,5:1,41.68,43.41,87.0,98.0,-45.32,-54.59,completed,2026-06-30T11:43:09
+PANDA-mobilenet_v2-no-macenko,v1,PANDA,mobilenet_v2,1e-3,False,0.0,True,False,5.0,1.0,5:1,42.21,44.18,88.0,99.0,-45.79,-54.82,completed,2026-06-30T05:49:22
+TCGA-mobilenet_v2-alpha=1.5,v2,TCGA,mobilenet_v2,1e-4,True,1.5,True,True,5.0,1.0,5:1,93.19,84.76,90.0,98.0,3.19,-13.24,completed,2026-06-30T06:06:31
+TCGA-vgg16-alpha=1.5,v2,TCGA,vgg16,1e-4,True,1.5,True,True,5.0,1.0,5:1,92.03,84.88,89.0,97.0,3.03,-12.12,completed,2026-06-30T06:21:54
+PANDA-vgg16-alpha=1.5,v2,PANDA,vgg16,1e-4,True,1.5,True,True,5.0,1.0,5:1,33.98,17.4,87.0,98.0,-53.02,-80.6,completed,2026-06-30T06:30:07
+PANDA-mobilenet_v2-alpha=1.5,v2,PANDA,mobilenet_v2,1e-4,True,1.5,True,True,5.0,1.0,5:1,37.07,35.27,88.0,99.0,-50.93,-63.73,completed,2026-06-30T06:36:53
+SIIM-mobilenet_v2-alpha=1.5,v2,SIIM,mobilenet_v2,1e-4,True,1.5,True,True,5.0,1.0,5:1,80.42,77.74,87.0,99.0,-6.58,-21.26,completed,2026-06-30T06:57:56
+SIIM-vgg16-alpha=1.5,v2,SIIM,vgg16,1e-4,True,1.5,True,True,5.0,1.0,5:1,82.3,77.74,82.0,99.0,0.3,-21.26,completed,2026-06-30T07:07:50
+PANNUKE-mobilenet_v2-no-macenko,v1,PANNUKE,mobilenet_v2,1e-3,False,0.0,True,False,5.0,1.0,5:1,93.11,65.41,,,,,completed,2026-06-30T07:50:47
+PANNUKE-vgg16-alpha=1.5,v2,PANNUKE,vgg16,1e-4,True,1.5,True,True,5.0,1.0,5:1,73.45,10.97,,,,,completed,2026-06-30T08:21:19
+PANNUKE-vgg16-no-macenko,v1,PANNUKE,vgg16,1e-3,False,0.0,True,False,5.0,1.0,5:1,79.96,61.76,,,,,completed,2026-06-30T08:35:16
+PANNUKE-mobilenet_v2-alpha=1.5,v2,PANNUKE,mobilenet_v2,1e-4,True,1.5,True,True,5.0,1.0,5:1,97.89,65.53,,,,,completed,2026-06-30T08:48:04
+PANDA-vgg16-no-macenko-alpha=1.5,v2,PANDA,vgg16,1e-4,False,1.5,True,False,5.0,1.0,5:1,43.63,41.3,87.0,98.0,-43.37,-56.7,completed,2026-06-30T09:51:41
+PANDA-vgg16-no-macenko-lambda=1:1,v1,PANDA,vgg16,1e-3,False,0.0,True,False,1.0,1.0,1:1,39.92,38.72,87.0,98.0,-47.08,-59.28,completed,2026-06-30T10:42:07
+PANDA-vgg16-no-macenko-lambda=1:10,v1,PANDA,vgg16,1e-3,False,0.0,True,False,1.0,10.0,1:10,40.59,38.08,87.0,98.0,-46.41,-59.92,completed,2026-06-30T11:32:10
+PANDA-vgg16-no-macenko-lambda=10:1,v1,PANDA,vgg16,1e-3,False,0.0,True,False,10.0,1.0,10:1,40.3,41.31,87.0,98.0,-46.7,-56.69,completed,2026-06-30T11:49:20
+TCGA-mobilenet_v2-no-skip-alpha=1.5,v2,TCGA,mobilenet_v2,1e-4,True,1.5,False,True,5.0,1.0,5:1,94.22,83.47,90.0,98.0,4.22,-14.53,completed,2026-06-30T12:10:39
+PANDA-mobilenet_v2-no-macenko-alpha=1.5,v2,PANDA,mobilenet_v2,1e-4,True,1.5,True,False,5.0,1.0,5:1,39.54,37.24,88.0,99.0,-48.46,-61.76,completed,2026-06-30T12:14:02
+PANNUKE-mobilenet_v2-no-macenko-alpha=1.5,v2,PANNUKE,mobilenet_v2,1e-4,True,1.5,True,False,5.0,1.0,5:1,99.49,74.66,,,,,completed,2026-06-30T12:35:49
+PANDA-mobilenet_v2-no-skip-alpha=1.5,v2,PANDA,mobilenet_v2,1e-4,True,1.5,False,True,5.0,1.0,5:1,36.6,32.2,88.0,99.0,-51.4,-66.8,completed,2026-06-30T12:39:02
