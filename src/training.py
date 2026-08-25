@@ -289,16 +289,22 @@ def train_single_run(
     effective_workers, prefetch_factor, persistent_workers = _initial_loader_tuning(
         dataset, int(getattr(args, "num_workers", -1)), available_ram_gb, cpu_budget
     )
-    if use_unc_paths and effective_workers > 0 and not REPRO_ALLOW_UNC_WORKERS:
-        logger.info("Detected UNC/WSL dataset paths on Windows; forcing num_workers=0")
+    if smoke_test:
         effective_workers = 0
-    elif use_unc_paths and effective_workers > 0 and REPRO_ALLOW_UNC_WORKERS:
-        logger.info("UNC worker override enabled; using num_workers=%d", effective_workers)
-    if effective_workers == 0:
         prefetch_factor = 0
         persistent_workers = False
+        train_cache_size = 0
+    else:
+        if use_unc_paths and effective_workers > 0 and not REPRO_ALLOW_UNC_WORKERS:
+            logger.info("Detected UNC/WSL dataset paths on Windows; forcing num_workers=0")
+            effective_workers = 0
+        elif use_unc_paths and effective_workers > 0 and REPRO_ALLOW_UNC_WORKERS:
+            logger.info("UNC worker override enabled; using num_workers=%d", effective_workers)
+        if effective_workers == 0:
+            prefetch_factor = 0
+            persistent_workers = False
 
-    train_cache_size = _select_cache_size(dataset, requested_cache, available_ram_gb, effective_workers, REPRO_ALLOW_BIG_CACHE)
+        train_cache_size = _select_cache_size(dataset, requested_cache, available_ram_gb, effective_workers, REPRO_ALLOW_BIG_CACHE)
 
     while batch_size >= 2:
         attempt += 1
