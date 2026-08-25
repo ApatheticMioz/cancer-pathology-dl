@@ -10,7 +10,7 @@
 
 ## 1. Introduction & Theoretical Context
 
-Deep multi-task learning (MTL) has emerged as a prominent paradigm in biomedical computer vision. By sharing representations across closely related diagnostic objectives—such as pixel-level semantic segmentation of neoplastic tissue and slide-level disease grading—MTL aims to regularize feature extractors, improve data efficiency, and provide joint diagnostic predictions (Caruana, 1997; Ruder, 2017).
+Deep multi-task learning (MTL)—simultaneously predicting whole-slide/patient-level diagnostic categories and dense pixel-wise pathology masks—has emerged as a prominent paradigm in biomedical computer vision. By sharing representations across closely related diagnostic objectives—such as pixel-level semantic segmentation of neoplastic tissue and slide-level disease grading—MTL aims to regularize feature extractors, improve data efficiency, and provide joint diagnostic predictions (Caruana, 1997; Ruder, 2017).
 
 Recently, Rhanoui et al. (2025, *Onco*) published an empirical study claiming near-perfect diagnostic performance across multiple clinical imaging modalities using a standard hard-parameter sharing U-Net backbone (VGG16 and MobileNetV2 encoders). Specifically, they reported:
 - **PANDA Prostate Biopsies**: 87.0–88.0% classification accuracy and 98.0–99.0% segmentation Dice.
@@ -31,11 +31,15 @@ This document systematically synthesizes the peer-reviewed literature across sev
 ### Theoretical Formulation
 Histopathological whole-slide images (WSIs) or biopsy series are typically subdivided into hundreds or thousands of tiles/patches due to gigapixel dimensions. Let a clinical cohort consist of $K$ distinct patients:
 
-$$\mathcal{D} = \bigcup_{k=1}^K \mathcal{P}_k, \quad \text{where } \mathcal{P}_k = \{(x_{k,1}, y_{k,1}), (x_{k,2}, y_{k,2}), \dots, (x_{k, M_k}, y_{k, M_k})\}$$
+$$
+\mathcal{D} = \bigcup_{k=1}^K \mathcal{P}_k, \quad \text{where } \mathcal{P}_k = \{(x_{k,1}, y_{k,1}), (x_{k,2}, y_{k,2}), \dots, (x_{k, M_k}, y_{k, M_k})\}
+$$
 
 When standard sample-level partitioning (e.g., `train_test_split` or random k-fold cross-validation) is applied directly to the extracted tile pool without grouping by patient identity:
 
-$$\mathcal{P}_{\text{train}} \cap \mathcal{P}_{\text{test}} \neq \emptyset$$
+$$
+\mathcal{P}_{\text{train}} \cap \mathcal{P}_{\text{test}} \neq \emptyset
+$$
 
 Under this naive split, the training and test sets contain adjacent or overlapping tiles from the exact same patient slide. Because slides from the same patient share identical:
 - Histological preparation artifacts (fixation shrinkage, knife marks, air bubbles)
@@ -45,7 +49,7 @@ Under this naive split, the training and test sets contain adjacent or overlappi
 
 The neural network exploits these non-pathological, slide-specific signatures as **shortcuts** to achieve near-zero empirical error on test tiles without learning generalizable neoplastic morphology (Geirhos et al., 2020; DeGrave et al., 2021).
 
-```
+```text
 Random Patch Partitioning (Flawed — Rhanoui et al. 2025):
 Patient 1: [Tile 1 (Train)]  [Tile 2 (Test)]  [Tile 3 (Train)]  ==> 98–99% Dice (Overfitted Memorization)
 
@@ -67,25 +71,33 @@ Patient 2: [Tile 1 (Test)]   [Tile 2 (Test)]   [Tile 3 (Test)]   ==> 35–44% Di
 ### Mathematical Breakdown
 In semantic segmentation, the Sørensen–Dice Coefficient (DSC) between ground-truth mask $Y \in \{0, 1\}^{H \times W}$ and predicted binary mask $\hat{Y} \in \{0, 1\}^{H \times W}$ is defined as:
 
-$$\text{Dice}(Y, \hat{Y}) = \frac{2 |Y \cap \hat{Y}|}{|Y| + |\hat{Y}| + \epsilon}$$
+$$
+\text{Dice}(Y, \hat{Y}) = \frac{2 |Y \cap \hat{Y}|}{|Y| + |\hat{Y}| + \epsilon}
+$$
 
 In medical datasets with sparse or localized pathologies (e.g., pneumothorax in SIIM-ACR radiographs or non-malignant background tiles in TCGA/PANDA), a significant proportion of samples contain **no pathological lesion** ($|Y| = 0$).
 
 When the model correctly predicts no foreground ($|\hat{Y}| = 0$), the standard convention or default floating-point epsilon calculation yields:
 
-$$\text{Dice}(\emptyset, \emptyset) = 1.0$$
+$$
+\text{Dice}(\emptyset, \emptyset) = 1.0
+$$
 
 When aggregating macro-averaged Dice across an evaluation set $\mathcal{D}_{\text{eval}}$ where fraction $\rho \in [0, 1]$ of samples are completely negative:
 
-$$\text{Dice}_{\text{macro}} = (1 - \rho) \cdot \overline{\text{Dice}}_{\text{foreground}} + \rho \cdot 1.0$$
+$$
+\text{Dice}_{\text{macro}} = (1 - \rho) \cdot \overline{\text{Dice}}_{\text{foreground}} + \rho \cdot 1.0
+$$
 
 In the SIIM pneumothorax dataset, approximately 77.7% of radiographs in the test distribution are non-pneumothorax ($\rho \approx 0.777$). A naive baseline predicting an all-zero mask ($\hat{Y} = \mathbf{0}$) for every test image automatically achieves:
 
-$$\text{Dice}_{\text{macro}} = (1 - 0.777) \cdot 0.0 + 0.777 \cdot 1.0 = 77.74\%$$
+$$
+\text{Dice}_{\text{macro}} = (1 - 0.777) \cdot 0.0 + 0.777 \cdot 1.0 = 77.74\%
+$$
 
 If a model detects only a fraction of true lesions, the 77.7% empty-mask floor artificially compresses the dynamic range, allowing poorly segmenting models to report headline Dice scores between 80% and 99%.
 
-```
+```text
 ┌────────────────────────────────────────────────────────────────────────┐
 │ SIIM Empty-Mask Dice Baseline:                                         │
 │ All-Zero Dummy Prediction:  Dice = 77.74%                              │
@@ -108,20 +120,26 @@ If a model detects only a fraction of true lesions, the 77.7% empty-mask floor a
 ### Multi-Task Loss Formulation
 In a hard-parameter sharing multi-task U-Net, the shared backbone parameters $\mathbf{W}_{\text{enc}}$ receive gradients from both the dense segmentation head (parameters $\mathbf{W}_{\text{seg}}$) and the global classification head (parameters $\mathbf{W}_{\text{cls}}$):
 
-$$\mathcal{L}_{\text{total}}(\mathbf{W}) = \lambda_{\text{seg}} \mathcal{L}_{\text{seg}}(\mathbf{W}_{\text{enc}}, \mathbf{W}_{\text{seg}}) + \lambda_{\text{cls}} \mathcal{L}_{\text{cls}}(\mathbf{W}_{\text{enc}}, \mathbf{W}_{\text{cls}})$$
+$$
+\mathcal{L}_{\text{total}}(\mathbf{W}) = \lambda_{\text{seg}} \mathcal{L}_{\text{seg}}(\mathbf{W}_{\text{enc}}, \mathbf{W}_{\text{seg}}) + \lambda_{\text{cls}} \mathcal{L}_{\text{cls}}(\mathbf{W}_{\text{enc}}, \mathbf{W}_{\text{cls}})
+$$
 
 The gradient with respect to shared encoder parameters is:
 
-$$\mathbf{g}_{\text{shared}} = \lambda_{\text{seg}} \nabla_{\mathbf{W}_{\text{enc}}} \mathcal{L}_{\text{seg}} + \lambda_{\text{cls}} \nabla_{\mathbf{W}_{\text{enc}}} \mathcal{L}_{\text{cls}} = \lambda_{\text{seg}} \mathbf{g}_{\text{seg}} + \lambda_{\text{cls}} \mathbf{g}_{\text{cls}}$$
+$$
+\mathbf{g}_{\text{shared}} = \lambda_{\text{seg}} \nabla_{\mathbf{W}_{\text{enc}}} \mathcal{L}_{\text{seg}} + \lambda_{\text{cls}} \nabla_{\mathbf{W}_{\text{enc}}} \mathcal{L}_{\text{cls}} = \lambda_{\text{seg}} \mathbf{g}_{\text{seg}} + \lambda_{\text{cls}} \mathbf{g}_{\text{cls}}
+$$
 
 ### Gradient Conflict & Negative Transfer
 When the directional inner product between task gradients is negative:
 
-$$\langle \mathbf{g}_{\text{seg}}, \mathbf{g}_{\text{cls}} \rangle < 0$$
+$$
+\langle \mathbf{g}_{\text{seg}}, \mathbf{g}_{\text{cls}} \rangle < 0
+$$
 
 The objectives compete directly for shared parameter updates. In unconstrained gradient descent, the task with larger gradient magnitude $\|\mathbf{g}\|_2$ dominates updates, driving the shared representations toward a subspace suboptimal for the secondary task (**negative transfer**; Sener & Koltun, 2018; Yu et al., 2020).
 
-```
+```text
 Gradient Conflict in Shared Parameters:
            g_seg (Segmentation)
              ▲
@@ -134,11 +152,15 @@ Gradient Conflict in Shared Parameters:
 ### Dynamic Gradient Balancing (GradNorm)
 To mitigate task gradient imbalance, Chen et al. (2018) introduced GradNorm. Let $L_i(t)$ be the loss for task $i \in \{\text{seg}, \text{cls}\}$ at training step $t$, and let the loss ratio be:
 
-$$\tilde{L}_i(t) = \frac{L_i(t)}{L_i(0)}, \quad r_i(t) = \frac{\tilde{L}_i(t)}{\mathbb{E}_{\tau}[\tilde{L}_{\tau}(t)]}$$
+$$
+\tilde{L}_i(t) = \frac{L_i(t)}{L_i(0)}, \quad r_i(t) = \frac{\tilde{L}_i(t)}{\mathbb{E}_{\tau}[\tilde{L}_{\tau}(t)]}
+$$
 
 GradNorm adjusts task weights $w_i(t)$ dynamically such that the gradient norms $G_W^{(i)}(t) = \|\nabla_{W_{\text{last}}} w_i(t) L_i(t)\|_2$ match target values proportional to relative inverse training speeds:
 
-$$\mathcal{L}_{\text{grad}}(w_1, w_2; t) = \sum_{i \in \{\text{seg}, \text{cls}\}} \left| G_W^{(i)}(t) - \overline{G}_W(t) \cdot [r_i(t)]^\alpha \right|$$
+$$
+\mathcal{L}_{\text{grad}}(w_1, w_2; t) = \sum_{i \in \{\text{seg}, \text{cls}\}} \left| G_W^{(i)}(t) - \overline{G}_W(t) \cdot [r_i(t)]^\alpha \right|
+$$
 
 where $\alpha$ is a hyperparameter governing the strength of gradient balance restoration.
 
@@ -155,16 +177,20 @@ where $\alpha$ is a hyperparameter governing the strength of gradient balance re
 ### Macenko Optical Density Decomposition
 Histopathological H&E sections exhibit significant color variability due to slide preparation protocols. Macenko et al. (2009) proposed converting RGB images into optical density (OD) space:
 
-$$\mathbf{OD} = -\log_{10}\left(\frac{\mathbf{I} + 1}{255}\right) = \mathbf{V} \cdot \mathbf{C}$$
+$$
+\mathbf{OD} = -\log_{10}\left(\frac{\mathbf{I} + 1}{255}\right) = \mathbf{V} \cdot \mathbf{C}
+$$
 
-where $\mathbf{V} \in \mathbb{R}^{3 \times 2}$ represents the stain vector matrix (Hematoxylin and Eosin dye absorption vectors in OD space) and $\mathbf{C} \in \mathbb{R}^{2 \times (HW)}$ represents stain concentrations. By projecting onto the 2D singular value plane and finding robust angular percentiles (e.g., 1st and 99th percentiles), the image is normalized to a canonical reference slide.
+where $\mathbf{V} \in \mathbb{R}^{3 \times 2}$ represents the stain vector matrix (Hematoxylin and Eosin dye absorption vectors in OD space) and $\mathbf{C} \in \mathbb{R}^{2 \times (HW)}$ represents stain concentrations. By projecting onto the 2D singular value plane and finding robust angular percentiles (e.g., 1st and 99th percentiles), the image is normalized to a canonical reference slide:
 
-$$\mathbf{I}_{\text{norm}} = 255 \cdot 10^{-\mathbf{V}_{\text{target}} \cdot \mathbf{C}_{\text{norm}}}$$
+$$
+\mathbf{I}_{\text{norm}} = 255 \cdot 10^{-\mathbf{V}_{\text{target}} \cdot \mathbf{C}_{\text{norm}}}
+$$
 
 ### Architectural Disparity: VGG16 vs. MobileNetV2
 In our empirical evaluation, applying Macenko normalization combined with GradNorm resulted in **catastrophic representation collapse for VGG16** (dropping to 10.97% Dice on PanNuke and 17.40% on PANDA), whereas MobileNetV2 maintained stability.
 
-```
+```text
 Architectural Comparison under Multi-Task Stresses:
 ┌───────────────────────────────────────┬──────────────────────────────────────┐
 │ VGG16 (Simonyan & Zisserman, 2014)    │ MobileNetV2 (Sandler et al., 2018)   │
@@ -209,18 +235,28 @@ Clinical deployment of medical deep learning models requires well-calibrated con
 ### Expected Calibration Error (ECE)
 Let predictions be partitioned into $M$ equally spaced confidence bins $B_m \subset (0, 1]$. The Expected Calibration Error (Guo et al., 2017) is defined as:
 
-$$\text{ECE} = \sum_{m=1}^M \frac{|B_m|}{N} \left| \text{acc}(B_m) - \text{conf}(B_m) \right|$$
+$$
+\text{ECE} = \sum_{m=1}^M \frac{|B_m|}{N} \left| \text{acc}(B_m) - \text{conf}(B_m) \right|
+$$
 
-where $\text{acc}(B_m) = \frac{1}{|B_m|} \sum_{i \in B_m} \mathbf{1}(\hat{y}_i = y_i)$ and $\text{conf}(B_m) = \frac{1}{|B_m|} \sum_{i \in B_m} \hat{p}_i$.
+where:
+
+$$
+\text{acc}(B_m) = \frac{1}{|B_m|} \sum_{i \in B_m} \mathbf{1}(\hat{y}_i = y_i), \quad \text{conf}(B_m) = \frac{1}{|B_m|} \sum_{i \in B_m} \hat{p}_i
+$$
 
 ### Brier Score & Matthews Correlation Coefficient (MCC)
 The multi-class Brier score (Brier, 1950) quantifies the mean squared probability error:
 
-$$\text{BS} = \frac{1}{N} \sum_{i=1}^N \sum_{k=1}^K (\hat{p}_{i,k} - y_{i,k})^2$$
+$$
+\text{BS} = \frac{1}{N} \sum_{i=1}^N \sum_{k=1}^K (\hat{p}_{i,k} - y_{i,k})^2
+$$
 
 For imbalanced clinical cohorts, Matthews Correlation Coefficient (MCC; Chicco & Jurman, 2020) provides an invariant measure of classification quality:
 
-$$\text{MCC} = \frac{\text{TP} \times \text{TN} - \text{FP} \times \text{FN}}{\sqrt{(\text{TP}+\text{FP})(\text{TP}+\text{FN})(\text{TN}+\text{FP})(\text{TN}+\text{FN})}}$$
+$$
+\text{MCC} = \frac{\text{TP} \times \text{TN} - \text{FP} \times \text{FN}}{\sqrt{(\text{TP}+\text{FP})(\text{TP}+\text{FN})(\text{TN}+\text{FP})(\text{TN}+\text{FN})}}
+$$
 
 ### Patient-Clustered Bootstrap Confidence Intervals
 To compute non-parametric 95% confidence intervals without violating independence assumptions across multiple tiles per patient:
