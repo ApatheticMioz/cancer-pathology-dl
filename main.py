@@ -307,6 +307,11 @@ def run_reproduction(args: argparse.Namespace) -> dict:
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
     torch.set_float32_matmul_precision("high")
+    try:
+        torch.set_num_threads(2)
+        torch.set_num_interop_threads(1)
+    except Exception:
+        pass
 
     # CuDNN benchmarking: input sizes per dataset are fixed, so CuDNN can profile
     # and select the fastest convolution algorithms.
