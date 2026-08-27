@@ -1,0 +1,185 @@
+\documentclass[runningheads]{llncs}
+
+\usepackage{lmodern}
+\usepackage[T1]{fontenc}
+\usepackage{graphicx}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage[protrusion=true,expansion=false]{microtype}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{tabularx}
+\usepackage{subcaption}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,      
+    urlcolor=cyan,
+    citecolor=blue,
+}
+
+\begin{document}
+
+\title{On the Fragility of Multi-Task U-Nets in Computational Pathology: Empirical Replication, Metric Artifacts, and Task Interference}
+\titlerunning{On the Fragility of Multi-Task U-Nets in Computational Pathology}
+
+\author{Muhammad Abdullah Ali\inst{1}\thanks{Corresponding author: \email{i232523@isb.nu.edu.pk}} \and
+Muhammad Ibrahim Kiani\inst{1} \and
+Muhammad Abdullah Aamir\inst{1}}
+\authorrunning{M. A. Ali et al.}
+\institute{Department of Data Science, National University of Computer and Emerging Sciences (FAST-NUCES), Islamabad, Pakistan\\
+\email{\{i232523, i232536, i232538\}@isb.nu.edu.pk}}
+
+\maketitle
+
+\begin{abstract}
+Simultaneous classification and segmentation via hard-parameter-sharing U-Nets represents an appealing paradigm for computational pathology. Recently, high classification accuracies ($86\%-90\%$) and near-perfect segmentation Dice scores ($95\%-99\%$) were reported across diverse medical imaging modalities using standard convolutional backbones and static loss weighting. In this work, we conduct a comprehensive, 26-experiment replication and methodological audit across four medical datasets: TCGA Breast Pathology, PANDA Prostate Biopsies, SIIM-ACR Pneumothorax, and the 19-tissue PanNuke benchmark. Under strict patient-level data isolation (\texttt{GroupKFold}) and standard non-empty foreground Dice evaluation, we demonstrate that the published claims are methodologically incompatible with standard metric formulations and clinically unfeasible under patient isolation. Specifically, on fine-grained 6-class prostate cancer grading (PANDA), empirical top-1 accuracy spans $30.89\%-46.15\%$ (with standard baselines peaking at $46.15\%$) and Dice spans $28.94\%-44.34\%$ across all 12 evaluated PANDA configurations (vs $88.0\%$ and $99.0\%$ claimed). We identify three systemic root causes: (1) background-Dice inflation artifacts on empty masks, (2) patient-level data leakage, and (3) multi-task gradient starvation under static loss weights. Furthermore, we evaluate dynamic gradient balancing (\textsc{GradNorm}), color deconvolution, and skip-connection ablations with matched configurations, demonstrating that while coarse macro-lesions tolerate bottleneck representations, fine histopathological micro-structures exhibit acute cross-task interference. We provide a rigorous methodological framework and benchmark to prevent metric artifacts in future multi-task pathology studies.
+
+\keywords{Computational Pathology \and Multi-Task Learning \and U-Net \and Reproducibility \and Metric Artifacts \and GradNorm.}
+\end{abstract}
+
+\section{Introduction}
+Deep learning systems in digital pathology and radiology are increasingly tasked with multi-faceted clinical reasoning. Simultaneous prediction of global slide- or tile-level diagnostic categories (classification) alongside precise lesion delineation (segmentation) is clinically desirable~\cite{litjens2017survey,campanella2019clinical}. Hard parameter sharing via an encoder--decoder backbone (e.g., U-Net~\cite{ronneberger2015u} with dual prediction heads) offers computational efficiency and the theoretical promise of regularized, synergistic latent representations.
+
+Recently, Rhanoui et al.~\cite{rhanoui2025multitask} claimed that a standard U-Net with lightweight encoders (VGG16~\cite{simonyan2014very} and MobileNetV2~\cite{sandler2018mobilenetv2}) trained with static loss weights ($\lambda_{seg}=5.0, \lambda_{cls}=1.0$) and a high learning rate ($\eta=10^{-3}$) simultaneously solves both classification and segmentation across four distinct medical modalities (Brain MRI, Skin Dermoscopy, Prostate Histopathology, and Chest X-Ray), reporting $86\%-90\%$ classification accuracy and $95\%-99\%$ Dice similarity coefficients.
+
+In this paper, we report the results of an exhaustive 26-run replication campaign and methodological teardown. Our findings demonstrate that:
+\begin{enumerate}
+    \item \textbf{Empirical Irreproducibility:} When evaluated with strict patient/biopsy-level isolation (\texttt{GroupKFold}), multi-class grading on PANDA prostate biopsies collapses from the claimed $88.0\%$ accuracy down to an empirical range of $30.89\%-46.15\%$, and Dice from $99.0\%$ to $28.94\%-44.34\%$.
+    \item \textbf{The Background-Dice Metric Artifact:} Near-perfect ($99\%$) Dice metrics in small-lesion and sparse-mask datasets (such as SIIM-ACR pneumothorax) are artifacts of evaluating Dice over true-negative background slices ($|Y|=|\hat{Y}|=0$) or including background pixels, which trivially yields $\text{Dice} \equiv 1.0$.
+    \item \textbf{Controlled Multi-Task \& Ablation Analysis:} Through strictly matched ablations (including loss-ratio sweeps $\lambda_{seg}:\lambda_{cls} \in [1:10, 10:1]$, isolated \textsc{GradNorm}~\cite{chen2018gradnorm} steps, and skip ablations), we map the precise trade-off boundaries where multi-task gradients conflict.
+\end{enumerate}
+
+To facilitate complete reproducibility, all training scripts, raw JSON summaries for all 26 runs, evaluation checkpoints, and generated figures are publicly available at \url{https://github.com/ApatheticMioz/cancer-pathology-dl}.
+
+\section{Multi-Task Formulation \& Evaluation Metrics}
+
+\subsection{Architectural Formulation}
+Let $\mathbf{x} \in \mathbb{R}^{H \times W \times C}$ denote an input pathology image tile. A shared convolutional backbone $f_\theta(\mathbf{x})$ produces a latent representation $\mathbf{z} \in \mathbb{R}^{h \times w \times d}$. The classification branch applies global average pooling followed by a linear projection:
+\begin{equation}
+    \hat{\mathbf{y}}_{cls} = \text{Softmax}(\mathbf{W}_{cls} \cdot \text{GAP}(\mathbf{z}) + \mathbf{b}_{cls}) \in \mathbb{R}^K,
+\end{equation}
+where $K$ is the number of diagnostic classes. The segmentation branch passes $\mathbf{z}$ through a sequence of transposed convolutions with skip connections from encoder stages:
+\begin{equation}
+    \hat{\mathbf{y}}_{seg} = \sigma(\text{Dec}_\phi(\mathbf{z}, \{\mathbf{s}_l\}_{l=1}^L)) \in [0, 1]^{H \times W \times M},
+\end{equation}
+where $M$ denotes the number of segmentation target channels and $\sigma(\cdot)$ is the sigmoid activation.
+
+The joint multi-task training objective is defined as:
+\begin{equation}
+    \mathcal{L}_{total}(\theta, \phi, \mathbf{W}_{cls}) = \lambda_{cls} \mathcal{L}_{CE}(\mathbf{y}_{cls}, \hat{\mathbf{y}}_{cls}) + \lambda_{seg} \mathcal{L}_{seg}(\mathbf{y}_{seg}, \hat{\mathbf{y}}_{seg}),
+\end{equation}
+where $\mathcal{L}_{seg} = \mathcal{L}_{BCE} + \mathcal{L}_{Dice}$.
+
+\subsection{The Empty-Mask Dice Metric Artifact}
+The standard S{\o}rensen--Dice coefficient between binary ground truth $Y \in \{0, 1\}^{H \times W}$ and prediction $\hat{Y} \in \{0, 1\}^{H \times W}$ is:
+\begin{equation}
+    \text{Dice}(Y, \hat{Y}) = \frac{2 |Y \cap \hat{Y}|}{|Y| + |\hat{Y}| + \epsilon}.
+\end{equation}
+A critical methodological divergence occurs when an image tile contains no target lesion ($|Y| = 0$). In standard biomedical benchmarking (e.g., Metrics Reloaded~\cite{reinke2024metrics}), two conventions exist:
+\begin{itemize}
+    \item \textbf{Foreground-Only Evaluation:} Compute Dice strictly over non-empty target slices ($|Y| > 0$).
+    \item \textbf{Zero-Score Penalty:} Assign $\text{Dice} = 1.0$ if $|Y| = 0 \land |\hat{Y}| = 0$, but $\text{Dice} = 0.0$ if $|\hat{Y}| > 0$.
+\end{itemize}
+When a model naively predicts near-zero masks on a dataset with $60\%-80\%$ negative slices, assigning $\text{Dice}=1.0$ artificially inflates the aggregate mean Dice to $>95\%$, masking total segmentation collapse.
+
+\subsection{Adaptive Gradient Balancing via GradNorm}
+To decouple the empirical interaction between $\lambda_{seg}$ and $\lambda_{cls}$, we implement \textsc{GradNorm}~\cite{chen2018gradnorm}. Let $G_W^{(i)}(t) = \|\nabla_{W} w_i(t) \mathcal{L}_i(t)\|_2$ be the gradient norm with respect to the shared bottleneck layer weights $W$ (the final convolutional block of the shared backbone). At each training mini-batch step, \textsc{GradNorm} dynamically adjusts the task weights $w_i(t)$ by minimizing:
+\begin{equation}
+    \mathcal{L}_{grad}(w_1, w_2; t) = \sum_{i \in \{cls, seg\}} \left| G_W^{(i)}(t) - \bar{G}_W(t) \cdot [r_i(t)]^\alpha \right|,
+\end{equation}
+where $r_i(t) = \tilde{\mathcal{L}}_i(t) / \mathbb{E}[\tilde{\mathcal{L}}_i(t)]$ is the relative inverse training rate, $\bar{G}_W(t)$ is the mean gradient norm across tasks, and $\alpha$ is the gradient asymmetry coefficient (set to $\alpha=1.5$ in standard configurations, with step-wise updates and renorming $\sum w_i(t) = T$).
+
+\section{The 26-Run Empirical Reproduction Campaign}
+
+\subsection{Datasets and Experimental Protocol}
+We evaluated four benchmark datasets encompassing digital pathology and medical imaging:
+\begin{enumerate}
+    \item \textbf{TCGA Breast / LGG Pathology:} 2-class macro-tumor classification and segmentation ($N=3,929$ tiles).
+    \item \textbf{PANDA Prostate Biopsies:} 6-class ISUP Gleason grading (ISUP 0--5) and epithelial gland segmentation ($N=10,616$ tiles, with patient-level biopsy isolation via \texttt{GroupKFold}).
+    \item \textbf{SIIM-ACR Pneumothorax:} Binary chest radiography detection and pleural boundary segmentation ($N=12,047$ images).
+    \item \textbf{PanNuke Crucible:} 19-tissue multi-organ histology benchmark across 5 cell nuclei classes ($N=7,901$ patches).
+\end{enumerate}
+
+All models were trained with PyTorch using fixed random seeds, Adam optimizer (weight decay $10^{-4}$), and cosine annealing schedules. In Phase~v1 (Runs 01--06), models replicate the original static setup ($\eta=10^{-3}$, $\lambda_{seg}:\lambda_{cls}=5:1$, raw inputs). In Phase~v2 (Runs 07--12), models incorporate dynamic \textsc{GradNorm} ($\alpha=1.5$, $\eta=10^{-4}$) and Macenko stain normalization~\cite{macenko2009method}. Groups 3--5 (Runs 13--26) systematically explore multi-organ generalizability, hyperparameter isolation, and architectural skip ablations.
+
+\begin{table*}[t]
+\centering
+\caption{Comprehensive 26-run experimental results matrix organized across all 5 evaluation groups. V1 corresponds to the original static setup ($\eta=10^{-3}$, $\lambda_{seg}:\lambda_{cls}=5:1$); V2 incorporates GradNorm ($\alpha=1.5, \eta=10^{-4}$) with Macenko stain normalization. Markers: $\times$ denotes skip connections ablated; $\diamond$ denotes raw input without Macenko normalization; Acc $\Delta$ and Dice $\Delta$ denote deltas relative to published paper claims.}
+\label{tab:results_matrix}
+\resizebox{\textwidth}{!}{
+\begin{tabular}{c l c c c c c c c c c c c}
+\toprule
+\textbf{\#} & \textbf{Configuration / Run Identifier} & \textbf{Phase} & \textbf{Dataset} & \textbf{Encoder} & \textbf{LR ($\eta$)} & \textbf{GradNorm} & \textbf{Val Acc (\%)} & \textbf{Val Dice (\%)} & \textbf{Paper Acc} & \textbf{Paper Dice} & \textbf{Acc $\Delta$} & \textbf{Dice $\Delta$} \\
+\midrule
+\multicolumn{13}{l}{\textit{\textbf{Group 1: Baseline Reproductions (V1: Static 5:1, $\eta=10^{-3}$, Raw Input)}}} \\
+01 & TCGA/vgg16 (Naked Baseline) & v1 & TCGA & VGG16 & 1e-3 & --- & 88.82 & 76.02 & 89.0\% & 97.0\% & -0.18\% & -20.98\% \\
+02 & TCGA/mobilenet\_v2 (Naked Baseline) & v1 & TCGA & MobileNetV2 & 1e-3 & --- & 94.60 & 87.56 & 90.0\% & 98.0\% & +4.60\% & -10.44\% \\
+03 & PANDA/vgg16 (Naked Baseline) & v1 & PANDA & VGG16 & 1e-3 & --- & 45.15 & 43.30 & 87.0\% & 98.0\% & -41.85\% & -54.70\% \\
+04 & PANDA/mobilenet\_v2 (Naked Baseline) & v1 & PANDA & MobileNetV2 & 1e-3 & --- & 46.15 & 44.34 & 88.0\% & 99.0\% & -41.85\% & -54.66\% \\
+05 & SIIM/vgg16 (Naked Baseline) & v1 & SIIM & VGG16 & 1e-3 & --- & 83.19 & 77.74 & 82.0\% & 99.0\% & +1.19\% & -21.26\% \\
+06 & SIIM/mobilenet\_v2 (Naked Baseline) & v1 & SIIM & MobileNetV2 & 1e-3 & --- & 83.47 & 77.74 & 87.0\% & 99.0\% & -3.53\% & -21.26\% \\
+\midrule
+\multicolumn{13}{l}{\textit{\textbf{Group 2: Enhanced Form (V2: GradNorm $\alpha=1.5$, $\eta=10^{-4}$, Macenko Normalization)}}} \\
+07 & TCGA/vgg16 (GradNorm v2) & v2 & TCGA & VGG16 & 1e-4 & \checkmark & 92.80 & 78.30 & 89.0\% & 97.0\% & +3.80\% & -18.70\% \\
+08 & TCGA/mobilenet\_v2 (GradNorm v2) & v2 & TCGA & MobileNetV2 & 1e-4 & \checkmark & 93.32 & 84.20 & 90.0\% & 98.0\% & +3.32\% & -13.80\% \\
+09 & PANDA/vgg16 (GradNorm v2) & v2 & PANDA & VGG16 & 1e-4 & \checkmark & 30.89 & 31.59 & 87.0\% & 98.0\% & -56.11\% & -66.41\% \\
+10 & PANDA/mobilenet\_v2 (GradNorm v2) & v2 & PANDA & MobileNetV2 & 1e-4 & \checkmark & 34.70 & 31.34 & 88.0\% & 99.0\% & -53.30\% & -67.66\% \\
+11 & SIIM/vgg16 (GradNorm v2) & v2 & SIIM & VGG16 & 1e-4 & \checkmark & 81.08 & 77.74 & 82.0\% & 99.0\% & -0.92\% & -21.26\% \\
+12 & SIIM/mobilenet\_v2 (GradNorm v2) & v2 & SIIM & MobileNetV2 & 1e-4 & \checkmark & 83.00 & 77.74 & 87.0\% & 99.0\% & -4.00\% & -21.26\% \\
+\midrule
+\multicolumn{13}{l}{\textit{\textbf{Group 3: PanNuke 19-Tissue Multi-Organ Benchmark (External Control)}}} \\
+13 & PanNuke/vgg16 (Naked Baseline) & v1 & PanNuke & VGG16 & 1e-3 & --- & 98.85 & 72.48 & --- & --- & --- & --- \\
+14 & PanNuke/mobilenet\_v2 (Naked Baseline) & v1 & PanNuke & MobileNetV2 & 1e-3 & --- & 99.43 & 74.21 & --- & --- & --- & --- \\
+15 & PanNuke/vgg16 (GradNorm v2) & v2 & PanNuke & VGG16 & 1e-4 & \checkmark & 91.90 & 39.59 & --- & --- & --- & --- \\
+16 & PanNuke/mobilenet\_v2 (GradNorm v2) & v2 & PanNuke & MobileNetV2 & 1e-4 & \checkmark & 96.68 & 60.54 & --- & --- & --- & --- \\
+\midrule
+\multicolumn{13}{l}{\textit{\textbf{Group 4: Optimization Teardown (PANDA $\times$ VGG16: LR, GradNorm, and Loss Weighting)}}} \\
+17 & PANDA/vgg16 (Isolate LR, $\eta=10^{-4}$ static) & v2 & PANDA & VGG16 & 1e-4 & --- & 43.35 & 37.99 & 87.0\% & 98.0\% & -43.65\% & -60.01\% \\
+18 & PANDA/vgg16 (Isolate GradNorm, $\eta=10^{-3}$) & v1 & PANDA & VGG16 & 1e-3 & \checkmark & 42.54 & 40.84 & 87.0\% & 98.0\% & -44.46\% & -57.16\% \\
+19 & PANDA/vgg16 ($\lambda_{seg}:\lambda_{cls}=1:1$) & v1 & PANDA & VGG16 & 1e-3 & --- & 42.73 & 41.72 & 87.0\% & 98.0\% & -44.27\% & -56.28\% \\
+20 & PANDA/vgg16 ($\lambda_{seg}:\lambda_{cls}=5:1$, replicate) & v1 & PANDA & VGG16 & 1e-3 & --- & 45.39 & 44.08 & 87.0\% & 98.0\% & -41.61\% & -53.92\% \\
+21 & PANDA/vgg16 ($\lambda_{seg}:\lambda_{cls}=1:10$) & v1 & PANDA & VGG16 & 1e-3 & --- & 41.83 & 38.06 & 87.0\% & 98.0\% & -45.17\% & -59.94\% \\
+22 & PANDA/vgg16 ($\lambda_{seg}:\lambda_{cls}=10:1$) & v1 & PANDA & VGG16 & 1e-3 & --- & 44.58 & 41.52 & 87.0\% & 98.0\% & -42.42\% & -56.48\% \\
+\midrule
+\multicolumn{13}{l}{\textit{\textbf{Group 5: Ablation Matrix (Stain Normalization and Skip Connections)}}} \\
+23 & PANDA/mobilenet\_v2 $\diamond$ (No-Macenko) & v2 & PANDA & MobileNetV2 & 1e-4 & \checkmark & 40.21 & 31.57 & 88.0\% & 99.0\% & -47.79\% & -67.43\% \\
+24 & PanNuke/mobilenet\_v2 $\diamond$ (No-Macenko) & v2 & PanNuke & MobileNetV2 & 1e-4 & \checkmark & 99.36 & 73.33 & --- & --- & --- & --- \\
+25 & TCGA/mobilenet\_v2 $\times$ (No-Skips) & v2 & TCGA & MobileNetV2 & 1e-4 & \checkmark & 94.34 & 84.12 & 90.0\% & 98.0\% & +4.34\% & -13.88\% \\
+26 & PANDA/mobilenet\_v2 $\times$ (No-Skips) & v2 & PANDA & MobileNetV2 & 1e-4 & \checkmark & 35.31 & 28.94 & 88.0\% & 99.0\% & -52.69\% & -70.06\% \\
+\bottomrule
+\end{tabular}
+}
+\end{table*}
+
+\section{Discussion \& Methodological Anatomy}
+
+\subsection{The Anatomy of the PANDA Collapse}
+In Table~\ref{tab:results_matrix}, the most substantial discrepancy occurs on the PANDA prostate biopsy benchmark. The original authors reported $88.0\%$ accuracy on 6-class ISUP grading alongside a $99.0\%$ Dice score. In contrast, across all 12 PANDA configurations tested, empirical top-1 accuracy spans $30.89\%-46.15\%$, with standard baselines peaking at $46.15\%$ Acc / $44.34\%$ Dice (Run 04).
+
+This outcome is fully consistent with established clinical and machine learning benchmarks. In the international PANDA challenge ($>1,000$ participating teams)~\cite{bulten2022artificial}, top-performing multi-instance learning (MIL) algorithms on whole-slide images achieved quadratic weighted kappa scores of $0.86-0.90$, corresponding to tile-level top-1 multi-class accuracies in the $40\%-52\%$ range. Human pathologists achieve inter-observer agreement kappa of only $0.65-0.75$ on biopsy cores due to continuous histological transitions between Gleason patterns 3, 4, and 5. Claiming $88\%$ accuracy on $128 \times 128$ isolated patches with a basic 2D CNN is unfeasible without patient-level data leakage (where tiles from the same biopsy core contaminate both train and test splits).
+
+\subsection{Controlled Skip Connection Ablation}
+To evaluate the structural necessity of skip connections, we analyze strictly matched configurations:
+\begin{itemize}
+    \item \textbf{Macro-tumor structures (TCGA):} Comparing the skip-ablated MobileNetV2 (Run 25) against its matched baseline (Run 08, both at $\eta=10^{-4}$, GradNorm $\alpha=1.5$, Macenko normalized) reveals that accuracy shifts from $93.32\%$ to $94.34\%$ ($+1.02\%$) while Dice remains essentially constant at $84.12\%$ vs $84.20\%$ ($-0.08\%$). Coarse macro-tumor segmentation relies primarily on high-level semantic context adequately preserved in the bottleneck.
+    \item \textbf{Micro-glandular structures (PANDA):} Comparing the matched MobileNetV2 configurations (Run 10 baseline at $34.70\%$ Acc / $31.34\%$ Dice vs Run 26 skip-ablated at $35.31\%$ Acc / $28.94\%$ Dice) demonstrates that removing skip connections degrades fine boundary delineation ($\Delta_{\text{Dice}} = -2.40\%$), while top-1 classification accuracy remains bottlenecked by the shared representation.
+\end{itemize}
+
+\subsection{Dissecting Dynamic Gradient Balancing vs. Learning Rate}
+In Section~3, Group 4 isolates the effects of GradNorm and learning rate on PANDA $\times$ VGG16:
+\begin{itemize}
+    \item \textbf{At $\eta=10^{-3}$:} Static 5:1 weighting (Run 20) achieves $45.39\%$ Acc / $44.08\%$ Dice. Introducing GradNorm ($\alpha=1.5$, Run 18) yields $42.54\%$ Acc / $40.84\%$ Dice, isolating a modest initial penalty on the classification head ($\Delta_{\text{Acc}} = -2.85\%$).
+    \item \textbf{At $\eta=10^{-4}$:} Static weighting (Run 17) yields $43.35\%$ Acc / $37.99\%$ Dice. However, combining $\eta=10^{-4}$ with GradNorm ($\alpha=1.5$, Run 09) causes severe degradation to $30.89\%$ Acc / $31.59\%$ Dice ($\Delta_{\text{Acc}} = -12.46\%$).
+\end{itemize}
+Critically, GradNorm incurs only a modest penalty at $\eta=10^{-3}$ ($\Delta_{\text{Acc}} = -2.85\%$), but exacerbates performance collapse at $\eta=10^{-4}$ ($\Delta_{\text{Acc}} = -12.46\%$), demonstrating that learning rate scale and dynamic gradient asymmetry compound multiplicatively rather than acting independently. For highly asymmetric multi-task objectives (such as 6-class fine-grained grading coupled with dense segmentation), an aggressive asymmetry parameter ($\alpha=1.5$) heavily suppresses the classification head's gradient updates. For such tasks, dynamic gradient balancing should either utilize milder balancing coefficients ($\alpha \le 0.5$) or decoupled, task-specific projection heads.
+
+\section{Conclusion \& Recommendations}
+Through an exhaustive 26-experiment campaign, we demonstrated that hard-parameter-sharing U-Nets cannot achieve the inflated $88\%-99\%$ metrics reported in recent literature for fine-grained multi-task pathology. We trace these claims to background-Dice evaluation artifacts and patient data leakage. For future computational pathology studies, we recommend: (1) mandatory patient/biopsy-level \texttt{GroupKFold} splitting, (2) foreground-only or zero-penalty Dice reporting, and (3) validating multi-task backbones on diverse multi-organ benchmarks such as PanNuke.
+
+\bibliographystyle{splncs04}
+\bibliography{references}
+
+\end{document}
+
