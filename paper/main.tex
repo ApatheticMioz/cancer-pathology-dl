@@ -51,6 +51,8 @@ In this paper, we report the results of an exhaustive 26-run replication campaig
     \item \textbf{Controlled Multi-Task \& Ablation Analysis:} Through strictly matched ablations (including loss-ratio sweeps $\lambda_{seg}:\lambda_{cls} \in [1:10, 10:1]$, isolated \textsc{GradNorm}~\cite{chen2018gradnorm} steps, and skip ablations), we map the precise trade-off boundaries where multi-task gradients conflict.
 \end{enumerate}
 
+To facilitate complete reproducibility, all training scripts, raw JSON summaries for all 26 runs, evaluation checkpoints, and generated figures are publicly available at \url{https://github.com/ApatheticMioz/cancer-pathology-dl}.
+
 \section{Multi-Task Formulation \& Evaluation Metrics}
 
 \subsection{Architectural Formulation}
