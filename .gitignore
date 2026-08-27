@@ -98,6 +98,7 @@ Desktop.ini
 # PDFs and LaTeX build artifacts
 # ============================================================
 *.pdf
+!paper/main.pdf
 *.aux
 *.out
 *.fls
