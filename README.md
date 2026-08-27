@@ -247,15 +247,16 @@ Detailed academic review and discussion available in [`docs/literature_review_an
 
 ## 📜 Citation
 
-If you use this benchmark codebase, diagnostic methodology, or reproduction results in your research, please cite:
+If you use this benchmark codebase, diagnostic methodology, or reproduction results in your research, please cite our manuscript:
 
 ```bibtex
-@article{cancer_pathology_dl_audit2026,
-  title   = {Dissecting Multi-Task Deep Learning in Cancer Imaging: How Patient Leakage, Gradient Interference, and Stain Normalization Bias Distort Diagnostic Efficacy},
-  author  = {Computational Pathology and Medical Imaging Research Consortium},
-  journal = {Technical Monograph and Reproducibility Benchmark},
-  year    = {2026},
-  url     = {https://github.com/ApatheticMioz/cancer-pathology-dl}
+@inproceedings{ali2026fragility,
+  title     = {On the Fragility of Multi-Task U-Nets in Computational Pathology: Empirical Replication, Metric Artifacts, and Task Interference},
+  author    = {Ali, Muhammad Abdullah and Kiani, Muhammad Ibrahim and Aamir, Muhammad Abdullah},
+  booktitle = {Medical Image Computing and Computer-Assisted Intervention (MICCAI) / Medical Imaging with Deep Learning (MIDL)},
+  year      = {2026},
+  publisher = {Springer LNCS},
+  url       = {https://github.com/ApatheticMioz/cancer-pathology-dl}
 }
 ```
 
