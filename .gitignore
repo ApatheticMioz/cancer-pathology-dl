@@ -103,6 +103,9 @@ Desktop.ini
 *.fls
 *.fdb_latexmk
 *.synctex.gz
+*.bbl
+*.blg
+*.log
 
 # ============================================================
 # Image files
@@ -178,3 +181,9 @@ htmlcov/
 # Jupyter notebooks (keep only if explicitly needed)
 # ============================================================
 *.ipynb_checkpoints
+
+# ============================================================
+# LLM / Agent instructions
+# ============================================================
+CLAUDE.md
+GEMINI.md

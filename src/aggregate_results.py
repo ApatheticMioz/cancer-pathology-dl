@@ -256,6 +256,11 @@ def parse_summary_file(filepath: Path, lr: str = "") -> list[dict]:
     timestamp = data.get("timestamp", "")
     status = data.get("status", "")
 
+    stem = filepath.stem
+    parts = stem.split("_", 2)
+    run_id = parts[1] if len(parts) >= 3 and parts[0] == "summary" and parts[1].isdigit() else ""
+    run_name = parts[2] if len(parts) >= 3 and parts[0] == "summary" and parts[1].isdigit() else stem
+
     runs = data.get("runs", {})
     if not runs:
         print(f"  [WARN] No runs found in {filepath.name}", file=sys.stderr)
@@ -329,40 +334,48 @@ def parse_summary_file(filepath: Path, lr: str = "") -> list[dict]:
             "Dice Delta (%)": dice_delta_str,
             "Status": status,
             "Timestamp": timestamp,
+            "_run_id": run_id,
+            "_run_name": run_name,
         })
 
     return records
 
 
 def deduplicate_records(records: list[dict]) -> list[dict]:
-    """Keep the latest record for each unique (Phase, Dataset, Encoder, LR, ablation flags) combo.
+    """Keep the latest record for each unique run.
 
-    When the same config is run multiple times, prefer the most recent.
-    LR is included in the key to distinguish runs that differ only in learning rate
-    (e.g., isolate_lr vs lambda sweep runs).
+    Uses _run_id (if available) to preserve all 26 distinct experimental runs,
+    otherwise falls back to a complete configuration key including Use GradNorm.
     """
     seen: dict[tuple, dict] = {}
     for rec in records:
-        key = (
-            rec["Phase"],
-            rec["Dataset"],
-            rec["Encoder"],
-            rec["LR"],
-            rec["Skip Connections"],
-            rec["Macenko"],
-            rec["Seg Weight"],
-            rec["Cls Weight"],
-            rec["GradNorm Alpha"],
-        )
+        if rec.get("_run_id"):
+            key = (rec["_run_id"], rec["Dataset"], rec["Encoder"])
+        else:
+            key = (
+                rec["Phase"],
+                rec["Dataset"],
+                rec["Encoder"],
+                rec["LR"],
+                rec["Use GradNorm"],
+                rec["Skip Connections"],
+                rec["Macenko"],
+                rec["Seg Weight"],
+                rec["Cls Weight"],
+                rec["GradNorm Alpha"],
+            )
         seen[key] = rec
-    return list(seen.values())
+
+    result = list(seen.values())
+    result.sort(key=lambda r: (r.get("_run_id", "99"), r["Dataset"], r["Encoder"]))
+    return result
 
 
 def export_csv(records: list[dict], output_path: Path) -> None:
     """Write records to a CSV file."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=CSV_FIELDS)
+        writer = csv.DictWriter(f, fieldnames=CSV_FIELDS, extrasaction="ignore")
         writer.writeheader()
         for rec in records:
             writer.writerow(rec)
