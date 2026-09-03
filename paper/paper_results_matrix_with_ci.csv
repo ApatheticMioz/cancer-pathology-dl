@@ -16,7 +16,7 @@ PANNUKE-mobilenet_v2-no-macenko,v1,PANNUKE,mobilenet_v2,0.001,False,0.0,True,Fal
 PANNUKE-vgg16-alpha=1.5,v2,PANNUKE,vgg16,0.0001,True,1.5,True,True,5.0,1.0,5:1,91.9,39.59,,,,,completed,2026-08-26T14:41:52,90.52,93.28,[90.52 - 93.28]
 PANNUKE-mobilenet_v2-alpha=1.5,v2,PANNUKE,mobilenet_v2,0.0001,True,1.5,True,True,5.0,1.0,5:1,96.68,60.54,,,,,completed,2026-08-26T14:04:57,95.77,97.59,[95.77 - 97.59]
 PANDA-vgg16-no-macenko-alpha=1.5,v2,PANDA,vgg16,0.0001,False,1.5,True,False,5.0,1.0,5:1,43.35,37.99,87.0,98.0,-43.65,-60.01,completed,2026-08-26T17:00:57,41.23,45.47,[41.23 - 45.47]
-PANDA-vgg16-no-macenko,v1,PANDA,vgg16,0.001,False,0.0,True,False,5.0,1.0,5:1,42.54,40.84,87.0,98.0,-44.46,-57.16,completed,2026-08-26T16:59:18,40.43,44.65,[40.43 - 44.65]
+PANDA-vgg16-no-macenko-alpha=1.5,v1,PANDA,vgg16,0.001,True,1.5,True,False,5.0,1.0,5:1,29.04,31.43,87.0,98.0,-57.96,-66.57,completed,2026-09-03T18:47:53,27.14,31.02,[27.14 - 31.02]
 PANDA-vgg16-no-macenko-lambda=1:1,v1,PANDA,vgg16,0.001,False,0.0,True,False,1.0,1.0,1:1,42.73,41.72,87.0,98.0,-44.27,-56.28,completed,2026-08-26T16:32:58,40.62,44.84,[40.62 - 44.84]
 PANDA-vgg16-no-macenko,v1,PANDA,vgg16,0.001,False,0.0,True,False,5.0,1.0,5:1,45.39,44.08,87.0,98.0,-41.61,-53.92,completed,2026-08-26T18:10:08,43.26,47.52,[43.26 - 47.52]
 PANDA-vgg16-no-macenko-lambda=1:10,v1,PANDA,vgg16,0.001,False,0.0,True,False,1.0,10.0,1:10,41.83,38.06,87.0,98.0,-45.17,-59.94,completed,2026-08-26T18:23:38,39.72,43.94,[39.72 - 43.94]

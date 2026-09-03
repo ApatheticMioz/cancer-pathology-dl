@@ -123,6 +123,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Ablation: bypass Macenko normalization (tests domain shift impact)",
     )
     p.add_argument(
+        "--enable-gradnorm",
+        action="store_true",
+        default=False,
+        help="Explicitly enable GradNorm, overriding phase default",
+    )
+    p.add_argument(
         "--disable-gradnorm",
         action="store_true",
         default=False,
@@ -541,8 +547,13 @@ def main() -> int:
     # Apply phase-specific defaults
     apply_phase_config(args)
 
-    # --disable-gradnorm explicitly overrides the phase default
-    if args.disable_gradnorm:
+    # GradNorm CLI overrides
+    if args.enable_gradnorm:
+        args.use_gradnorm = True
+        if args.gradnorm_alpha is None or args.gradnorm_alpha == 0.0:
+            args.gradnorm_alpha = 1.5
+        logger.info("--enable-gradnorm: GradNorm explicitly enabled (phase default overridden, alpha=%g)", args.gradnorm_alpha)
+    elif args.disable_gradnorm:
         args.use_gradnorm = False
         logger.info("--disable-gradnorm: GradNorm explicitly disabled (phase default overridden)")
 

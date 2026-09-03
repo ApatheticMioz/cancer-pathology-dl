@@ -99,6 +99,8 @@ Desktop.ini
 # ============================================================
 *.pdf
 !paper/main.pdf
+!paper/fig*.pdf
+!paper/fig*.png
 *.aux
 *.out
 *.fls

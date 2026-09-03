@@ -321,7 +321,7 @@ if [ "$START_GROUP" -le 4 ] && [ "$END_GROUP" -ge 4 ]; then
     ts "GROUP 4" "=== The Optimization Teardown (6 runs) ==="
 
     wait_for_slot; launch_job 17 "g4_panda_isolate_lr"     python main.py --phase v2 --datasets panda --encoders vgg16 --no-macenko --disable-gradnorm --static-weights --num-workers 2
-    wait_for_slot; launch_job 18 "g4_panda_isolate_gn"     python main.py --phase v1 --datasets panda --encoders vgg16 --no-macenko --num-workers 2
+    wait_for_slot; launch_job 18 "g4_panda_isolate_gn"     python main.py --phase v1 --datasets panda --encoders vgg16 --no-macenko --enable-gradnorm --num-workers 2
     wait_for_slot; launch_job 19 "g4_panda_lambda_1_1"     python main.py --phase v1 --datasets panda --encoders vgg16 --no-macenko --disable-gradnorm --static-weights --lambda-seg 1  --lambda-cls 1  --compile --num-workers 2
     wait_for_slot; launch_job 20 "g4_panda_lambda_5_1"     python main.py --phase v1 --datasets panda --encoders vgg16 --no-macenko --disable-gradnorm --static-weights --lambda-seg 5  --lambda-cls 1  --compile --num-workers 2
     wait_for_slot; launch_job 21 "g4_panda_lambda_1_10"    python main.py --phase v1 --datasets panda --encoders vgg16 --no-macenko --disable-gradnorm --static-weights --lambda-seg 1  --lambda-cls 10 --compile --num-workers 2
