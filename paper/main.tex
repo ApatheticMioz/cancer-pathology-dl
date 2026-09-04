@@ -76,17 +76,17 @@ To facilitate complete reproducibility, all training scripts, raw JSON summaries
 \section{Multi-Task Formulation \& Evaluation Metrics}
 
 \subsection{Architectural Formulation}
-Let $\mathbf{x} \in \mathbb{R}^{H \times W \times C}$ denote an input image tile. A shared convolutional encoder $f_\theta(\mathbf{x})$ extracts a bottleneck latent representation $\mathbf{z} \in \mathbb{R}^{h \times w \times d}$. The classification branch applies global average pooling (GAP) followed by a linear projection:
+Let $\mathbf{x} \in \mathbb{R}^{H \times W \times C}$ denote an input image tile. A shared convolutional encoder $f_\theta(\mathbf{x})$ extracts a bottleneck latent representation $\mathbf{z} \in \mathbb{R}^{h \times w \times d}$. The classification branch applies global average pooling (GAP) followed by a two-layer multilayer perceptron (hidden width 256, dropout $0.5$):
 \begin{equation}
-    \hat{\mathbf{y}}_{cls} = \text{Softmax}(\mathbf{W}_{cls} \cdot \text{GAP}(\mathbf{z}) + \mathbf{b}_{cls}) \in \Delta^{K-1},
+    \hat{\mathbf{y}}_{cls} = \text{Softmax}\!\left(\mathbf{W}_2\,\phi\!\left(\mathbf{W}_1\,\text{GAP}(\mathbf{z}) + \mathbf{b}_1\right) + \mathbf{b}_2\right) \in \Delta^{K-1},
 \end{equation}
-where $K$ is the number of diagnostic classes and $\Delta^{K-1}$ denotes the probability simplex. The segmentation branch passes $\mathbf{z}$ through a decoder $\text{Dec}_\phi$ with lateral skip connections $\{\mathbf{s}_l\}_{l=1}^L$ from encoder stages, yielding unnormalized pixel logits $\mathbf{l}_{seg} \in \mathbb{R}^{H \times W \times M}$. For binary segmentation ($M=1$), predictions are $\hat{\mathbf{y}}_{seg} = \sigma(\mathbf{l}_{seg})$ where $\sigma(\cdot)$ is the sigmoid activation; for multi-class segmentation ($M > 1$), class probabilities are obtained via channel-wise Softmax.
+where $K$ is the number of diagnostic classes, $\Delta^{K-1}$ denotes the probability simplex, and $\phi(\cdot)$ is the ReLU nonlinearity. The segmentation branch passes $\mathbf{z}$ through a decoder $\text{Dec}_\phi$ with lateral skip connections $\{\mathbf{s}_l\}_{l=1}^L$ from encoder stages, yielding unnormalized pixel logits $\mathbf{l}_{seg} \in \mathbb{R}^{H \times W \times M}$. For binary segmentation ($M=1$), $\hat{\mathbf{y}}_{seg} = \sigma(\mathbf{l}_{seg})$ with $\sigma(\cdot)$ the sigmoid; for $M > 1$, class probabilities are obtained via channel-wise Softmax.
 
 The joint multi-task training objective is defined as:
 \begin{equation}
     \mathcal{L}_{total}(\theta, \phi, \mathbf{W}_{cls}) = \lambda_{cls} \mathcal{L}_{cls}(\mathbf{y}_{cls}, \hat{\mathbf{y}}_{cls}) + \lambda_{seg} \mathcal{L}_{seg}(\mathbf{y}_{seg}, \mathbf{l}_{seg}),
 \end{equation}
-where $\mathcal{L}_{cls}$ is categorical cross-entropy $\mathcal{L}_{CE}$. In the published study of Rhanoui et al.~\cite{rhanoui2025multitask}, the segmentation loss was stated as $\mathcal{L}_{seg} = \mathcal{L}_{BCE} + \mathcal{L}_{Dice}$. However, our codebase audit reveals that empirical training pipelines optimize solely cross-entropy objectives without non-differentiable or soft-Dice penalties:
+where $\mathcal{L}_{cls}$ is categorical cross-entropy $\mathcal{L}_{CE}$. In the published study of Rhanoui et al.~\cite{rhanoui2025multitask}, the segmentation loss was stated as $\mathcal{L}_{seg} = \mathcal{L}_{BCE} + \mathcal{L}_{Dice}$; the implementation audited for this study, however, optimizes purely cross-entropy objectives, without any Dice-based penalty term (a documented deviation):
 \begin{equation}
     \mathcal{L}_{seg}(\mathbf{y}_{seg}, \mathbf{l}_{seg}) = 
     \begin{cases}
@@ -97,24 +97,24 @@ where $\mathcal{L}_{cls}$ is categorical cross-entropy $\mathcal{L}_{CE}$. In th
 The Dice similarity coefficient (DSC) is evaluated post-hoc as a validation metric, not as an active loss term during gradient descent.
 
 \subsection{The Empty-Mask Dice Metric Artifact}
-The standard S{\o}rensen--Dice coefficient between ground-truth mask $Y$ and binary prediction $\hat{Y}$ (where $Y, \hat{Y} \in \{0, 1\}^{H \times W}$) is defined as:
+The S{\o}rensen--Dice coefficient between ground-truth mask $Y$ and binary prediction $\hat{Y}$ ($Y, \hat{Y} \in \{0, 1\}^{H \times W}$) is:
 \begin{equation}
-    \text{Dice}(Y, \hat{Y}) = \frac{2 |Y \cap \hat{Y}|}{|Y| + |\hat{Y}| + \epsilon}, \quad \epsilon = 10^{-8},
+    \text{Dice}(Y, \hat{Y}) = \frac{2 |Y \cap \hat{Y}|}{|Y| + |\hat{Y}| + \epsilon}, \quad \epsilon = 10^{-8}; \;\; \text{Dice} := 1 \;\text{if}\; |Y| + |\hat{Y}| = 0.
 \end{equation}
-with the implemented convention $\text{Dice} = 1.0$ when $|Y| + |\hat{Y}| = 0$. The treatment of empty references and empty predictions is a recognized validation pitfall in biomedical image analysis~\cite{reinke2024metrics}; two conventions govern empty slices:
+Empty references and predictions are recognized validation pitfalls in biomedical image analysis~\cite{reinke2024metrics}; two conventions govern empty slices:
 \begin{itemize}
-    \item \textbf{Foreground-Only Evaluation:} Compute Dice strictly over non-empty target slices ($\{i \mid |Y_i| > 0\}$), discarding negative slices from segmentation evaluation.
+    \item \textbf{Foreground-Only Evaluation:} Compute Dice strictly over non-empty target slices ($\{i \mid |Y_i| > 0\}$).
     \item \textbf{Empty-Credit Assignment:} Assign $\text{Dice} = 1.0$ when $|Y| = 0 \land |\hat{Y}| = 0$, and $\text{Dice} = 0.0$ when $|Y| = 0 \land |\hat{Y}| > 0$.
 \end{itemize}
-Averaging over all slices under empty-credit assignment, the observed macroscopic mean is the per-slice mean
+Averaged over all slices under empty-credit assignment, the macroscopic mean is
 \begin{equation}\label{eq:slice_dice}
-    \overline{\text{Dice}}_{\text{all}} = \tfrac{1}{N}\textstyle\sum_{i=1}^{N} d_i, \;\; d_i = \begin{cases} 1, & |Y_i| = |\hat{Y}_i| = 0, \\ \text{Dice}(Y_i, \hat{Y}_i), & \text{otherwise}, \end{cases}
+    \overline{\text{Dice}}_{\text{all}} = \tfrac{1}{N}\textstyle\sum_{i=1}^{N} d_i, \;\; d_i = \text{Dice}(Y_i, \hat{Y}_i) \;\text{if}\; |Y_i| > 0, \;\text{else}\; \mathbf{1}\!\left[|\hat{Y}_i| = 0\right],
 \end{equation}
-which, for a model with mean foreground Dice $\overline{\text{Dice}}_{\text{fg}}$ on lesion-bearing slices, is the convex combination
+which for mean foreground Dice $\overline{\text{Dice}}_{\text{fg}}$ on lesion-bearing slices is the convex combination
 \begin{equation}\label{eq:convex_dice}
     \overline{\text{Dice}}_{\text{all}} = \rho + (1 - \rho) \cdot \overline{\text{Dice}}_{\text{fg}},
 \end{equation}
-where $\rho$ is the proportion of lesion-free slices. In sparse pathologies such as SIIM-ACR pneumothorax, the arithmetic ceiling is immediate: as an analytic illustration, a model with a genuine foreground Dice of $77.74\%$ would report $\overline{\text{Dice}}_{\text{all}} = 0.777 \times 1.0 + 0.223 \times 0.7774 = 95.04\%$ at the observed lesion-free fraction $\hat{\rho} = 1{,}659/2{,}135 = 0.777$. Our four SIIM runs realize the more extreme failure mode: they emit empty masks on every validation slice throughout training, so each reported $77.74\%$ (Runs 05, 06, 11, 12) \emph{is the all-empty floor itself} --- Eq.~\ref{eq:slice_dice} with zero foreground Dice --- implying no lesion overlap on any lesion-bearing slice. As demonstrated analytically and visually in Fig.~\ref{fig:empty_dice}, slice-averaged Dice on sparse data reports the lesion-free fraction rather than lesion overlap, rendering published $99.0\%$ Dice claims~\cite{rhanoui2025multitask} uninterpretable as evidence of lesion localization.
+where $\rho$ is the proportion of lesion-free slices. In sparse pathologies such as SIIM-ACR pneumothorax, a model with a genuine foreground Dice of $77.74\%$ would, as an analytic illustration, report $\overline{\text{Dice}}_{\text{all}} = 0.777 \times 1.0 + 0.223 \times 0.7774 = 95.04\%$ at the observed lesion-free fraction $\hat{\rho} = 1{,}659/2{,}135 = 0.777$. Our four SIIM runs realize the more extreme failure mode: emitting empty masks on every validation slice throughout training, each reported $77.74\%$ (Runs 05, 06, 11, 12) \emph{is the all-empty floor itself} --- Eq.~\ref{eq:slice_dice} with zero foreground Dice. As Fig.~\ref{fig:empty_dice} shows, slice-averaged Dice on sparse data reports the lesion-free fraction rather than lesion overlap, so published $99.0\%$ Dice claims~\cite{rhanoui2025multitask} are uninterpretable as evidence of lesion localization.
 
 \begin{figure}[t]
 \centering
@@ -124,13 +124,13 @@ where $\rho$ is the proportion of lesion-free slices. In sparse pathologies such
 \end{figure}
 
 \subsection{Adaptive Gradient Balancing via GradNorm}\label{sec:gnorm}
-To evaluate whether dynamic loss balancing mitigates cross-task gradient competition and bridges the performance gap to published targets, we introduced a parameterized variant of \textsc{GradNorm}~\cite{chen2018gradnorm} in Phase~v2.
+To evaluate whether dynamic loss balancing mitigates cross-task gradient competition, we introduced a parameterized variant of \textsc{GradNorm}~\cite{chen2018gradnorm} in Phase~v2.
 
 Let $W$ denote the shared convolutional filters and normalization layers of the U-Net encoder $f_\theta$. The $L_2$ gradient norm of task $i \in \{seg, cls\}$ with respect to $W$ at minibatch $t$ is:
 \begin{equation}
     G_W^{(i)}(t) = \left\| \nabla_{W} w_i(t) \mathcal{L}_i(t) \right\|_2.
 \end{equation}
-To maintain optimization stability in the primary \texttt{Adam} optimizer, balancing weights are represented as learnable log-weights $\mu_i(t) = \ln w_i(t)$ (initialized to $w_{seg}(0) = 5.0$, $w_{cls}(0) = 1.0$) and updated jointly with the network parameters. Minibatch optimization minimizes the $L_1$ gradient disparity objective:
+For stability in the primary \texttt{Adam} optimizer, balancing weights are learnable log-weights $\mu_i(t) = \ln w_i(t)$ (initialized to $w_{seg}(0) = 5.0$, $w_{cls}(0) = 1.0$), updated jointly with the network parameters. Minibatch optimization minimizes the $L_1$ gradient disparity objective:
 \begin{equation}
     \mathcal{L}_{grad}(t) = \sum_{i \in \{seg, cls\}} \left| \, G_W^{(i)}(t) \;-\; \bar{G}_W(t) \cdot [r_i(t)]^{\alpha} \right|,
 \end{equation}
@@ -138,19 +138,19 @@ where $\bar{G}_W(t) = \frac{1}{2}\sum_j G_W^{(j)}(t)$ is the average gradient no
 \begin{equation}
     r_i(t) = \frac{\tilde{\mathcal{L}}_i(t)}{\frac{1}{2}\sum_{j \in \{seg, cls\}} \tilde{\mathcal{L}}_j(t)}, \quad \text{with} \quad \tilde{\mathcal{L}}_i(t) = \frac{\mathcal{L}_i(t)}{\mathcal{L}_i(0)},
 \end{equation}
-where $\mathcal{L}_i(0)$ is the initial step-0 loss. Following Chen et al.~\cite{chen2018gradnorm}, tasks that train relatively slower exhibit higher loss ratios $r_i(t) > 1$, scaling up their target gradient norm $\bar{G}_W(t) [r_i(t)]^\alpha$ to pull their gradient allocation upward. After each optimizer update, weights are strictly renormalized such that $\sum_i w_i(t) = 2$. By systematically evaluating this module across Groups 2 and 4, we directly isolate how dynamic gradient equalization behaves in hard-parameter-sharing pathology architectures.
+where $\mathcal{L}_i(0)$ is the initial step-0 loss. Following Chen et al.~\cite{chen2018gradnorm}, slower-training tasks exhibit higher loss ratios $r_i(t) > 1$, raising their target gradient norm $\bar{G}_W(t) [r_i(t)]^\alpha$. After each optimizer update, weights are strictly renormalized such that $\sum_i w_i(t) = 2$. In the canonical formulation~\cite{chen2018gradnorm}, $\mathcal{L}_{grad}$ is differentiated against detached targets and applied to the balancing weights alone through a dedicated optimizer (learning rate $0.025$); \S\ref{sec:gn} probes this distinction empirically. Evaluating this module across Groups 2 and 4 isolates how dynamic gradient equalization behaves in hard-parameter-sharing architectures.
 
 \subsection{Color Deconvolution and Optical Density Space}\label{sec:macenko}
 To mitigate staining variability across clinical laboratories, the v2 pipeline incorporates Macenko stain normalization~\cite{macenko2009method}. RGB pixel intensities $\mathbf{I} \in [0, 255]^3$ are converted to optical density (OD) space:
 \begin{equation}
     \mathbf{OD} = -\ln\left(\frac{\mathbf{I} + \epsilon}{I_0}\right),
 \end{equation}
-where $I_0 = 255$ represents transmitted light intensity. The underlying implementation computes optical density via natural logarithms $-\ln(\cdot)$ rather than the canonical base-10 formulation $-\log_{10}(\cdot)$~\cite{macenko2009method}. Hematoxylin and Eosin stain vectors are extracted using singular value decomposition (SVD) on pixels exceeding an optical density threshold ($>0.15$), and projected onto a target reference vector. While this effectively eliminates macroscopic batch variations, projecting raw RGB channels onto static stain vectors acts as a chrominance low-pass filter, smoothing sub-micron chromatin textures that are clinically essential for grading fine glandular architectures (visualized in Fig.~\ref{fig:macenko}).
+where $I_0 = 255$ represents transmitted light intensity. The underlying implementation computes optical density via natural logarithms $-\ln(\cdot)$ rather than the canonical base-10 formulation $-\log_{10}(\cdot)$~\cite{macenko2009method}. Hematoxylin and eosin stain vectors are estimated by eigendecomposition of the optical-density covariance matrix (stain-vector angles restricted to the 1st--99th percentile range) over OD values above a threshold of $0.15$, and projected onto a target reference vector. While this effectively eliminates macroscopic batch variations, projecting raw RGB channels onto static stain vectors acts as a chrominance low-pass filter, smoothing sub-cellular chromatin textures that are clinically essential for grading fine glandular architectures (visualized in Fig.~\ref{fig:macenko}).
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=0.98\textwidth,height=3.4cm,keepaspectratio]{fig1_macenko_artifact.pdf}
-\caption{Visual and quantitative impact of Macenko stain normalization on fine-grained computational pathology. (a) Raw prostate biopsy tile showing distinct chromatin patterns and glandular boundaries. (b) Optical density-projected tile where color deconvolution acts as a chrominance low-pass filter, flattening sub-micron texture. (c) Absolute texture discrepancy map. (d) Empirical top-1 accuracy gains across matched models when Macenko normalization is bypassed (+5.51\% on PANDA, +2.68\% on PanNuke).}
+\caption{Visual and quantitative impact of Macenko stain normalization on fine-grained computational pathology. (a) Raw prostate biopsy tile. (b) Optical-density-projected tile: color deconvolution acts as a chrominance low-pass filter, flattening sub-cellular texture. (c) Absolute texture discrepancy map. (d) Empirical top-1 accuracy gains across matched models when Macenko normalization is bypassed (+5.51\% on PANDA, +2.68\% on PanNuke).}
 \label{fig:macenko}
 \end{figure}
 
@@ -207,8 +207,6 @@ where $I_0 = 255$ represents transmitted light intensity. The underlying impleme
 \bottomrule
 \end{tabular}%
 }
-
-\noindent{\footnotesize\textit{Notes:} $\times$: decoder skip connections zeroed (bottleneck-only representation). $\diamondsuit$: Macenko normalization disabled (raw input); v1 runs are raw by construction and unmarked. Pub.\ Acc / Pub.\ Dice are published reference targets~\cite{rhanoui2025multitask}.}
 \end{table}
 
 We evaluated four benchmark datasets encompassing digital pathology and medical imaging:
@@ -231,24 +229,24 @@ This outcome is fully consistent with established clinical and machine learning 
 \subsection{Controlled Skip Connection Ablation: A Verified Null Result}\label{sec:skip}
 To evaluate the structural necessity of skip connections, we analyze strictly matched pairs (all other factors --- learning rate, GradNorm, Macenko normalization --- held identical):
 \begin{itemize}
-    \item \textbf{Coarse macro-tumor structures (TCGA):} Comparing the skip-ablated MobileNetV2 (Run 25) against its matched baseline (Run 08; both at $\eta=10^{-4}$, GradNorm, Macenko) shows accuracy shifting from $93.32\%$ to $94.34\%$ ($\Delta_{\text{Acc}} = +1.02$) while Dice remains essentially constant at $84.20\%$ vs $84.12\%$ ($\Delta_{\text{Dice}} = -0.08$).
-    \item \textbf{Fine micro-glandular structures (PANDA):} Comparing the matched MobileNetV2 configurations (Run 10: $34.70\%$ Acc / $31.34\%$ Dice vs Run 26, skip-ablated: $35.31\%$ Acc / $28.94\%$ Dice) yields $\Delta_{\text{Acc}} = +0.61$ and $\Delta_{\text{Dice}} = -2.40$.
+    \item \textbf{Coarse macro-tumor structures (TCGA):} Run 25 (skip-ablated) vs.\ matched baseline Run 08 (both $\eta=10^{-4}$, GradNorm, Macenko): accuracy $93.32\% \to 94.34\%$ ($\Delta_{\text{Acc}} = +1.02$), Dice $84.20\%$ vs $84.12\%$ ($\Delta_{\text{Dice}} = -0.08$).
+    \item \textbf{Fine micro-glandular structures (PANDA):} Run 10 ($34.70\%$ Acc / $31.34\%$ Dice) vs.\ matched skip-ablated Run 26 ($35.31\%$ / $28.94\%$): $\Delta_{\text{Acc}} = +0.61$, $\Delta_{\text{Dice}} = -2.40$.
 \end{itemize}
-In both cases the differences are small, and the 95\% Wilson score intervals on top-1 accuracy overlap substantially (TCGA: $[91.34, 94.87]$ vs $[92.49, 95.76]$; PANDA: $[32.69, 36.76]$ vs $[33.30, 37.38]$). We therefore report these as \emph{verified null results}: in this architecture, the bottleneck-only representation suffices for both coarse macro-lesion and fine micro-glandular segmentation, and zeroing the skip connections produces no detectable penalty in a single-run comparison. A definitive directional claim would require multi-seed replication of the matched pairs.
+In both cases the differences are small, and the 95\% Wilson score intervals on top-1 accuracy overlap substantially (TCGA: $[91.34, 94.87]$ vs $[92.49, 95.76]$; PANDA: $[32.69, 36.76]$ vs $[33.30, 37.38]$). We therefore report these as \emph{verified null results}: the bottleneck-only representation suffices for both coarse macro-lesion and fine micro-glandular segmentation; zeroing the skips produces no detectable penalty in a single-run comparison. A definitive directional claim would require multi-seed replication of the matched pairs.
 
 \paragraph{Macenko stain-normalization ablation.}
 The one matched ablation in this campaign that yields a statistically significant effect on classification is the Macenko normalization pair (Group 5, Runs 23--24): removing the normalization \emph{increases} PANDA top-1 accuracy from $34.70\%$ to $40.21\%$ ($\Delta = +5.51$; 95\% CIs $[32.69, 36.76]$ vs $[38.13, 42.32]$ are disjoint) and PanNuke accuracy from $96.68\%$ to $99.36\%$ ($\Delta = +2.68$; $[95.67, 97.46]$ vs $[98.83, 99.65]$ are disjoint), while Dice scores remain essentially unchanged (PANDA $31.34\% \to 31.57\%$; PanNuke $60.54\% \to 73.33\%$). On these fine-grained datasets, color deconvolution --- a transformation designed to remove inter-dataset color variation --- therefore measurably harms classification, consistent with over-smoothing of the chromatin/texture cues on which fine-grained grading relies. This result also partially decomposes the v1-vs-v2 PANDA gap of \S\ref{sec:panda}: part of that gap is attributable to Macenko itself, not to dynamic balancing or the learning rate.
 
 \subsection{Isolating Learning Rate from Dynamic Gradient Balancing}\label{sec:gn}
-Group 4 (PANDA $\times$ VGG16) was designed as a factorial over the key optimization hyperparameters: learning rate ($\eta \in \{10^{-3}, 10^{-4}\}$), dynamic gradient balancing (GradNorm on/off), and static loss weighting ratios $\lambda_{seg}:\lambda_{cls} \in \{1{:}10, 1{:}1, 5{:}1, 10{:}1\}$, holding input normalization constant (raw inputs).
+Group 4 (PANDA $\times$ VGG16) factorizes the key optimization hyperparameters: learning rate ($\eta \in \{10^{-3}, 10^{-4}\}$), dynamic gradient balancing (GradNorm on/off), and static loss-weighting ratios $\lambda_{seg}:\lambda_{cls} \in \{1{:}10, 1{:}1, 5{:}1, 10{:}1\}$, all under raw inputs.
 
 \paragraph{Direct Isolation of Dynamic Gradient Balancing (Run 18).}
-Evaluating the isolated GradNorm arm at $\eta=10^{-3}$ under strictly matched raw-input conditions (Run 18: PANDA $\times$ VGG16, $\eta=10^{-3}$, GradNorm $\alpha=1.5$, raw input) provides a direct comparison against the static baseline (Run 20: static 5:1 loss weights). Activating GradNorm ($\alpha=1.5$) causes validation accuracy to collapse from $45.39\%$ down to $29.04\%$ (95\% Wilson CI: $[27.14, 31.02]$), alongside a corresponding collapse in segmentation Dice from $44.08\%$ down to $31.43\%$ ($\Delta_{\text{Acc}} = -16.35\%$, $\Delta_{\text{Dice}} = -12.65\%$, with non-overlapping confidence intervals: $[43.27, 47.52]$ vs $[27.14, 31.02]$).
+The isolated GradNorm arm at $\eta=10^{-3}$ under strictly matched raw-input conditions (Run 18: PANDA $\times$ VGG16, GradNorm $\alpha=1.5$, raw input) compares directly against the static 5:1 baseline (Run 20). Activating GradNorm ($\alpha=1.5$) causes validation accuracy to collapse from $45.39\%$ down to $29.04\%$ (95\% Wilson CI: $[27.14, 31.02]$), alongside a corresponding collapse in segmentation Dice from $44.08\%$ down to $31.43\%$ ($\Delta_{\text{Acc}} = -16.35\%$, $\Delta_{\text{Dice}} = -12.65\%$, with non-overlapping confidence intervals: $[43.27, 47.52]$ vs $[27.14, 31.02]$).
 
-Crucially, this $29.04\%$ accuracy and $31.43\%$ Dice matches the performance observed in Phase v2 at $\eta=10^{-4}$ (Run 09: $30.89\%$ Acc / $31.59\%$ Dice). This demonstrates that the $\approx 30\%$ performance floor on fine-grained PANDA grading is primarily driven by dynamic gradient balancing ($\alpha=1.5$), where the gradient norm equalization forces destructive gradient updates onto the shared encoder representations, rather than being an artifact of the lower learning rate.
+This $29.04\%$ accuracy and $31.43\%$ Dice matches the performance observed in Phase v2 at $\eta=10^{-4}$ (Run 09: $30.89\%$ Acc / $31.59\%$ Dice). The $\approx 30\%$ floor on fine-grained PANDA grading is thus driven primarily by dynamic gradient balancing ($\alpha=1.5$), whose gradient-norm equalization forces destructive updates onto the shared encoder, rather than by the lower learning rate.
 
 \paragraph{Learning Rate and Loss Weighting Dynamics.}
-Holding GradNorm off under raw inputs, reducing the learning rate from $\eta=10^{-3}$ (Run 20: $45.39\%$ Acc / $44.08\%$ Dice) to $\eta=10^{-4}$ (Run 17: $43.35\%$ Acc / $37.99\%$ Dice) yields a minor change within confidence intervals ($\Delta_{\text{Acc}} = -2.04\%$, with overlapping 95\% CIs: $[43.27, 47.52]$ vs $[41.24, 45.47]$). Furthermore, the static loss-ratio sweep across $\lambda_{seg}:\lambda_{cls} \in \{1{:}10, 1{:}1, 5{:}1, 10{:}1\}$ (Runs 19--22) demonstrates that while $\lambda=5{:}1$ provides the optimal static balance on this architecture, no weighting configuration can bridge the gap to the claimed $88\%$ accuracy. In multi-task pathology architectures with hard parameter sharing, this joint dynamic gradient balancing formulation ($\alpha=1.5$ coupled within primary \texttt{Adam}) induces acute gradient competition on fine-grained ordinal classes; future work should evaluate whether decoupled inner-loop optimizers, gradient projection methods (e.g., PCGrad), or lower asymmetry schedules ($\alpha \le 0.5$) can stabilize multi-task representations.
+Holding GradNorm off under raw inputs, reducing the learning rate from $\eta=10^{-3}$ (Run 20: $45.39\%$ Acc / $44.08\%$ Dice) to $\eta=10^{-4}$ (Run 17: $43.35\%$ Acc / $37.99\%$ Dice) yields a minor change within confidence intervals ($\Delta_{\text{Acc}} = -2.04\%$, with overlapping 95\% CIs: $[43.27, 47.52]$ vs $[41.24, 45.47]$). Furthermore, the static loss-ratio sweep across $\lambda_{seg}:\lambda_{cls} \in \{1{:}10, 1{:}1, 5{:}1, 10{:}1\}$ (Runs 19--22) demonstrates that while $\lambda=5{:}1$ provides the optimal static balance on this architecture, no weighting configuration can bridge the gap to the claimed $88\%$ accuracy. In multi-task pathology architectures with hard parameter sharing, this joint dynamic gradient balancing formulation ($\alpha=1.5$ coupled within primary \texttt{Adam}) induces acute gradient competition on fine-grained ordinal classes. We therefore additionally evaluated the canonical decoupled scheme~\cite{chen2018gradnorm} on PANDA $\times$ VGG16 under identical raw-input conditions ($\eta=10^{-3}$): task weights are optimized by a dedicated \texttt{Adam} instance (learning rate $0.025$) with $\mathcal{L}_{grad}$ differentiated against detached (stop-gradient) targets, while the network optimizer receives only the task-weighted loss. Over its 15 recorded epochs, the canonical variant remains stable --- avoiding the $29.04\%$ collapse of the joint variant (Run 18) --- yet plateaus at $43.06\%$ top-1 accuracy ($39.10\%$ Dice at the same epoch; peak Dice $39.98\%$), below the static 5:1 baseline (Run 20) and $44.94$ percentage points below the claimed $88.0\%$. Dynamic gradient balancing in either formulation does not overcome patient-isolated 6-class grading; gradient-surgery methods (PCGrad~\cite{yu2020pcgrad}) and lower-asymmetry schedules ($\alpha \le 0.5$) remain to be evaluated.
 
 \section{Conclusion \& Recommendations}
 Through an exhaustive 26-experiment campaign, we demonstrated that hard-parameter-sharing U-Nets cannot achieve the inflated $88\%-99\%$ metrics reported in recent multi-task pathology literature, and that the published claims rest on background-Dice evaluation artifacts and non-isolated data splits. Under strict isolation, the residual discrepancy on fine-grained tasks is dominated by dataset difficulty (PANDA challenge-level performance) and by the sensitivity of fine-grained tasks to the joint optimization recipe; in particular, our matched skip-connection ablation is a verified null result, and factorial ablation isolates that dynamic gradient balancing ($\alpha=1.5$) actively destabilizes fine-grained classification ($45.39\% \to 29.04\%$ Acc). For future computational pathology and medical imaging studies, we recommend: (1) mandatory patient/biopsy-level \texttt{GroupKFold} splitting; (2) foreground-only or zero-penalty Dice reporting on sparse-lesion datasets; (3) 95\% confidence intervals on every single-run comparison; (4) validation on diverse multi-organ benchmarks such as PanNuke; and (5) systematic evaluation of multi-task balancing hyperparameters before clinical translation.
