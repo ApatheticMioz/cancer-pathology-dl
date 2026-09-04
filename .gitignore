@@ -98,7 +98,8 @@ Desktop.ini
 # PDFs and LaTeX build artifacts
 # ============================================================
 *.pdf
-!paper/main.pdf
+!all_dice_no_slice.pdf
+!paper/all_dice_no_slice.pdf
 !paper/fig*.pdf
 !paper/fig*.png
 *.aux
@@ -190,3 +191,4 @@ htmlcov/
 # ============================================================
 CLAUDE.md
 GEMINI.md
+.claude

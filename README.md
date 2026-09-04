@@ -156,7 +156,11 @@ cancer-pathology-dl/
 │   ├── technical_diagnostic_report.md  # Comprehensive methodology and audit report
 │   ├── literature_review_and_evidence.md # 7-pillar literature grounding & BibTeX
 │   └── codebase_research.md    # Initial codebase forensics and architectural mapping
-├── paper/                      # Publication artifacts
+├── all_dice_no_slice.pdf       # Compiled 10-page camera-ready manuscript (Springer LNCS)
+├── paper/                      # Publication artifacts & LaTeX source
+│   ├── all_dice_no_slice.tex   # Primary LaTeX manuscript source
+│   ├── all_dice_no_slice.pdf   # Compiled camera-ready PDF
+│   ├── references.bib          # Verified BibTeX bibliography
 │   ├── paper_results_matrix.csv        # Audited 26-run experimental metrics
 │   └── paper_results_latex_table.txt   # Ready-to-use LaTeX publication table
 ├── checkpoints/                # Saved weights (.pth) and per-run summary JSONs
