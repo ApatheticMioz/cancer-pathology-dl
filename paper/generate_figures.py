@@ -120,9 +120,9 @@ def generate_figure_2():
 
     # Panel A: True Negative Slice
     axes[0].imshow(img_neg, cmap='gray')
-    axes[0].set_title("(a) True Negative Slice ($|Y|=0$)\nDice $\\equiv 1.0$ (Zero-Score Convention)", fontweight='bold')
+    axes[0].set_title("(a) Lesion-Free Slice ($|Y|=0$)\nDice $\\equiv 1.0$ (Empty-Credit Convention)", fontweight='bold')
     # Annotation box
-    textstr = "Ground Truth: Empty ($|Y|=0$)\nPrediction: Empty ($|\\hat{Y}|=0$)\n" + r"$\mathbf{Dice(Y, \hat{Y}) = 1.0}$" + "\n(Trivially inflated on 78% of cohort)"
+    textstr = "Ground Truth: Empty ($|Y|=0$)\nPrediction: Empty ($|\\hat{Y}|=0$)\n" + r"$\mathbf{Dice(Y, \hat{Y}) = 1.0}$" + "\n(awarded on the 77.7% lesion-free\nfraction of the validation split)"
     props = dict(boxstyle='round', facecolor='white', alpha=0.85, edgecolor='black', linewidth=0.8)
     axes[0].text(0.05, 0.08, textstr, transform=axes[0].transAxes, fontsize=7.5, verticalalignment='bottom', bbox=props)
     axes[0].axis('off')
@@ -134,8 +134,8 @@ def generate_figure_2():
     mask_overlay[mask_pos > 0] = [0.0, 1.0, 0.2, 0.45] # Semi-transparent green
     axes[1].imshow(mask_overlay)
     axes[1].contour(mask_pos > 0, colors=['lime'], linewidths=1.2)
-    axes[1].set_title("(b) True Positive Slice ($|Y|>0$)\nTrue Foreground Dice $= 77.74\\%$", fontweight='bold')
-    textstr_b = "Pneumothorax Pleural Lesion\nGround Truth Boundary (Green)\n" + r"$\mathbf{Dice_{foreground} = 77.74\%}$" + "\n(Clinical Segmentation Metric)"
+    axes[1].set_title("(b) Lesion-Bearing Slice ($|Y|>0$)\nCollapsed Model Scores Dice $= 0\\%$", fontweight='bold')
+    textstr_b = "Pneumothorax Pleural Lesion\nGround-Truth Boundary (Green)\nAll-Empty Prediction\n" + r"$\mathbf{Dice = 0\%}$" + "\n(invisible to the slice-averaged score)"
     props_b = dict(boxstyle='round', facecolor='white', alpha=0.85, edgecolor='black', linewidth=0.8)
     axes[1].text(0.05, 0.08, textstr_b, transform=axes[1].transAxes, fontsize=7.5, verticalalignment='bottom', bbox=props_b)
     axes[1].axis('off')
@@ -144,27 +144,35 @@ def generate_figure_2():
     rho = np.linspace(0, 1, 200)
     dice_fg = 0.7774
     dice_all = rho * 1.0 + (1 - rho) * dice_fg
-    dice_claim = 0.99
+    rho_hat = 1659.0 / 2135.0  # 0.777: lesion-free fraction of the SIIM validation split
 
-    axes[2].plot(rho * 100, dice_all * 100, color='#08519c', linewidth=2.2, label=r'$\overline{\mathrm{Dice}}_{\mathrm{all}} = \rho + (1-\rho) \cdot 77.74\%$')
+    axes[2].plot(rho * 100, dice_all * 100, color='#08519c', linewidth=2.2, label=r'$\overline{\mathrm{Dice}}_{\mathrm{all}} = \rho + (1-\rho)\, d_{fg}$')
     axes[2].axhline(y=99.0, color='crimson', linestyle='--', linewidth=1.5, label='Published Claim (99.0% Dice)')
-    axes[2].axvline(x=78.0, color='gray', linestyle=':', linewidth=1.5, label=r'SIIM-ACR Negative Rate ($\rho=78\%$)')
+    axes[2].axvline(x=rho_hat * 100.0, color='gray', linestyle=':', linewidth=1.5, label=r'Empty-Slice Fraction ($\hat{\rho}=77.7\%$)')
 
-    # Mark the SIIM point
-    siim_inflated = 0.78 * 1.0 + 0.22 * 0.7774
-    axes[2].plot(78.0, siim_inflated * 100, 'o', color='darkblue', markersize=7)
-    axes[2].annotate(f"Empty-Mask Inflation\n({siim_inflated*100:.1f}%)",
-                     xy=(78.0, siim_inflated * 100),
-                     xytext=(45, 87),
+    # Analytic illustration: a model with genuine foreground Dice 77.74% would report 95.04%
+    siim_inflated = rho_hat * 1.0 + (1.0 - rho_hat) * dice_fg
+    axes[2].plot(rho_hat * 100.0, siim_inflated * 100, 'o', color='darkblue', markersize=7)
+    axes[2].annotate("Analytic illustration:\n$d_{fg}=77.74\\%$ reports 95.04%",
+                     xy=(rho_hat * 100.0, siim_inflated * 100),
+                     xytext=(50, 80),
                      arrowprops=dict(facecolor='darkblue', shrink=0.08, width=1, headwidth=5),
                      fontweight='bold', fontsize=8, color='darkblue')
 
-    axes[2].set_xlabel('Negative Slice Proportion $\\rho$ (%)', fontweight='bold')
+    # Empirical floor: all four SIIM runs emit all-empty predictions (77.74% = the floor)
+    axes[2].plot(rho_hat * 100.0, 77.74, 's', color='darkred', markersize=7)
+    axes[2].annotate("Measured floor:\nall-empty predictions\n(77.74%)",
+                     xy=(rho_hat * 100.0, 77.74),
+                     xytext=(45, 71.5),
+                     arrowprops=dict(facecolor='darkred', shrink=0.08, width=1, headwidth=5),
+                     fontweight='bold', fontsize=8, color='darkred')
+
+    axes[2].set_xlabel('Empty-Slice Fraction $\\rho$ (%)', fontweight='bold')
     axes[2].set_ylabel('Reported Macroscopic Dice (%)', fontweight='bold')
-    axes[2].set_title('(c) Mathematical Inflation Proof\n(Convex Combination Curve)', fontweight='bold')
+    axes[2].set_title('(c) Slice-Averaged Dice vs.\nEmpty-Slice Fraction', fontweight='bold')
     axes[2].set_xlim([0, 100])
     axes[2].set_ylim([70, 101])
-    axes[2].legend(loc='lower right', frameon=True, framealpha=0.9, fontsize=7)
+    axes[2].legend(loc='upper left', frameon=True, framealpha=0.95, fontsize=7)
     axes[2].grid(True, linestyle='--', alpha=0.5)
 
     plt.tight_layout()

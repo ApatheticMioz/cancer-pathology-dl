@@ -99,27 +99,27 @@ The Dice similarity coefficient (DSC) is evaluated post-hoc as a validation metr
 \subsection{The Empty-Mask Dice Metric Artifact}
 The standard S{\o}rensen--Dice coefficient between ground-truth mask $Y$ and binary prediction $\hat{Y}$ (where $Y, \hat{Y} \in \{0, 1\}^{H \times W}$) is defined as:
 \begin{equation}
-    \text{Dice}(Y, \hat{Y}) = \frac{2 |Y \cap \hat{Y}|}{|Y| + |\hat{Y}| + \epsilon}.
+    \text{Dice}(Y, \hat{Y}) = \frac{2 |Y \cap \hat{Y}|}{|Y| + |\hat{Y}| + \epsilon}, \quad \epsilon = 10^{-8},
 \end{equation}
-A critical divergence occurs when an image tile contains no target pathology ($|Y| = 0$). In biomedical image analysis (e.g., Metrics Reloaded~\cite{reinke2024metrics}), two primary conventions govern empty slices:
+with the implemented convention $\text{Dice} = 1.0$ when $|Y| + |\hat{Y}| = 0$. The treatment of empty references and empty predictions is a recognized validation pitfall in biomedical image analysis~\cite{reinke2024metrics}; two conventions govern empty slices:
 \begin{itemize}
     \item \textbf{Foreground-Only Evaluation:} Compute Dice strictly over non-empty target slices ($\{i \mid |Y_i| > 0\}$), discarding negative slices from segmentation evaluation.
-    \item \textbf{Zero-Score Assignment:} Assign $\text{Dice} = 1.0$ if $|Y| = 0 \land |\hat{Y}| = 0$, but $\text{Dice} = 0.0$ if $|\hat{Y}| > 0$.
+    \item \textbf{Empty-Credit Assignment:} Assign $\text{Dice} = 1.0$ when $|Y| = 0 \land |\hat{Y}| = 0$, and $\text{Dice} = 0.0$ when $|Y| = 0 \land |\hat{Y}| > 0$.
 \end{itemize}
-When an evaluation pipeline averages across all slices under the zero-score assignment convention, the observed macroscopic mean Dice is a convex combination of negative and positive slices:
+Averaging over all slices under empty-credit assignment, the observed macroscopic mean is the per-slice mean
+\begin{equation}\label{eq:slice_dice}
+    \overline{\text{Dice}}_{\text{all}} = \tfrac{1}{N}\textstyle\sum_{i=1}^{N} d_i, \;\; d_i = \begin{cases} 1, & |Y_i| = |\hat{Y}_i| = 0, \\ \text{Dice}(Y_i, \hat{Y}_i), & \text{otherwise}, \end{cases}
+\end{equation}
+which, for a model with mean foreground Dice $\overline{\text{Dice}}_{\text{fg}}$ on lesion-bearing slices, is the convex combination
 \begin{equation}\label{eq:convex_dice}
-    \overline{\text{Dice}}_{\text{all}} = \rho \cdot \mathbf{1}_{\{\hat{Y} = \emptyset \mid Y = \emptyset\}} + (1 - \rho) \cdot \overline{\text{Dice}}_{\text{foreground}},
+    \overline{\text{Dice}}_{\text{all}} = \rho + (1 - \rho) \cdot \overline{\text{Dice}}_{\text{fg}},
 \end{equation}
-where $\rho = P(|Y| = 0)$ is the proportion of lesion-free slices. In sparse pathologies such as SIIM-ACR pneumothorax ($\rho \approx 0.78$), a baseline model achieving a modest foreground Dice of $77.74\%$ trivially inflates under this convention to:
-\begin{equation}
-    \overline{\text{Dice}}_{\text{all}} = 0.78 \times 1.0 + 0.22 \times 0.7774 = 95.10\%,
-\end{equation}
-and predicting near-zero masks trivially yields $>98\%$. As demonstrated analytically and visually in Fig.~\ref{fig:empty_dice}, this metric artifact accounts for the published $99.0\%$ Dice claims~\cite{rhanoui2025multitask}, which collapse to $77.74\%$ under clinical foreground-only evaluation.
+where $\rho$ is the proportion of lesion-free slices. In sparse pathologies such as SIIM-ACR pneumothorax, the arithmetic ceiling is immediate: as an analytic illustration, a model with a genuine foreground Dice of $77.74\%$ would report $\overline{\text{Dice}}_{\text{all}} = 0.777 \times 1.0 + 0.223 \times 0.7774 = 95.04\%$ at the observed lesion-free fraction $\hat{\rho} = 1{,}659/2{,}135 = 0.777$. Our four SIIM runs realize the more extreme failure mode: they emit empty masks on every validation slice throughout training, so each reported $77.74\%$ (Runs 05, 06, 11, 12) \emph{is the all-empty floor itself} --- Eq.~\ref{eq:slice_dice} with zero foreground Dice --- implying no lesion overlap on any lesion-bearing slice. As demonstrated analytically and visually in Fig.~\ref{fig:empty_dice}, slice-averaged Dice on sparse data reports the lesion-free fraction rather than lesion overlap, rendering published $99.0\%$ Dice claims~\cite{rhanoui2025multitask} uninterpretable as evidence of lesion localization.
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=0.98\textwidth,height=3.8cm,keepaspectratio]{fig2_empty_mask_dice.pdf}
-\caption{The empty-mask background-Dice inflation fallacy on sparse medical pathologies (SIIM-ACR pneumothorax). (a) Empty true-negative slice ($|Y|=0$) trivially awarded $\text{Dice}=1.0$ under the zero-score convention despite no lesion present. (b) True-positive slice ($|Y|>0$, ground truth boundary in green) yielding the true clinical foreground Dice of $77.74\%$. (c) Analytical convex combination curve (Eq.~\ref{eq:convex_dice}) as a function of negative-slice proportion $\rho$, showing how $77.74\%$ foreground Dice automatically inflates to $95.10\%$ at $\rho=78\%$, reaching $>98\%$ when negative predictions dominate.}
+\caption{The empty-mask Dice artifact on SIIM-ACR pneumothorax. (a) Lesion-free slice ($|Y|=0$): under empty-credit assignment an all-empty prediction is awarded $\text{Dice}=1.0$; lesion-free slices constitute $\hat{\rho}=77.7\%$ of our validation split. (b) Lesion-bearing slice ($|Y|>0$, ground-truth boundary in green): our collapsed models predict empty masks here and score $\text{Dice}=0$, invisible to the slice-averaged mean. (c) Convex-combination curve (Eq.~\ref{eq:convex_dice}): a foreground Dice of $77.74\%$ would report $95.04\%$ at $\hat{\rho}=0.777$ (analytic illustration), whereas all four of our SIIM runs measure the all-empty floor of $77.74\%$ itself.}
 \label{fig:empty_dice}
 \end{figure}
 
