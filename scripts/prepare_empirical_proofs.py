@@ -16,10 +16,13 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
+import sys
 from pathlib import Path
 import numpy as np
 import pandas as pd
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from compute_wilson_ci import load_run_records, match_record, wilson_score_interval  # noqa: E402
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 PAPER_DIR = BASE_DIR / "paper"
@@ -63,41 +66,35 @@ def compute_dice_degradation_curve(
 
 
 def generate_statistical_confidence_intervals(csv_path: Path) -> pd.DataFrame:
-    """Compute 95% Wilson/Normal confidence intervals for all 26 experimental runs.
+    """Compute exact 95% Wilson score intervals for all 26 experimental runs.
+
+    Delegates to ``scripts/compute_wilson_ci.py``: raw best-accuracy
+    proportions are read from ``checkpoints/summary_*.json``, converted to
+    integer success counts against the exact per-dataset validation-set sizes
+    (TCGA=778, PANDA=2104, SIIM=2135, PANNUKE=1567), and scored with the
+    Wilson interval (z = 1.96). This supersedes the earlier normal-approximation
+    generator, which used approximate validation sizes (TCGA 786, SIIM 2409,
+    PANNUKE 1500) applied to the rounded CSV accuracies.
 
     Args:
         csv_path: Path to paper_results_matrix.csv
 
     Returns:
-        Enriched DataFrame with confidence intervals and sample size estimations.
+        Enriched DataFrame with Wilson score confidence intervals.
     """
     if not csv_path.exists():
         raise FileNotFoundError(f"Matrix CSV not found: {csv_path}")
 
     df = pd.read_csv(csv_path)
 
-    # Approximate sample sizes based on dataset validation splits
-    dataset_val_sizes = {
-        "TCGA": 786,
-        "PANDA": 2104,
-        "SIIM": 2409,
-        "PANNUKE": 1500,
-    }
-
     acc_ci_lower, acc_ci_upper = [], []
+    records = load_run_records()
     for _, row in df.iterrows():
-        ds = str(row.get("Dataset", "")).upper()
-        acc = float(row.get("Accuracy (%)", 0.0)) / 100.0
-        n = dataset_val_sizes.get(ds, 1000)
-
-        # 95% Normal approximation interval for classification accuracy
-        z = 1.96
-        stderr = math.sqrt(max(1e-6, acc * (1.0 - acc) / n))
-        ci_low = max(0.0, (acc - z * stderr) * 100.0)
-        ci_high = min(100.0, (acc + z * stderr) * 100.0)
-
-        acc_ci_lower.append(round(ci_low, 2))
-        acc_ci_upper.append(round(ci_high, 2))
+        record = match_record(row, records)
+        n = record["val_samples"]
+        lo, hi = wilson_score_interval(round(record["best_val_acc"] * n), n)
+        acc_ci_lower.append(round(lo * 100.0, 2))
+        acc_ci_upper.append(round(hi * 100.0, 2))
 
     df["Acc 95% CI Lower"] = acc_ci_lower
     df["Acc 95% CI Upper"] = acc_ci_upper
