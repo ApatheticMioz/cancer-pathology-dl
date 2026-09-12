@@ -82,6 +82,9 @@ NULL_GRAY = "#6E6E6E"
 #: Heatmap colormap (perceptually uniform, color-blind safe).
 HEATMAP_CMAP = "cividis"
 
+#: Grid alpha (locked).
+GRID_ALPHA = 0.15
+
 #: Save resolution for raster (PNG) output.
 SAVE_DPI = 300
 
