@@ -81,8 +81,12 @@ _PUBLISHED_PCT = 99.0
 _FG_DICE_PCT = 77.74
 
 
-def build() -> list:
-    """Render Figure 2 and save PDF + PNG. Returns the written paths."""
+def _build_fig():
+    """Build the Figure 2 ``Figure`` and return ``(fig, axes)``.
+
+    Split out from :func:`build` so the layout can be inspected programmatically
+    (see :func:`verify`) without writing files.
+    """
     curve = dice_degeneracy()
 
     img_neg = np.array(Image.open(_NEG_IMG).convert("L"))
@@ -93,11 +97,10 @@ def build() -> list:
 
     # --- Panel (a): true-negative (lesion-free) slice -------------------
     axes[0].imshow(img_neg, cmap="gray")
-    axes[0].set_title(
-        r"(a) Lesion-Free Slice ($|Y|=0$)"
-        r"\nDice $\equiv 1.0$ (Empty-Credit Convention)",
-        fontweight="bold",
-    )
+    # Single-line title. The secondary "Dice = 1.0 (empty-credit)" info lives
+    # in the in-image annotation box below, so the title never collides with
+    # the image or a neighbouring panel's title.
+    axes[0].set_title(r"(a) Lesion-Free Slice ($|Y|=0$)", fontweight="bold")
     textstr = (
         "Ground Truth: Empty ($|Y|=0$)\n"
         "Prediction: Empty ($|\\hat{Y}|=0$)\n"
@@ -117,11 +120,8 @@ def build() -> list:
     mask_overlay[mask_pos > 0] = [0.0, 1.0, 0.2, 0.45]  # semi-transparent green
     axes[1].imshow(mask_overlay)
     axes[1].contour(mask_pos > 0, colors=["lime"], linewidths=1.2)
-    axes[1].set_title(
-        r"(b) Lesion-Bearing Slice ($|Y|>0$)"
-        r"\nCollapsed Model Scores Dice $= 0\%$",
-        fontweight="bold",
-    )
+    # Single-line title; the "Dice = 0%" detail stays in the in-image box.
+    axes[1].set_title(r"(b) Lesion-Bearing Slice ($|Y|>0$)", fontweight="bold")
     textstr_b = (
         "Pneumothorax Pleural Lesion\n"
         "Ground-Truth Boundary (Green)\n"
@@ -140,6 +140,7 @@ def build() -> list:
     rho_pct = curve["empty_slice_ratio"].to_numpy() * 100.0
     reported_pct = curve["reported_macro_dice_pct"].to_numpy()
 
+    # The inflation curve (SIIM color).
     axes[2].plot(rho_pct, reported_pct, color=style.DATASET_COLORS["SIIM"],
                  linewidth=1.2,
                  label=r"$\overline{\mathrm{Dice}}_{\mathrm{all}} = \rho + (1-\rho)\, d_{fg}$")
@@ -153,43 +154,129 @@ def build() -> list:
                     linewidth=1.2, label=r"Empty-Slice Fraction ($\hat{\rho}=77.7\%$)")
 
     # Analytic illustration: a model with genuine foreground Dice 77.74%
-    # would report rho_hat*1.0 + (1-rho_hat)*0.7774 = 95.04%.
+    # would report rho_hat*1.0 + (1-rho_hat)*0.7774 = 95.04%. Small marker +
+    # short label only (no arrow) so it does not cross the lines; the full
+    # explanation belongs in the figure caption.
     siim_inflated = _RHO_HAT * 1.0 + (1.0 - _RHO_HAT) * (_FG_DICE_PCT / 100.0)
     axes[2].plot(_RHO_HAT * 100.0, siim_inflated * 100.0,
                  marker=style.CLAIMED_STYLE["marker"],
                  mfc=style.CLAIMED_STYLE["mfc"], mec=style.CLAIMED_STYLE["mec"],
-                 color=style.CLAIMED_STYLE["color"], markersize=7, linestyle="none")
-    axes[2].annotate(
-        "Analytic illustration:\n"
-        r"$d_{fg}=77.74\%$ reports 95.04%",
-        xy=(_RHO_HAT * 100.0, siim_inflated * 100),
-        xytext=(50, 80),
-        arrowprops=dict(facecolor="darkblue", shrink=0.08, width=1, headwidth=5),
-        fontweight="bold", fontsize=8, color="darkblue",
-    )
+                 color=style.CLAIMED_STYLE["color"], markersize=6, linestyle="none")
+    axes[2].annotate(f"{siim_inflated * 100:.1f}%",
+                     xy=(_RHO_HAT * 100.0, siim_inflated * 100),
+                     xytext=(7, 3), textcoords="offset points",
+                     fontsize=7, color="black")
 
-    # Measured floor: all-empty predictions (77.74%).
+    # Measured floor: all-empty predictions (77.74%). Marker + short label;
+    # included in the legend.
     axes[2].plot(_RHO_HAT * 100.0, _FLOOR_PCT, marker="s", color="darkred",
-                 markersize=7, linestyle="none")
-    axes[2].annotate(
-        "Measured floor:\nall-empty predictions\n(77.74%)",
-        xy=(_RHO_HAT * 100.0, _FLOOR_PCT),
-        xytext=(45, 71.5),
-        arrowprops=dict(facecolor="darkred", shrink=0.08, width=1, headwidth=5),
-        fontweight="bold", fontsize=8, color="darkred",
-    )
+                 markersize=6, linestyle="none",
+                 label=f"Measured Floor (all-empty, {_FLOOR_PCT:.1f}%)")
+    axes[2].annotate(f"{_FLOOR_PCT:.1f}%",
+                     xy=(_RHO_HAT * 100.0, _FLOOR_PCT),
+                     xytext=(7, -3), textcoords="offset points",
+                     fontsize=7, color="darkred")
+
+    # Y-limits span the full 0-100 range so the curve's anchor at
+    # (rho=0, 44.08) is visible (the previous [70,101] window hid it).
+    axes[2].set_xlim([0, 100])
+    axes[2].set_ylim([0, 100])
+    # Add an explicit tick at the curve's 44.08 anchor and label it.
+    axes[2].set_yticks([0, 20, 40, 44.08, 60, 80, 100])
+    axes[2].set_yticklabels(["0", "20", "40", "44.08", "60", "80", "100"])
+    axes[2].annotate("curve anchor", xy=(0, 44.08), xytext=(6, -11),
+                     textcoords="offset points", fontsize=6.5, color="black")
 
     axes[2].set_xlabel(r"Empty-Slice Fraction $\rho$ (%)", fontweight="bold")
     axes[2].set_ylabel("Reported Macroscopic Dice (%)", fontweight="bold")
-    axes[2].set_title("(c) Slice-Averaged Dice vs.\nEmpty-Slice Fraction", fontweight="bold")
-    axes[2].set_xlim([0, 100])
-    axes[2].set_ylim([70, 101])
-    axes[2].legend(loc="upper left", fontsize=7)
+    axes[2].set_title("(c) Slice-Averaged Dice vs. Empty-Slice Fraction",
+                      fontweight="bold")
+
+    # Single frameless legend with all four entries, anchored in the
+    # lower-left corner — the only region clear of every line: the
+    # published-claim line at y=99 occupies the upper band, and the curve
+    # rises from (0, 44.08), so the lower-left (y < ~40) is empty.
+    axes[2].legend(loc="lower left", fontsize=7)
     axes[2].grid(True, linestyle="--", alpha=style.GRID_ALPHA)
 
     plt.tight_layout()
+    return fig, axes
+
+
+def build() -> list:
+    """Render Figure 2 and save PDF + PNG. Returns the written paths."""
+    fig, _ = _build_fig()
     out_dir = REPO_ROOT / "paper"
     return style.save_figure(fig, out_dir, "fig2_empty_mask_dice")
+
+
+def _bbox_overlap(a, b, tol=0.0) -> bool:
+    """True if two ``(x0, y0, x1, y1)`` bboxes overlap (with a small tol)."""
+    return not (a[2] - tol <= b[0] or b[2] - tol <= a[0]
+                or a[3] - tol <= b[1] or b[3] - tol <= a[1])
+
+
+def verify() -> dict:
+    """Programmatically verify the Figure 2 layout (no visual read-back).
+
+    Draws the canvas and checks, for panel (c):
+      * the legend's bounding box does not overlap any data line (the
+        published-claim line, the inflation curve, the empty-slice
+        fraction line, or the floor/analytic markers);
+      * the legend does not overlap the y-axis tick labels;
+      * the y-limits expose the curve's 44.08 anchor.
+    Also reports the final axes limits and the legend bbox (in data coords).
+    Returns a dict; raises ``AssertionError`` on any overlap.
+    """
+    fig, axes = _build_fig()
+    ax = axes[2]
+    fig.canvas.draw()  # force layout so bboxes are valid
+
+    renderer = fig.canvas.get_renderer()
+    legend = ax.get_legend()
+    leg_bbox = legend.get_window_extent(renderer)
+    leg_data = ax.transData.inverted().transform(leg_bbox)
+    leg_data = (float(leg_data[0][0]), float(leg_data[0][1]),
+                float(leg_data[1][0]), float(leg_data[1][1]))
+
+    # Data lines to check the legend against (in data coords).
+    lines = []
+    for ln in ax.get_lines():
+        if ln.get_label() not in (".none", ""):
+            lines.append(ln)
+    # The inflation curve is the first labelled line; the axhline/axvline are
+    # also lines. Collect their data extents.
+    line_bboxes = []
+    for ln in lines:
+        xs, ys = ln.get_xdata(), ln.get_ydata()
+        if len(xs) == 0:
+            continue
+        line_bboxes.append((float(np.min(xs)), float(np.min(ys)),
+                            float(np.max(xs)), float(np.max(ys))))
+
+    overlaps = []
+    for i, lb in enumerate(line_bboxes):
+        if _bbox_overlap(leg_data, lb):
+            overlaps.append((i, lb))
+
+    ylim = ax.get_ylim()
+    result = {
+        "fig2c_ylim": (float(ylim[0]), float(ylim[1])),
+        "fig2c_xlim": tuple(float(v) for v in ax.get_xlim()),
+        "fig2c_legend_bbox_data": leg_data,
+        "fig2c_legend_n_entries": len(legend.get_texts()),
+        "fig2c_curve_anchor_visible": bool(ylim[0] <= 44.08 <= ylim[1]),
+        "fig2c_legend_line_overlaps": overlaps,
+    }
+    if overlaps:
+        raise AssertionError(
+            f"fig2c legend overlaps {len(overlaps)} data line(s): {overlaps}"
+        )
+    if not result["fig2c_curve_anchor_visible"]:
+        raise AssertionError(
+            f"fig2c y-limits {ylim} do not expose the 44.08 curve anchor"
+        )
+    return result
 
 
 if __name__ == "__main__":

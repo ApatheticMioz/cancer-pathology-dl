@@ -96,8 +96,12 @@ def _bars(matrix):
     return labels, on_acc, on_ci, off_acc, off_ci
 
 
-def build() -> list:
-    """Render Figure 1 and save PDF + PNG. Returns the written paths."""
+def _build_fig():
+    """Build the Figure 1 ``Figure`` and return ``(fig, axes)``.
+
+    Split out from :func:`build` so the layout can be inspected
+    programmatically (see :func:`verify`).
+    """
     matrix = results_matrix()
     labels, on_acc, on_ci, off_acc, off_ci = _bars(matrix)
 
@@ -144,11 +148,15 @@ def build() -> list:
     off_err = [[a - lo for a, (lo, hi) in zip(off_acc, off_ci)],
                [hi - a for a, (lo, hi) in zip(off_acc, off_ci)]]
 
+    # Short legend labels ("Macenko ON" / "Macenko OFF") so the legend fits in
+    # the upper-left headroom (above the short PANDA bars) without overlapping
+    # the tall PanNuke bars; the full "Raw (Macenko OFF)" wording is in the
+    # panel title and caption.
     axes[3].bar(x - width / 2, on_acc, width, yerr=on_err, capsize=3,
                 label="Macenko ON", color=on_color, edgecolor="black",
                 linewidth=0.8, zorder=3)
     axes[3].bar(x + width / 2, off_acc, width, yerr=off_err, capsize=3,
-                label="Raw (Macenko OFF)", color=off_color, edgecolor="black",
+                label="Macenko OFF", color=off_color, edgecolor="black",
                 linewidth=0.8, zorder=3)
 
     axes[3].set_ylabel("Top-1 Accuracy (%)", fontweight="bold")
@@ -156,7 +164,10 @@ def build() -> list:
     axes[3].set_xticks(x)
     axes[3].set_xticklabels([f"{ds}\n(ISUP 0–5)" if ds == "PANDA" else f"{ds}\n(19 tissues)" for ds in labels])
     axes[3].set_ylim([20, 105])
-    axes[3].legend(loc="lower right")
+    # Legend in the upper-left: the PANDA bars (left group) only reach ~40%,
+    # so the upper-left corner (y > ~45) is clear headroom. The previous
+    # "lower right" placement sat inside the tall PanNuke bars (y 20-99).
+    axes[3].legend(loc="upper left")
     axes[3].grid(axis="y", linestyle="--", alpha=style.GRID_ALPHA)
 
     # Delta labels on top of the OFF (raw) bars.
@@ -168,8 +179,66 @@ def build() -> list:
                          color=style.NULL_GRAY)
 
     plt.tight_layout()
+    return fig, axes
+
+
+def build() -> list:
+    """Render Figure 1 and save PDF + PNG. Returns the written paths."""
+    fig, _ = _build_fig()
     out_dir = REPO_ROOT / "paper"
     return style.save_figure(fig, out_dir, "fig1_macenko")
+
+
+def _bbox_overlap(a, b, tol=0.0) -> bool:
+    """True if two ``(x0, y0, x1, y1)`` bboxes overlap (with a small tol)."""
+    return not (a[2] - tol <= b[0] or b[2] - tol <= a[0]
+                or a[3] - tol <= b[1] or b[3] - tol <= a[1])
+
+
+def verify() -> dict:
+    """Programmatically verify the Figure 1 panel-(d) layout.
+
+    Draws the canvas and checks that the panel-(d) legend does not overlap
+    any bar (the previous "lower right" placement sat inside the tall
+    PanNuke bars). Reports the legend bbox in data coords and the bar
+    extents; raises ``AssertionError`` on any overlap.
+    """
+    fig, axes = _build_fig()
+    ax = axes[3]
+    fig.canvas.draw()
+
+    renderer = fig.canvas.get_renderer()
+    legend = ax.get_legend()
+    leg_bbox = legend.get_window_extent(renderer)
+    leg_data = ax.transData.inverted().transform(leg_bbox)
+    leg_data = (float(leg_data[0][0]), float(leg_data[0][1]),
+                float(leg_data[1][0]), float(leg_data[1][1]))
+
+    # Bar containers only (skip ErrorbarContainer from the CI whiskers, which
+    # has no ``.patches``). Each bar's data bbox.
+    from matplotlib.container import BarContainer
+
+    bar_bboxes = []
+    for cont in ax.containers:
+        if not isinstance(cont, BarContainer):
+            continue
+        for patch in cont.patches:
+            x0, y0 = patch.get_x(), patch.get_y()
+            x1, y1 = x0 + patch.get_width(), y0 + patch.get_height()
+            bar_bboxes.append((float(x0), float(y0), float(x1), float(y1)))
+
+    overlaps = [bb for bb in bar_bboxes if _bbox_overlap(leg_data, bb)]
+    result = {
+        "fig1d_legend_bbox_data": leg_data,
+        "fig1d_legend_n_entries": len(legend.get_texts()),
+        "fig1d_n_bars": len(bar_bboxes),
+        "fig1d_legend_bar_overlaps": overlaps,
+    }
+    if overlaps:
+        raise AssertionError(
+            f"fig1d legend overlaps {len(overlaps)} bar(s): {overlaps}"
+        )
+    return result
 
 
 if __name__ == "__main__":

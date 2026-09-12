@@ -9,11 +9,18 @@ via :data:`paper.figures.loaders.REPO_ROOT`). Applies the locked style
 contract once, then renders each figure module and saves its PDF + PNG pair
 into ``paper/``.
 
+After building, each figure's layout is verified programmatically (no visual
+read-back): the fig2 panel-(c) legend must not overlap any data line and the
+y-limits must expose the 44.08 curve anchor; the fig1 panel-(d) legend must
+not overlap any bar. The final axes limits and legend bbox for fig2c are
+printed.
+
 Usage::
 
-    python -m paper.figures.build_all            # build every figure
+    python -m paper.figures.build_all            # build + verify every figure
     python -m paper.figures.build_all fig1       # build only Figure 1
     python -m paper.figures.build_all fig2       # build only Figure 2
+    python -m paper.figures.build_all --no-verify  # build without layout checks
 """
 
 from __future__ import annotations
@@ -24,8 +31,26 @@ from . import style
 from . import fig1_macenko, fig2_empty_dice
 
 
-def build_all() -> int:
-    """Render every figure; return a process exit code (0 on success)."""
+def _verify(mod, name: str) -> bool:
+    """Run a figure module's ``verify()`` and print the result.
+
+    Returns True on success, False on failure (prints the reason).
+    """
+    if not hasattr(mod, "verify"):
+        return True
+    try:
+        result = mod.verify()
+    except AssertionError as exc:
+        print(f"    VERIFY FAIL [{name}]: {exc}", file=sys.stderr)
+        return False
+    print(f"    VERIFY OK [{name}]:")
+    for key, val in result.items():
+        print(f"        {key}: {val}")
+    return True
+
+
+def build_all(verify: bool = True) -> int:
+    """Render every figure (and verify layout); return a process exit code."""
     style.apply()  # locked style contract, applied once for the whole build
 
     builders = {
@@ -44,14 +69,19 @@ def build_all() -> int:
             continue
         for p in paths:
             print(f"    Saved: {p}")
+        if verify:
+            if not _verify(mod, name):
+                failures += 1
     return 1 if failures else 0
 
 
 def main(argv: list) -> int:
     style.apply()
-    if len(argv) > 1:
-        # Build only the requested subset.
-        wanted = set(argv[1:])
+    do_verify = "--no-verify" not in argv
+    args = [a for a in argv[1:] if a != "--no-verify"]
+
+    if args:
+        wanted = set(args)
         known = {"fig1", "fig2"}
         unknown = wanted - known
         if unknown:
@@ -72,8 +102,12 @@ def main(argv: list) -> int:
             except Exception as exc:  # noqa: BLE001
                 failures += 1
                 print(f"    ERROR building {name}: {exc!r}", file=sys.stderr)
+                continue
+            if do_verify and not _verify(mod, name):
+                failures += 1
         return 1 if failures else 0
-    return build_all()
+
+    return build_all(verify=do_verify)
 
 
 if __name__ == "__main__":
