@@ -20,6 +20,7 @@ Usage::
     python -m paper.figures.build_all            # build + verify every figure
     python -m paper.figures.build_all fig1       # build only Figure 1
     python -m paper.figures.build_all fig2       # build only Figure 2
+    python -m paper.figures.build_all fig3       # build only Figure 3
     python -m paper.figures.build_all --no-verify  # build without layout checks
 """
 
@@ -28,7 +29,7 @@ from __future__ import annotations
 import sys
 
 from . import style
-from . import fig1_macenko, fig2_empty_dice
+from . import fig1_macenko, fig2_empty_dice, fig3_results_dotplot
 
 
 def _verify(mod, name: str) -> bool:
@@ -56,6 +57,8 @@ def build_all(verify: bool = True) -> int:
     builders = {
         "fig1": (fig1_macenko, "Figure 1: Macenko Stain Normalization"),
         "fig2": (fig2_empty_dice, "Figure 2: Empty-Mask Dice Inflation"),
+        "fig3": (fig3_results_dotplot,
+                 "Figure 3: 26-Run Claimed-vs-Measured CI Dot Plot"),
     }
 
     failures = 0
@@ -82,7 +85,7 @@ def main(argv: list) -> int:
 
     if args:
         wanted = set(args)
-        known = {"fig1", "fig2"}
+        known = {"fig1", "fig2", "fig3"}
         unknown = wanted - known
         if unknown:
             print(f"Unknown figure(s): {sorted(unknown)}; valid: {sorted(known)}",
@@ -91,6 +94,8 @@ def main(argv: list) -> int:
         builders = {
             "fig1": (fig1_macenko, "Figure 1: Macenko Stain Normalization"),
             "fig2": (fig2_empty_dice, "Figure 2: Empty-Mask Dice Inflation"),
+            "fig3": (fig3_results_dotplot,
+                     "Figure 3: 26-Run Claimed-vs-Measured CI Dot Plot"),
         }
         failures = 0
         for name in sorted(wanted):
