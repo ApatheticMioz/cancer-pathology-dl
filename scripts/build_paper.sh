@@ -22,10 +22,13 @@ echo "==> Verifying page count..."
 PAGE_COUNT=$(pdfinfo all_dice_no_slice.pdf | awk '/^Pages:/ {print $2}')
 echo "    Compiled page count: ${PAGE_COUNT} pages"
 
-if [ "${PAGE_COUNT}" -ne 10 ]; then
-    echo "WARNING: Manuscript is ${PAGE_COUNT} pages (target is strictly 10 pages for camera-ready LNCS)!" >&2
+# CBM (Elsevier) has no fixed page limit; we only require a non-trivial
+# page count (>= 5) to catch degenerate/empty builds.
+if [ -z "${PAGE_COUNT}" ] || [ "${PAGE_COUNT}" -lt 5 ]; then
+    echo "ERROR: Manuscript compiled to ${PAGE_COUNT:-0} pages (expected a non-trivial page count >= 5)!" >&2
+    exit 1
 else
-    echo "    [PASS] Page count strictly adheres to 10-page camera-ready limit."
+    echo "    [PASS] Non-trivial page count (${PAGE_COUNT} pages) for CBM submission."
 fi
 
 echo "==> Copying compiled PDF to repository root (${ROOT_DIR}/all_dice_no_slice.pdf)..."

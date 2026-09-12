@@ -1,4 +1,4 @@
-\documentclass[runningheads]{llncs}
+\documentclass[preprint,12pt]{elsarticle}
 
 \usepackage{lmodern}
 \usepackage[T1]{fontenc}
@@ -11,25 +11,8 @@
 \usepackage{caption}
 \usepackage{subcaption}
 
-% Clean float and bibliography budgeting for exact 10-page MICCAI camera-ready limit
-\setlength{\textfloatsep}{8pt plus 1.0pt minus 2.0pt}
-\setlength{\floatsep}{6pt plus 1.0pt minus 2.0pt}
-\setlength{\intextsep}{6pt plus 1.0pt minus 2.0pt}
-
-\setcounter{topnumber}{3}
-\setcounter{bottomnumber}{3}
-\setcounter{totalnumber}{6}
-\renewcommand{\topfraction}{0.92}
-\renewcommand{\bottomfraction}{0.92}
-\renewcommand{\textfraction}{0.08}
-\renewcommand{\floatpagefraction}{0.40}
-
-\usepackage{etoolbox}
-\apptocmd{\thebibliography}{%
-  \fontsize{7.8pt}{9.2pt}\selectfont
-  \setlength{\itemsep}{0pt}%
-  \setlength{\parsep}{0pt}%
-}{}{}
+% CBM (Elsevier) preprint: float spacing and bibliography layout are managed
+% by the elsarticle class; the LNCS 10-page budgeting hacks are removed.
 
 \hypersetup{
     colorlinks=true,
@@ -41,23 +24,29 @@
 
 \begin{document}
 
+\begin{frontmatter}
+
 \title{All Dice, No Slice: Metric Artifacts, Data Leakage, and Task Interference in Multi-Task Computational Pathology}
-\titlerunning{All Dice, No Slice: Metric Artifacts and Task Interference}
 
-\author{Muhammad Abdullah Ali\inst{1}\thanks{Corresponding author: \email{i232523@isb.nu.edu.pk}} \and
-Muhammad Ibrahim Kiani\inst{1} \and
-Muhammad Abdullah Aamir\inst{1}}
-\authorrunning{M. A. Ali et al.}
-\institute{Department of Data Science, National University of Computer and Emerging Sciences (FAST-NUCES), Islamabad, Pakistan\\
-\email{\{i232523, i232536, i232538\}@isb.nu.edu.pk}}
+\author[fast]{Muhammad Abdullah Ali\corref{cor1}}
+\cortext[cor1]{Corresponding author}
+\ead{i232523@isb.nu.edu.pk}
+\author[fast]{Muhammad Ibrahim Kiani}
+\ead{i232536@isb.nu.edu.pk}
+\author[fast]{Muhammad Abdullah Aamir}
+\ead{i232538@isb.nu.edu.pk}
 
-\maketitle
+\affiliation[fast]{organization={Department of Data Science, National University of Computer and Emerging Sciences (FAST-NUCES)},addressline={Islamabad},country={Pakistan}}
 
 \begin{abstract}
 Simultaneous classification and lesion segmentation via hard parameter-sharing U-Nets is an appealing paradigm for computational pathology. Recently, classification accuracies of $82\%-90\%$ and Dice scores of $97\%-99\%$ were reported across diverse medical imaging modalities using standard convolutional backbones and static loss weighting. We conduct a 26-experiment replication and methodological audit across four datasets: TCGA-LGG brain-tumor MRI, PANDA prostate biopsies, SIIM-ACR pneumothorax radiographs, and the 19-tissue PanNuke benchmark. Under strict patient-level data isolation (\texttt{GroupKFold}), the claimed accuracies are not reproducible, and the reported Dice levels are attainable only as empty-mask artifacts: all four of our SIIM configurations converge to all-empty predictions yet report $77.74\%$ Dice --- exactly the lesion-free fraction of the validation split under the convention that scores empty-over-empty slices as perfect agreement. On fine-grained 6-class prostate cancer grading (PANDA), empirical top-1 accuracy spans $29.04\%-46.15\%$ and Dice spans $28.94\%-44.34\%$ across all 12 evaluated configurations, with static $5{:}1$-weighted $10^{-3}$ baselines (Runs 03--04) reaching $45.15\%-46.15\%$ / $43.30\%-44.34\%$ (vs.\ $88.0\%$ and $99.0\%$ claimed). We trace the discrepancy to three systemic causes: (1) empty-mask Dice crediting, (2) patient-level data leakage, and (3) task interference from the joint optimization recipe. Matched ablations further show that skip connections are a null result, whereas removing Macenko stain normalization \emph{improves} fine-grained classification (+5.51\% on PANDA, +2.68\% on PanNuke). We release our benchmark and audit protocol to prevent such metric artifacts in future multi-task pathology studies.
-
-\keywords{Computational Pathology \and Multi-Task Learning \and U-Net \and Reproducibility \and Metric Artifacts \and Data Leakage \and GradNorm}
 \end{abstract}
+
+\begin{keyword}
+Computational Pathology \sep Multi-Task Learning \sep U-Net \sep Reproducibility \sep Metric Artifacts \sep Data Leakage \sep GradNorm
+\end{keyword}
+
+\end{frontmatter}
 
 \section{Introduction}
 Deep learning systems in digital pathology and radiology are increasingly required to deliver both diagnostic categorization and lesion delineation~\cite{litjens2017survey,campanella2019clinical}. Large visual foundation models (e.g., UNI~\cite{chen2024uni}, CONCH~\cite{lu2024conch}, and Virchow~\cite{vorontsov2024virchow}) show that clinically actionable representations require massive pretraining and self-supervised objectives across gigapixel whole-slide images (WSIs). In resource-constrained deployments, hard parameter sharing via an encoder--decoder backbone (a U-Net~\cite{ronneberger2015u} with dual prediction heads) remains a lightweight alternative that couples both objectives in a single forward pass.
@@ -251,7 +240,7 @@ Holding GradNorm off under raw inputs, reducing the learning rate from $\eta=10^
 \section{Conclusion \& Recommendations}
 Across a 26-experiment campaign, the $88\%-99\%$ metrics reported in recent multi-task pathology literature were not reproducible under patient isolation and artifact-free evaluation: slice-averaged Dice with empty-credit assignment reports the lesion-free fraction rather than lesion overlap, and non-isolated splits inflate classification accuracy. On fine-grained tasks, the residual gap is dominated by dataset difficulty and by the joint optimization recipe: our matched skip-connection ablation is a verified null result, whereas factorial ablation shows that dynamic gradient balancing ($\alpha=1.5$) destabilizes fine-grained classification ($45.39\% \to 29.04\%$ Acc). For future multi-task pathology studies we recommend: (1) mandatory patient/biopsy-level \texttt{GroupKFold} splitting; (2) explicit reporting of the Dice evaluation convention, with foreground-only or zero-penalty scoring on sparse-lesion datasets; (3) 95\% Wilson score intervals on matched single-run ablation comparisons to distinguish genuine architectural effects from stochastic variance; (4) validation on diverse multi-organ benchmarks such as PanNuke; and (5) systematic evaluation of multi-task balancing hyperparameters before clinical translation.
 
-\bibliographystyle{splncs04}
+\bibliographystyle{elsarticle-num}
 \bibliography{references}
 
 \end{document}
