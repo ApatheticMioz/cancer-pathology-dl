@@ -67,25 +67,40 @@ _CI_GRAY = "#888888"
 _TIE_GRAY = "#cccccc"
 
 
+#: Encoder -> short display name (kept short so row labels fit the margin).
+_ENCODER_SHORT = {"vgg16": "VGG16", "mobilenet_v2": "MNV2"}
+
+#: Maximum length (characters) of a per-run row label.
+_MAX_LABEL_LEN = 22
+
+
 def _short_label(row, run_num: int) -> str:
-    """Build a short y-axis label like ``"01 TCGA VGG16"`` or
-    ``"18 PANDA VGG16 +GN"`` from the row's config."""
+    """Build a short y-axis label like ``"01 TCGA·VGG16"`` or
+    ``"18 PANDA·VGG16 +GN"`` from the row's config.
+
+    The label is ``<run#> <DATASET>·<ENCODER>`` plus config modifiers
+    (``+GN`` / ``no-Mac`` / ``no-skip`` / ``λ<ratio>``). Modifiers are added
+    greedily and the result is truncated to :data:`_MAX_LABEL_LEN` characters
+    so every label fits the left margin.
+    """
     ds = str(row["Dataset"]).upper()
-    enc = str(row["Encoder"]).upper().replace("_V2", "V2")
-    parts = [f"{run_num:02d}", ds, enc]
+    enc = _ENCODER_SHORT.get(str(row["Encoder"]), str(row["Encoder"]).upper())
+    label = f"{run_num:02d} {ds}\u00b7{enc}"
     mods = []
     if bool(row["Use GradNorm"]):
         mods.append("+GN")
-    if bool(row["Macenko"]):
-        mods.append("+MAC")
+    if not bool(row["Macenko"]):
+        mods.append("no-Mac")
     if not bool(row["Skip Connections"]):
         mods.append("no-skip")
     lr = str(row["Lambda Ratio (Seg:Cls)"])
     if lr and lr != "5:1":
         mods.append(f"\u03bb{lr}")
-    if mods:
-        parts.append(" ".join(mods))
-    return " ".join(parts)
+    for m in mods:
+        candidate = f"{label} {m}"
+        if len(candidate) <= _MAX_LABEL_LEN:
+            label = candidate
+    return label
 
 
 def _build_fig():
@@ -100,25 +115,35 @@ def _build_fig():
     # y positions: row 0 (run 1) at the top, row n-1 (run 26) at the bottom.
     y_pos = np.array([n - 1 - i for i in range(n)], dtype=float)
 
+    # The two panels share a single y-axis of 26 rows (sharey=True). The
+    # per-run row labels are set on that shared axis; matplotlib draws them
+    # only on the leftmost (Accuracy) panel, so the right panel's left edge
+    # shows tick marks but no duplicate labels (no collision in the
+    # inter-panel gap). Both panels therefore carry 26 y-tick positions.
+    #
+    # NOTE: we must NOT call set_ticklabels([]) on the shared axis — that
+    # would clear the labels for BOTH panels (the original F3 bug that left
+    # the y-axis bare).
     fig, (ax_acc, ax_dice) = plt.subplots(
         1, 2, figsize=(7, 7.5), dpi=300, sharey=True
     )
 
-    # --- Common y-axis (left panel carries the tick labels) --------------
+    # --- Per-run row labels on the shared y-axis -----------------------
+    row_labels = [_short_label(matrix.iloc[i], i + 1) for i in range(n)]
     ax_acc.set_yticks(y_pos)
-    ax_acc.set_yticklabels(
-        [_short_label(matrix.iloc[i], i + 1) for i in range(n)], fontsize=7
-    )
+    ax_acc.set_yticklabels(row_labels, fontsize=7)
     ax_acc.set_ylim(-0.5, n - 0.5)
-    ax_acc.set_xlim(0, 100)
+    # x headroom so markers / CI whiskers / claimed diamonds never clip.
+    ax_acc.set_xlim(-2, 105)
+    ax_acc.set_xticks([0, 20, 40, 60, 80, 100])
     ax_acc.set_xlabel("Validation Accuracy (%)", fontweight="bold")
     ax_acc.set_title("Validation Accuracy (%)", fontweight="bold")
 
-    ax_dice.set_xlim(0, 100)
+    ax_dice.set_ylim(-0.5, n - 0.5)
+    ax_dice.set_xlim(-2, 105)
+    ax_dice.set_xticks([0, 20, 40, 60, 80, 100])
     ax_dice.set_xlabel("Validation Dice (%)", fontweight="bold")
     ax_dice.set_title("Validation Dice (%)", fontweight="bold")
-    # The right panel shares the y-axis; hide its (redundant) tick labels.
-    ax_dice.yaxis.set_ticklabels([])
 
     # --- Group separators (thin horizontal lines) on both panels --------
     for (start, _end, _label) in GROUPS[1:]:
@@ -183,15 +208,23 @@ def _build_fig():
         ax.grid(axis="x", linestyle="--", alpha=style.GRID_ALPHA)
 
     # --- Layout, then place group labels in the left margin -------------
-    fig.subplots_adjust(left=0.30, right=0.98, top=0.93, bottom=0.12)
+    # The left margin is widened so the per-run row labels fit, and the
+    # group labels are placed to the *left* of the row labels (no overlap).
+    fig.subplots_adjust(left=0.42, right=0.98, top=0.93, bottom=0.12)
     fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
     pos = ax_acc.get_position()
     ylim = ax_acc.get_ylim()
+    # Leftmost edge of the row tick labels (in figure-fraction coords).
+    row_left = min(
+        t.get_window_extent(renderer).x0 / fig.get_figwidth() / fig.dpi
+        for t in ax_acc.get_yticklabels()
+    )
     for (start, end, label) in GROUPS:
         y_center = (y_pos[start] + y_pos[end - 1]) / 2.0
         y_frac = (y_center - ylim[0]) / (ylim[1] - ylim[0])
         y_fig = pos.y0 + y_frac * pos.height
-        fig.text(pos.x0 - 0.015, y_fig, label, ha="right", va="center",
+        fig.text(row_left - 0.015, y_fig, label, ha="right", va="center",
                  fontweight="bold", fontsize=7, color="black")
 
     # --- Shared legend (figure-level, lower center) --------------------
@@ -227,8 +260,10 @@ def verify() -> dict:
     Asserts:
       * exactly 26 rows;
       * every row has a parsed 95% CI (Acc Lower/Upper not NaN);
-      * no NaN measured values (Accuracy / Macro Dice).
-    Prints the row count. Returns a summary dict.
+      * no NaN measured values (Accuracy / Macro Dice);
+      * every row has a non-empty per-run tick label (26 per panel).
+    Prints the row count and the rendered limits / tick-label counts.
+    Returns a summary dict.
     """
     matrix = results_matrix()
     n = len(matrix)
@@ -246,8 +281,30 @@ def verify() -> dict:
     assert n_nan_acc == 0, f"{n_nan_acc} NaN measured Accuracy values"
     assert n_nan_dice == 0, f"{n_nan_dice} NaN measured Dice values"
 
-    # Build the figure to ensure it renders without error, then close it.
-    fig, _ = _build_fig()
+    # Build the figure to ensure it renders without error.
+    fig, (ax_acc, ax_dice) = _build_fig()
+    fig.canvas.draw()
+
+    # Both panels share one y-axis of 26 rows, so each panel must expose 26
+    # y-tick positions, and the shared axis must carry 26 non-empty per-run
+    # text labels (the original F3 bug left these empty).
+    n_acc_ticks = len(ax_acc.get_yticks())
+    n_dice_ticks = len(ax_dice.get_yticks())
+    shared_labels = [t.get_text() for t in ax_acc.get_yticklabels()]
+    n_nonempty = sum(1 for t in shared_labels if t.strip())
+    assert n_acc_ticks == n, f"expected {n} acc y-ticks, got {n_acc_ticks}"
+    assert n_dice_ticks == n, f"expected {n} dice y-ticks, got {n_dice_ticks}"
+    assert n_nonempty == n, (
+        f"expected {n} non-empty row labels, got {n_nonempty}"
+    )
+
+    acc_xlim = tuple(float(v) for v in ax_acc.get_xlim())
+    acc_ylim = tuple(float(v) for v in ax_acc.get_ylim())
+    dice_xlim = tuple(float(v) for v in ax_dice.get_xlim())
+    print(f"fig3 acc xlim={acc_xlim} ylim={acc_ylim} "
+          f"y-ticks={n_acc_ticks} (non-empty labels {n_nonempty})")
+    print(f"fig3 dice xlim={dice_xlim} y-ticks={n_dice_ticks}")
+
     plt.close(fig)
 
     return {
@@ -255,6 +312,12 @@ def verify() -> dict:
         "n_with_ci": n_ci,
         "n_nan_acc": n_nan_acc,
         "n_nan_dice": n_nan_dice,
+        "n_acc_yticks": n_acc_ticks,
+        "n_dice_yticks": n_dice_ticks,
+        "n_nonempty_row_labels": n_nonempty,
+        "acc_xlim": acc_xlim,
+        "acc_ylim": acc_ylim,
+        "dice_xlim": dice_xlim,
     }
 
 
