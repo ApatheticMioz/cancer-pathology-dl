@@ -21,13 +21,14 @@ before each merge to `main` and before the submission tag.
 | F-1 | plan | Dice CIs unavailable (no per-slice Dice stored anywhere). | WONTFIX: per-slice dumps were never logged; retraining out of scope. Figures/text show Acc CIs only (I2). |
 | F-2 | plan | No multi-seed / per-fold variance data (seed=42, k_folds=None everywhere). | WONTFIX: framing constraint, documented in prose (I3). |
 | F-3 | plan | `paper/generate_figures.py` hardcodes result values (PANDA 34.70→40.21, PanNuke 96.68→99.36, floor points). | OPEN → P2 refactor |
-| F-4 | plan | Venue port: llncs→elsarticle; splncs04→num-style bib; build-script 10-page gate obsolete. | OPEN → P1 |
+| F-4 | plan | Venue port: llncs→elsarticle; splncs04→num-style bib; build-script 10-page gate obsolete. | RESOLVED: e19b372 (14pp, body byte-stable, 0 llncs-isms; *.spl gitignore housekeeping deferred) |
 | F-5 | plan | Text: L249 (288w, 6 uniform sentences), L238 (93w opener), L252 (3×43-47-68w) — rhythm uniformity; graphics to absorb. | OPEN → P3/P5 |
 | F-6 | plan | Template repetition: "fine-grained"×10, "dynamic gradient balancing"×8, "verified null result"×4, "static 5:1…(Runs 03–04)"×3, "strictly matched"×3, "We therefore"×2, abstract 3×"We" openers. | OPEN → P5 |
 | F-7 | plan | Register: "collapse"×6 (overstates 16-pt drop), "infeasible", "acute", "appealing paradigm". | OPEN → P5 |
 | F-8 | plan | Passive clusters: L220 (3×), §2.3–2.4 GradNorm/Macenko prose. | OPEN → P5 |
 | F-9 | plan | Elsevier declarations missing (AI-writing statement, CRediT, Data Availability, highlights, graphical abstract). | OPEN → P6 |
-| F-10 | plan | epoch_log.jsonl has no run-id; needs timestamp-window disambiguation for F4 curves. | OPEN → P2 |
+| F-10 | plan | epoch_log.jsonl has no run-id; needs timestamp-window disambiguation for F4 curves. | RESOLVED: 54d814c (run_epoch_windows loader + CSV assertion; 17/26 runs attributable, 9 SKIPPED — concurrent same-(dataset,encoder) interleaving. F4 curves limited to attributable runs; endpoints for all 26 live in F3/F5/F6. Caption must state this.) |
+| F-11 | p2 | Two vLLM engine crashes during P2 dispatch (idle timeout; EngineCore fault, 3361s). Mitigation: slices split smaller; task state verified via git before re-dispatch. | RESOLVED: process note (no artifact impact — crashed dispatch wrote no files) |
 
 ## Closure log
 
