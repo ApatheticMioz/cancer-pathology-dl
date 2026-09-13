@@ -12,11 +12,13 @@ figures:
 	echo "==> Building figures with $$PY"; \
 	$$PY -m paper.figures.build_all
 
-# CBM graphical abstract: standalone copy of the results dot plot so the
-# provenance (which figure is submitted as the graphical abstract) is explicit.
+# CBM graphical abstract: a wide ~2.5:1 banner (Claimed-vs-Measured / Why /
+# Audit protocol) built by the paper.figures package. It overwrites
+# paper/graphical_abstract.{pdf,png}; the paper itself embeds nothing of it.
 graphical-abstract:
-	@cp paper/fig3_results_dotplot.pdf paper/graphical_abstract.pdf
-	@echo "==> paper/graphical_abstract.pdf (copy of paper/fig3_results_dotplot.pdf)"
+	@if [ -x venv/bin/python ]; then PY=venv/bin/python; else PY=python3; fi; \
+	echo "==> Building graphical abstract (wide CBM banner) with $$PY"; \
+	$$PY -m paper.figures.build_all ga
 
 clean-paper:
 	@rm -f paper/*.aux paper/*.bbl paper/*.blg paper/*.log paper/*.out paper/*.fls paper/*.fdb_latexmk paper/*.synctex.gz

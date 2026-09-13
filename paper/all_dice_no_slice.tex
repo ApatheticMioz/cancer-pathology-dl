@@ -86,7 +86,7 @@ Simultaneous classification and lesion segmentation via hard parameter-sharing U
 \end{abstract}
 
 \begin{keyword}
-Computational Pathology \sep Multi-Task Learning \sep U-Net \sep Reproducibility \sep Metric Artifacts \sep Data Leakage \sep GradNorm
+Computational Pathology \sep Multi-Task Learning \sep U-Net \sep Reproducibility \sep Metric Artifacts \sep Data Leakage
 \end{keyword}
 
 \end{frontmatter}
@@ -177,11 +177,11 @@ which for mean foreground Dice $\overline{\text{Dice}}_{\text{fg}}$ on lesion-be
 \begin{equation}\label{eq:convex_dice}
     \overline{\text{Dice}}_{\text{all}} = \rho + (1 - \rho) \cdot \overline{\text{Dice}}_{\text{fg}},
 \end{equation}
-where $\rho$ is the proportion of lesion-free slices. In sparse pathologies such as SIIM-ACR pneumothorax, a model with a genuine foreground Dice of $77.74\%$ would report $\overline{\text{Dice}}_{\text{all}} = 0.777 \times 1.0 + 0.223 \times 0.7774 = 95.04\%$ at the observed lesion-free fraction $\hat{\rho} = 1{,}659/2{,}135 = 0.777$ (an analytic illustration). Our four SIIM runs realize a more extreme failure mode. They emit empty masks on every validation slice throughout training, and each reported $77.74\%$ (Runs 05, 06, 11, 12) \emph{is the all-empty floor itself} --- Eq.~\ref{eq:slice_dice} with zero foreground Dice. Fig.~\ref{fig:empty_dice} shows why this matters: on sparse data, slice-averaged Dice reports the lesion-free fraction rather than lesion overlap. Published $99.0\%$ Dice claims~\cite{rhanoui2025multitask} are therefore uninterpretable as evidence of lesion localization.
+where $\rho$ is the proportion of lesion-free slices. In sparse pathologies such as SIIM-ACR pneumothorax, a model with a genuine foreground Dice of $77.74\%$ would report $\overline{\text{Dice}}_{\text{all}} = 0.777 \times 1.0 + 0.223 \times 0.7774 = 95.04\%$ at the observed lesion-free fraction $\hat{\rho} = 1{,}659/2{,}135 = 0.777$ (an analytic illustration). Our four SIIM runs realize a more extreme failure mode. They emit empty masks on every validation slice throughout training, and each reported $77.74\%$ (Runs 05, 06, 11, 12) \emph{is the all-empty floor itself} --- Eq.~\ref{eq:slice_dice} with zero foreground Dice. Fig.~\ref{fig:empty_dice} shows why this matters: on sparse data, slice-averaged Dice reports the lesion-free fraction rather than lesion overlap. Published $99.0\%$ Dice claims~\cite{rhanoui2025multitask} are therefore uninterpretable as evidence of lesion localization. Figure~\ref{fig:qualitative} makes this degeneracy visible: on a lesion-bearing SIIM validation tile the model's prediction is an all-empty mask, so the missed lesion is invisible to the slice-averaged mean.
 
-\begin{figure}[t]
+\begin{figure}[!tbp]
 \centering
-\includegraphics[width=0.98\textwidth,height=3.8cm,keepaspectratio]{fig2_empty_mask_dice.pdf}
+\includegraphics[width=\textwidth]{fig2_empty_mask_dice.pdf}
 \caption{The empty-mask Dice artifact on SIIM-ACR pneumothorax. (a) Lesion-free slice ($|Y|=0$): under empty-credit assignment an all-empty prediction is awarded $\text{Dice}=1.0$; lesion-free slices constitute $\hat{\rho}=77.7\%$ of our validation split. (b) Lesion-bearing slice ($|Y|>0$, ground-truth boundary in green): our all-empty models predict empty masks here and score $\text{Dice}=0$, invisible to the slice-averaged mean. (c) Convex-combination curve (Eq.~\ref{eq:convex_dice}): a foreground Dice of $77.74\%$ would report $95.04\%$ at $\hat{\rho}=0.777$ (analytic illustration), whereas all four of our SIIM runs measure the all-empty floor of $77.74\%$ itself.}
 \label{fig:empty_dice}
 \end{figure}
@@ -244,6 +244,13 @@ PanNuke & 5 & 91.90--99.43 & 39.59--74.21 & --- & --- & --- \\
 \includegraphics[width=\textwidth]{fig3_results_dotplot.pdf}
 \caption{26-run claimed-vs-measured dot plot. Left panel: validation accuracy (\%) with 95\% Wilson-CI whiskers (measured, filled markers) and the published claimed accuracy (black open diamond); the tie line between them is the gap that constitutes the paper's central argument. Right panel: validation Dice (\%) with the same layout but no whiskers, as no published confidence intervals exist for the macro-Dice claims. The PANDA rows (Runs 03--04, 09--10, 17--22, 23, 26) show the largest gaps: measured accuracy spans $29.04\%$--$46.15\%$ vs.\ claimed $87$--$88\%$, and Dice spans $28.94\%$--$44.34\%$ vs.\ claimed $98$--$99\%$. All four SIIM rows (Runs 05, 06, 11, 12) measure exactly $77.74\%$ Dice --- the all-empty floor. PanNuke rows (Runs 13--16, 24) have no published targets and are shown without claimed diamonds.}
 \label{fig:results_dotplot}
+\end{figure}
+
+\begin{figure}[!tbp]
+\centering
+\includegraphics[width=\textwidth]{fig8_qualitative_overlays.pdf}
+\caption{Qualitative ground-truth vs.\ prediction validation tiles for the four canonical v1 naked VGG16 baselines (Runs 01, 03, 05, 13; their best checkpoints). Each row is one dataset (TCGA-BRCA, PANDA, SIIM-ACR, PanNuke); the three columns are the input image, the ground-truth mask overlay, and the model's prediction overlay, with the per-tile Dice (binary Dice for TCGA/SIIM; macro Dice over the classes present in the ground truth for PANDA/PanNuke) shown in the prediction panel. The validation split is identical to training (single seed 42, single group-aware split). Tile selection is deterministic: the first validation tile (index order) with a non-empty ground-truth mask; for SIIM-ACR the selection advances to the first lesion-bearing tile whose prediction is all-empty, making the empty-mask degeneracy of Sec.~2.2 the visible face of the figure.}
+\label{fig:qualitative}
 \end{figure}
 
 We evaluated four benchmark datasets:
@@ -314,6 +321,12 @@ AI-assisted tools were used for language refinement and figure preparation. All 
 
 \section*{CRediT author statement}
 Muhammad Abdullah Ali: Conceptualization, Methodology, Software, Investigation, Writing -- original draft. Muhammad Ibrahim Kiani: Supervision, Validation, Writing -- review \& editing. Muhammad Abdullah Aamir: Data curation, Visualization, Writing -- review \& editing.
+
+\section*{Declaration of competing interest}
+The authors declare that they have no known competing financial interests or personal relationships that could have appeared to influence the work reported in this paper.
+
+\section*{Funding}
+This research did not receive any specific grant from funding agencies in the public, commercial, or not-for-profit sectors.
 
 \section*{Data availability}
 All training scripts, per-run JSON summaries, evaluation checkpoints, generated figures, and the complete results matrix with 95\% Wilson score intervals (\texttt{paper\_results\_matrix\_with\_ci.csv}) are publicly available at \url{https://github.com/ApatheticMioz/cancer-pathology-dl}.
