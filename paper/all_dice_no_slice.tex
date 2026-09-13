@@ -13,6 +13,12 @@
 \usepackage{caption}
 \usepackage{subcaption}
 
+% P7a: blanket overfull-hbox suppression.  \emergencystretch adds 3em of
+% extra inter-word stretch to every line, absorbing the 1–38pt overflows
+% that elsarticle's narrow preprint column produces without touching any
+% numeric or technical content.
+\emergencystretch=3em
+
 % CBM (Elsevier) preprint: float spacing and bibliography layout are managed
 % by the elsarticle class; the LNCS 10-page budgeting hacks are removed.
 
@@ -23,6 +29,28 @@
     urlcolor=cyan,
     citecolor=blue,
 }
+
+% P7a: the elsarticle preprint page style (ps@pprintTitle) builds a
+% fixed-width \hbox in the output routine that overflows \textwidth by
+% 2.61pt.  The class's nested \ifx footeralign chain (defaulting to the
+% "Preprint submitted to <journal> \hfill <date>" branch) introduces a
+% glue-parsing artifact that a clean single-\hfill box does not.  We
+% redefine the page style with the class's default-branch footer verbatim
+% (journal-aware, date-aware) in a clean \hbox to \textwidth, eliminating
+% the class-level overfull while preserving the footer line exactly.
+\makeatletter
+\def\ps@pprintTitle{%
+  \let\@oddhead\@empty
+  \let\@evenhead\@empty
+  \def\@oddfoot{%
+    \hbox to \textwidth{%
+      \footnotesize\itshape
+      Preprint submitted to \ifx\@journal\@empty Elsevier\else\@journal\fi\hfill\@date
+    }%
+  }%
+  \let\@evenfoot\@oddfoot
+}
+\makeatother
 
 \begin{document}
 
