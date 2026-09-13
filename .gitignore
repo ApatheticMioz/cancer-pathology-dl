@@ -103,6 +103,7 @@ Desktop.ini
 !paper/fig*.pdf
 !paper/fig*.png
 !paper/graphical_abstract.pdf
+!paper/graphical_abstract.png
 *.aux
 *.out
 *.fls
@@ -111,6 +112,7 @@ Desktop.ini
 *.bbl
 *.blg
 *.log
+*.spl
 
 # ============================================================
 # Image files
@@ -193,3 +195,6 @@ htmlcov/
 CLAUDE.md
 GEMINI.md
 .claude
+.gemini/
+.agents/
+.evo/
