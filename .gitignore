@@ -102,6 +102,7 @@ Desktop.ini
 !paper/all_dice_no_slice.pdf
 !paper/fig*.pdf
 !paper/fig*.png
+!paper/graphical_abstract.pdf
 *.aux
 *.out
 *.fls
