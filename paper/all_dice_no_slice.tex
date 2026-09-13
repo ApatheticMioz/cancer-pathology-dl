@@ -22,6 +22,19 @@
 % CBM (Elsevier) preprint: float spacing and bibliography layout are managed
 % by the elsarticle class; the LNCS 10-page budgeting hacks are removed.
 
+% P7b: float-placement relaxation.  The results matrix (Table 1) and the four
+% full-width analysis figures are 55--75% of text height each; under the
+% class defaults (topfraction 0.7, no float pages until end-of-document
+% flush) they queue behind one another and emerge after the bibliography.
+% Relaxing the fractions and permitting float pages mid-document places them
+% on dedicated pages adjacent to the sections that cite them.
+\renewcommand{\topfraction}{0.9}
+\renewcommand{\bottomfraction}{0.6}
+\renewcommand{\textfraction}{0.07}
+\renewcommand{\floatpagefraction}{0.7}
+\setcounter{topnumber}{3}
+\setcounter{totalnumber}{4}
+
 \hypersetup{
     colorlinks=true,
     linkcolor=blue,
@@ -208,7 +221,7 @@ where $I_0 = 255$ represents transmitted light intensity. The implementation com
 
 \subsection{Datasets and Experimental Protocol}
 
-\begin{table}[t]
+\begin{table}[!tbp]
 \centering
 \caption{26-run experimental results matrix across all five evaluation groups. V1 = original static baseline ($\eta=10^{-3}$, $\lambda_{seg}:\lambda_{cls}=5:1$, raw input); V2 = GradNorm variant ($\alpha=1.5$, $\eta=10^{-4}$, Macenko normalization). \checkmark\ = GradNorm active; ---\ = not used. Markers: $\times$ = skip connections zeroed; $\diamondsuit$ = raw input without Macenko normalization (v1 runs are raw by construction). Rows 17--22 (Group 4) systematically isolate learning rate ($\eta=10^{-4}$ vs $10^{-3}$), GradNorm ($\alpha=1.5$, Run 18), and loss weighting ratios on PANDA $\times$ VGG16 under raw input. Pub.\ Acc/Dice: published reference targets of Rhanoui et al.~\cite{rhanoui2025multitask} (--- = no published target). $\Delta_{\text{Acc}}$ / $\Delta_{\text{Dice}}$: difference relative to published targets. All metrics in \%. Complete 95\% Wilson score intervals for all 26 configurations are tabulated in the open-source repository matrix (\texttt{paper\_results\_matrix\_with\_ci.csv}).}
 \label{tab:results_matrix}
@@ -259,7 +272,7 @@ where $I_0 = 255$ represents transmitted light intensity. The implementation com
 }
 \end{table}
 
-\begin{figure}[t]
+\begin{figure}[!tbp]
 \centering
 \includegraphics[width=\textwidth]{fig3_results_dotplot.pdf}
 \caption{26-run claimed-vs-measured dot plot. Left panel: validation accuracy (\%) with 95\% Wilson-CI whiskers (measured, filled markers) and the published claimed accuracy (black open diamond); the tie line between them is the gap that constitutes the paper's central argument. Right panel: validation Dice (\%) with the same layout but no whiskers, as no published confidence intervals exist for the macro-Dice claims. The PANDA rows (Runs 03--04, 09--10, 17--22, 23, 26) show the largest gaps: measured accuracy spans $29.04\%$--$46.15\%$ vs.\ claimed $87$--$88\%$, and Dice spans $28.94\%$--$44.34\%$ vs.\ claimed $98$--$99\%$. All four SIIM rows (Runs 05, 06, 11, 12) measure exactly $77.74\%$ Dice --- the all-empty floor. PanNuke rows (Runs 13--16, 24) have no published targets and are shown without claimed diamonds.}
@@ -283,7 +296,7 @@ In Table~\ref{tab:results_matrix}, the most substantial discrepancy occurs on th
 
 This outcome is consistent with established clinical and machine learning benchmarks. In the international PANDA challenge (1,010 participating teams) \cite{bulten2022artificial}, the top-performing whole-slide multi-instance learning algorithms reached external validation quadratic weighted $\kappa$ of $0.862$ (95\% CI $0.840$--$0.884$) and $0.868$ ($0.835$--$0.900$) on U.S. and European cohorts, and inter-observer Gleason grading of biopsy cores is itself imperfect ($\kappa = 0.68$ among urologic pathologists and $0.435$ among general pathologists~\cite{allsbrook2001urologic,allsbrook2001general}). Claiming $88.0\%$ accuracy on $128 \times 128$ isolated patches with a standard 2D CNN is not attainable without patient-level data leakage: tiles from the same biopsy core contaminate both train and test splits. Figure~\ref{fig:panda_anatomy} traces the PANDA accuracy drop across training epochs and isolates the responsible mechanism.
 
-\begin{figure}[t]
+\begin{figure}[!tbp]
 \centering
 \includegraphics[width=\textwidth]{fig4_panda_anatomy.pdf}
 \caption{Anatomy of the PANDA accuracy drop. (a) Validation accuracy vs.\ epoch for three PANDA runs --- Run 03 (static $5{:}1$ baseline, $45.15\%$), Run 10 (v2 GradNorm package, $34.70\%$), Run 18 (isolated GradNorm at $\eta=10^{-3}$, $29.04\%$) --- plus the canonical decoupled \textsc{GradNorm} probe (dash-dot, shaded 95\% CI band), which remains stable but plateaus at $43.06\%$ over 15 epochs, $44.94$ percentage points below the claimed $88.0\%$ (black dashed reference). (b) \textsc{GradNorm} task-weight dynamics from the canonical log: the segmentation and classification weights over 15 epochs, showing the dynamic rebalancing that the joint variant turns into destructive updates on the shared encoder.}
@@ -301,7 +314,7 @@ In both cases the differences are small, and the 95\% Wilson score intervals on 
 \paragraph{Macenko stain-normalization ablation.}
 The matched Macenko pair (Group 5, Runs 23--24) is the only single-run ablation with a statistically resolvable classification shift: omitting normalization raises PANDA top-1 accuracy by $+5.51$ and PanNuke accuracy by $+2.68$ (disjoint 95\% CIs), while Dice stays flat on PANDA and rises by $+12.79$ on PanNuke. Color deconvolution thus harms fine-grained classification, consistent with over-smoothing of the chromatin/texture cues on which grading relies, and partially decomposes the v1-vs-v2 PANDA gap of \S\ref{sec:panda}. Figure~\ref{fig:ablation_forest} consolidates all six matched pairs; Figure~\ref{fig:macenko} shows the texture flattening.
 
-\begin{figure}[t]
+\begin{figure}[!tbp]
 \centering
 \includegraphics[width=\textwidth]{fig5_ablation_forest.pdf}
 \caption{Matched-ablation forest plot of validation accuracy with 95\% Wilson CIs for the six strictly matched pairs. Disjoint-CI pairs (shaded): isolated GradNorm (Run 18, $29.04\%$) vs.\ static $5{:}1$ (Run 20, $45.39\%$); no-Macenko PANDA (Run 23, $40.21\%$) vs.\ matched (Run 10, $34.70\%$); no-Macenko PanNuke (Run 24, $99.36\%$) vs.\ matched (Run 16, $96.68\%$). Overlapping-CI pairs: LR $10^{-4}$ vs.\ $10^{-3}$ (Runs 17 vs.\ 20: $43.35\%$ vs.\ $45.39\%$); skip ablation TCGA (Runs 25 vs.\ 08: $94.34\%$ vs.\ $93.32\%$); skip ablation PANDA (Runs 26 vs.\ 10: $35.31\%$ vs.\ $34.70\%$). The right-margin verdict column encodes the CI-overlap test, so the null-result status of the skip ablations and the resolvable Macenko/GradNorm effects are read directly from the plot.}
@@ -319,7 +332,7 @@ This $29.04\%$ accuracy and $31.43\%$ Dice matches the performance observed in P
 \paragraph{Learning Rate and Loss Weighting Dynamics.}
 Holding GradNorm off, reducing the learning rate from $\eta=10^{-3}$ (Run 20: $45.39\%$ Acc) to $\eta=10^{-4}$ (Run 17: $43.35\%$) yields a minor change within overlapping 95\% CIs. The static loss-ratio sweep (Runs 19--22) confirms $\lambda=5{:}1$ as the best static balance, yet no ratio approaches the claimed $88\%$ (Figure~\ref{fig:lambda_sweep}). The isolated GradNorm arm (Run 18) drops to $29.04\%$ against the $45.39\%$ static baseline with non-overlapping CIs, and the canonical decoupled scheme plateaus at $43.06\%$ --- dynamic balancing in either formulation cannot bridge the gap (Figures~\ref{fig:panda_anatomy}, \ref{fig:ablation_forest}).
 
-\begin{figure}[t]
+\begin{figure}[!tbp]
 \centering
 \includegraphics[width=\textwidth]{fig6_lambda_sweep.pdf}
 \caption{Static loss-weight ratio sweep on PANDA $\times$ VGG16 (raw input, $\eta=10^{-3}$, no GradNorm). (a) Validation accuracy with 95\% Wilson-CI whiskers: $\lambda_{seg}:\lambda_{cls} = 1{:}10$ ($41.83\%$), $1{:}1$ ($42.73\%$), $5{:}1$ ($45.39\%$), $10{:}1$ ($44.58\%$); the black dashed line marks the claimed $87.0\%$ accuracy. (b) Validation Dice for the same four arms ($38.06\%$, $41.72\%$, $44.08\%$, $41.52\%$) against the claimed $98.0\%$. The $5{:}1$ ratio is the best static balance on this architecture, yet no ratio approaches the claimed target --- the gap is not a loss-weighting artifact.}
