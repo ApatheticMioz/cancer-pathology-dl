@@ -113,7 +113,7 @@ def _build_fig():
     panda_color = style.DATASET_COLORS["PANDA"]
 
     fig, (ax_a, ax_b) = plt.subplots(
-        1, 2, figsize=(7, 4.2), dpi=300
+        1, 2, figsize=(7, 6.0), dpi=300
     )
 
     # --- Panel (a): validation accuracy vs epoch -----------------------
@@ -153,8 +153,12 @@ def _build_fig():
     # Reference line at the paper's claimed accuracy.
     ax_a.axhline(_CLAIMED_ACC, color="black", linestyle="--", linewidth=1.0,
                  zorder=2)
+    # Label just above the line. NOTE: use transData (NOT get_xaxis_transform,
+    # whose y is in axes-fraction 0-1) so y=88.8 is a data value just above the
+    # hline at 88 — using the xaxis transform here placed the text at
+    # 88.8 * axes-height (~87000 px off the top) and blew up the tight-bbox.
     ax_a.text(0.5, _CLAIMED_ACC + 0.8, f"claimed {_CLAIMED_ACC:.1f}%",
-              transform=ax_a.get_xaxis_transform(), ha="left", va="bottom",
+              transform=ax_a.transData, ha="left", va="bottom",
               fontsize=7, color="black")
 
     ax_a.set_xlabel("Epoch", fontweight="bold")
@@ -212,7 +216,10 @@ def verify() -> dict:
     Prints the final validation accuracy per curve and the final task
     weights. The final values must match the CSV / canonical log within
     tolerance 0.01 (run03 45.15, run10 34.70, run18 29.04, canonical 43.06).
-    Returns a summary dict.
+    Also runs a geometry guard: the rendered PNG must be a sane size
+    (width/height in [800, 6000] px at 300 dpi, aspect h/w in [0.4, 3.0]) —
+    this catches the F4b defect where a mis-transformed label blew the
+    tight-bbox up to a ~1:42 vertical sliver. Returns a summary dict.
     """
     TOL = 0.01
     checks = run_epoch_windows()
@@ -284,6 +291,26 @@ def verify() -> dict:
           f"run18={final_acc[18]:.2f} canonical={canon_final:.2f}")
     print(f"fig4 panel (b) final weights: seg={final_seg:.3f} cls={final_cls:.3f}")
 
+    # --- Geometry guard --------------------------------------------------
+    # Save the figure to a temp PNG and assert the rendered pixel dimensions
+    # are sane (the F4b defect: a mis-transformed text label blew the
+    # tight-bbox up to a ~1:42 vertical sliver). Width/height must each be in
+    # [800, 6000] px at 300 dpi and the aspect ratio (h/w) in [0.4, 3.0].
+    import tempfile
+    from pathlib import Path
+    from PIL import Image
+
+    with tempfile.TemporaryDirectory() as tmp:
+        png_path = Path(tmp) / "fig4_geometry_check.png"
+        fig.savefig(png_path, bbox_inches="tight", dpi=style.SAVE_DPI)
+        with Image.open(png_path) as im:
+            w, h = im.size
+    aspect = h / w
+    print(f"fig4 rendered PNG: {w} x {h} px (aspect h/w = {aspect:.3f})")
+    assert 800 <= w <= 6000, f"PNG width {w} px outside [800, 6000]"
+    assert 800 <= h <= 6000, f"PNG height {h} px outside [800, 6000]"
+    assert 0.4 <= aspect <= 3.0, f"PNG aspect h/w {aspect:.3f} outside [0.4, 3.0]"
+
     plt.close(fig)
 
     return {
@@ -297,6 +324,9 @@ def verify() -> dict:
         "final_acc_canonical": canon_final,
         "final_seg_weight": final_seg,
         "final_cls_weight": final_cls,
+        "png_width_px": w,
+        "png_height_px": h,
+        "png_aspect_h_over_w": aspect,
     }
 
 
