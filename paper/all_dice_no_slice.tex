@@ -223,53 +223,20 @@ where $I_0 = 255$ represents transmitted light intensity. The implementation com
 
 \begin{table}[!tbp]
 \centering
-\caption{26-run experimental results matrix across all five evaluation groups. V1 = original static baseline ($\eta=10^{-3}$, $\lambda_{seg}:\lambda_{cls}=5:1$, raw input); V2 = GradNorm variant ($\alpha=1.5$, $\eta=10^{-4}$, Macenko normalization). \checkmark\ = GradNorm active; ---\ = not used. Markers: $\times$ = skip connections zeroed; $\diamondsuit$ = raw input without Macenko normalization (v1 runs are raw by construction). Rows 17--22 (Group 4) systematically isolate learning rate ($\eta=10^{-4}$ vs $10^{-3}$), GradNorm ($\alpha=1.5$, Run 18), and loss weighting ratios on PANDA $\times$ VGG16 under raw input. Pub.\ Acc/Dice: published reference targets of Rhanoui et al.~\cite{rhanoui2025multitask} (--- = no published target). $\Delta_{\text{Acc}}$ / $\Delta_{\text{Dice}}$: difference relative to published targets. All metrics in \%. Complete 95\% Wilson score intervals for all 26 configurations are tabulated in the open-source repository matrix (\texttt{paper\_results\_matrix\_with\_ci.csv}).}
+\scriptsize
+\setlength{\tabcolsep}{1pt}
+\caption{Per-dataset summary of the 26-run reproduction campaign. Ranges span the configurations within each dataset (single seed 42, single split --- not seed variance). Per-run values with 95\% Wilson score intervals are tabulated in the open-source repository matrix (\texttt{paper\_results\_matrix\_with\_ci.csv}), and every run is plotted in Figure~\ref{fig:results_dotplot}. The SIIM-ACR Dice value is constant across all four SIIM runs: it is the empty-mask degeneracy of Sec.~2.2 (the empty-mask Dice metric artifact). The PanNuke row has no published targets. $\Delta$Acc = gap to the published accuracy targets.}
 \label{tab:results_matrix}
-\setlength{\tabcolsep}{2.8pt}
-\renewcommand{\arraystretch}{0.88}
-\resizebox{\textwidth}{!}{%
-\begin{tabular}{@{}c l l l c c c c c c c c@{}}
+\begin{tabular}{@{}l c c c c c c@{}}
 \toprule
-\textbf{\#} & \textbf{Configuration} & \textbf{Dataset} & \textbf{Encoder} & \textbf{LR $\eta$} & \textbf{GN} & \textbf{Val Acc} & \textbf{Val Dice} & \textbf{Pub. Acc} & \textbf{Pub. Dice} & $\Delta_{\text{Acc}}$ & $\Delta_{\text{Dice}}$ \\
+\textbf{Dataset} & \textbf{Runs $n$} & \textbf{Val Acc (\%)} & \textbf{Val Dice (\%)} & \textbf{$\Delta$Acc (pts)} & \textbf{Pub. Acc (\%)} & \textbf{Pub. Dice (\%)} \\
 \midrule
-\multicolumn{12}{l@{}}{\textit{\textbf{Group 1: Baseline Reproductions (static 5:1, $\eta=10^{-3}$, raw input)}}} \\
-01 & Naked Baseline & TCGA & VGG16 & $10^{-3}$ & --- & 88.82 & 76.02 & 89.0 & 97.0 & $-0.18$ & $-20.98$ \\
-02 & Naked Baseline & TCGA & MobileNetV2 & $10^{-3}$ & --- & 94.60 & 87.56 & 90.0 & 98.0 & $+4.60$ & $-10.44$ \\
-03 & Naked Baseline & PANDA & VGG16 & $10^{-3}$ & --- & 45.15 & 43.30 & 87.0 & 98.0 & $-41.85$ & $-54.70$ \\
-04 & Naked Baseline & PANDA & MobileNetV2 & $10^{-3}$ & --- & 46.15 & 44.34 & 88.0 & 99.0 & $-41.85$ & $-54.66$ \\
-05 & Naked Baseline & SIIM & VGG16 & $10^{-3}$ & --- & 83.19 & 77.74 & 82.0 & 99.0 & $+1.19$ & $-21.26$ \\
-06 & Naked Baseline & SIIM & MobileNetV2 & $10^{-3}$ & --- & 83.47 & 77.74 & 87.0 & 99.0 & $-3.53$ & $-21.26$ \\
-\midrule
-\multicolumn{12}{l@{}}{\textit{\textbf{Group 2: V2 Package (GradNorm $\alpha=1.5$, $\eta=10^{-4}$, Macenko normalization)}}} \\
-07 & GradNorm v2 & TCGA & VGG16 & $10^{-4}$ & \checkmark & 92.80 & 78.30 & 89.0 & 97.0 & $+3.80$ & $-18.70$ \\
-08 & GradNorm v2 & TCGA & MobileNetV2 & $10^{-4}$ & \checkmark & 93.32 & 84.20 & 90.0 & 98.0 & $+3.32$ & $-13.80$ \\
-09 & GradNorm v2 & PANDA & VGG16 & $10^{-4}$ & \checkmark & 30.89 & 31.59 & 87.0 & 98.0 & $-56.11$ & $-66.41$ \\
-10 & GradNorm v2 & PANDA & MobileNetV2 & $10^{-4}$ & \checkmark & 34.70 & 31.34 & 88.0 & 99.0 & $-53.30$ & $-67.66$ \\
-11 & GradNorm v2 & SIIM & VGG16 & $10^{-4}$ & \checkmark & 81.08 & 77.74 & 82.0 & 99.0 & $-0.92$ & $-21.26$ \\
-12 & GradNorm v2 & SIIM & MobileNetV2 & $10^{-4}$ & \checkmark & 83.00 & 77.74 & 87.0 & 99.0 & $-4.00$ & $-21.26$ \\
-\midrule
-\multicolumn{12}{l@{}}{\textit{\textbf{Group 3: PanNuke 19-Tissue Multi-Organ Benchmark (external control; no published targets)}}} \\
-13 & Naked Baseline & PanNuke & VGG16 & $10^{-3}$ & --- & 98.85 & 72.48 & --- & --- & --- & --- \\
-14 & Naked Baseline & PanNuke & MobileNetV2 & $10^{-3}$ & --- & 99.43 & 74.21 & --- & --- & --- & --- \\
-15 & GradNorm v2 & PanNuke & VGG16 & $10^{-4}$ & \checkmark & 91.90 & 39.59 & --- & --- & --- & --- \\
-16 & GradNorm v2 & PanNuke & MobileNetV2 & $10^{-4}$ & \checkmark & 96.68 & 60.54 & --- & --- & --- & --- \\
-\midrule
-\multicolumn{12}{l@{}}{\textit{\textbf{Group 4: Optimization Isolation (PANDA $\times$ VGG16: LR, GradNorm, loss weighting; raw input)}}} \\
-17 & Isolate LR: static $\eta=10^{-4}$ $\diamondsuit$ & PANDA & VGG16 & $10^{-4}$ & --- & 43.35 & 37.99 & 87.0 & 98.0 & $-43.65$ & $-60.01$ \\
-18 & Isolate GradNorm: $\alpha=1.5$ & PANDA & VGG16 & $10^{-3}$ & \checkmark & 29.04 & 31.43 & 87.0 & 98.0 & $-57.96$ & $-66.57$ \\
-19 & Loss weight $\lambda=1{:}1$ & PANDA & VGG16 & $10^{-3}$ & --- & 42.73 & 41.72 & 87.0 & 98.0 & $-44.27$ & $-56.28$ \\
-20 & Loss weight $\lambda=5{:}1$ & PANDA & VGG16 & $10^{-3}$ & --- & 45.39 & 44.08 & 87.0 & 98.0 & $-41.61$ & $-53.92$ \\
-21 & Loss weight $\lambda=1{:}10$ & PANDA & VGG16 & $10^{-3}$ & --- & 41.83 & 38.06 & 87.0 & 98.0 & $-45.17$ & $-59.94$ \\
-22 & Loss weight $\lambda=10{:}1$ & PANDA & VGG16 & $10^{-3}$ & --- & 44.58 & 41.52 & 87.0 & 98.0 & $-42.42$ & $-56.48$ \\
-\midrule
-\multicolumn{12}{l@{}}{\textit{\textbf{Group 5: Ablation Matrix (stain normalization $\diamondsuit$ and skip connections $\times$)}}} \\
-23 & Ablation: No-Macenko $\diamondsuit$ & PANDA & MobileNetV2 & $10^{-4}$ & \checkmark & 40.21 & 31.57 & 88.0 & 99.0 & $-47.79$ & $-67.43$ \\
-24 & Ablation: No-Macenko $\diamondsuit$ & PanNuke & MobileNetV2 & $10^{-4}$ & \checkmark & 99.36 & 73.33 & --- & --- & --- & --- \\
-25 & Ablation: No-Skips $\times$ & TCGA & MobileNetV2 & $10^{-4}$ & \checkmark & 94.34 & 84.12 & 90.0 & 98.0 & $+4.34$ & $-13.88$ \\
-26 & Ablation: No-Skips $\times$ & PANDA & MobileNetV2 & $10^{-4}$ & \checkmark & 35.31 & 28.94 & 88.0 & 99.0 & $-52.69$ & $-70.06$ \\
+TCGA-BRCA & 5 & 88.82--94.60 & 76.02--87.56 & $-0.18$--$4.60$ & 89.00--90.00 & 97.00--98.00 \\
+PANDA & 12 & 29.04--46.15 & 28.94--44.34 & $-57.96$--$-41.61$ & 87.00--88.00 & 98.00--99.00 \\
+SIIM-ACR & 4 & 81.08--83.47 & 77.74 & $-4.00$--$1.19$ & 82.00--87.00 & 99.00 \\
+PanNuke & 5 & 91.90--99.43 & 39.59--74.21 & --- & --- & --- \\
 \bottomrule
-\end{tabular}%
-}
+\end{tabular}
 \end{table}
 
 \begin{figure}[!tbp]
@@ -287,7 +254,7 @@ We evaluated four benchmark datasets:
     \item \textbf{PanNuke:} 19-tissue multi-organ benchmark ($N=7,901$ patches~\cite{gamper2020pannuke}); having no published multi-task targets, it serves as an unclaimed external control.
 \end{enumerate}
 
-We trained all models with PyTorch (up to 50 epochs with early stopping, patience 10; batch size 32; fixed seed 42) using ImageNet-pretrained encoders and the \texttt{Adam} optimizer with a constant per-phase learning rate and zero weight decay, and we applied no learning-rate schedule or additional regularization. In Phase~v1 (Runs 01--06), we replicated the original static setup ($\eta=10^{-3}$, $\lambda_{seg}:\lambda_{cls}=5:1$, raw inputs). In Phase~v2 (Runs 07--12), we incorporated dynamic \textsc{GradNorm} ($\alpha=1.5$, $\eta=10^{-4}$) and Macenko stain normalization~\cite{macenko2009method}. Groups 3--5 (Runs 13--26) systematically evaluate multi-organ generalizability, optimization hyperparameter isolation, and architectural skip ablations. Table~\ref{tab:results_matrix} summarizes all 26 runs and Figure~\ref{fig:results_dotplot} visualizes them.
+We trained all models with PyTorch (up to 50 epochs with early stopping, patience 10; batch size 32; fixed seed 42) using ImageNet-pretrained encoders and the \texttt{Adam} optimizer with a constant per-phase learning rate and zero weight decay, and we applied no learning-rate schedule or additional regularization. In Phase~v1 (Runs 01--06), we replicated the original static setup ($\eta=10^{-3}$, $\lambda_{seg}:\lambda_{cls}=5:1$, raw inputs). In Phase~v2 (Runs 07--12), we incorporated dynamic \textsc{GradNorm} ($\alpha=1.5$, $\eta=10^{-4}$) and Macenko stain normalization~\cite{macenko2009method}. Groups 3--5 (Runs 13--26) systematically evaluate multi-organ generalizability, optimization hyperparameter isolation, and architectural skip ablations. Table~\ref{tab:results_matrix} summarizes the campaign per dataset and Figure~\ref{fig:results_dotplot} plots every run.
 
 \section{Discussion \& Methodological Anatomy}
 
