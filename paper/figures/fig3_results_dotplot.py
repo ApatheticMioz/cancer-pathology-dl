@@ -70,36 +70,63 @@ _TIE_GRAY = "#cccccc"
 #: Encoder -> short display name (kept short so row labels fit the margin).
 _ENCODER_SHORT = {"vgg16": "VGG16", "mobilenet_v2": "MNV2"}
 
-#: Maximum length (characters) of a per-run row label.
-_MAX_LABEL_LEN = 22
+#: Explicit per-run row-label modifiers (run number -> modifier string, or
+#: ``None`` for the plain baseline). The base part of each label is derived
+#: from the row's Dataset/Encoder columns; only the differentiating modifier
+#: is pinned here so it is never lost to length-based truncation (the F3c
+#: defect: greedy truncation kept the redundant ``no-Mac`` on v1 baselines
+#: while dropping the differentiating ``λ`` ratios on runs 19-22 and the
+#: ``no-Mac``/``no-skip`` on runs 23-26, making rows 23 and 26 identical).
+_LABEL_MODIFIERS = {
+    1: None, 2: None, 3: None, 4: None, 5: None, 6: None,
+    7: "+GN", 8: "+GN", 9: "+GN", 10: "+GN", 11: "+GN", 12: "+GN",
+    13: None, 14: None, 15: "+GN", 16: "+GN",
+    17: "\u03b71e-4", 18: "iso-GN",
+    19: "\u03bb1:1", 20: "\u03bb5:1", 21: "\u03bb1:10", 22: "\u03bb10:1",
+    23: "no-Mac", 24: "no-Mac", 25: "no-skip", 26: "no-skip",
+}
+
+#: Expected ``(Dataset, Encoder)`` per run number — a sanity guard so the
+#: label mapping cannot silently desync from the data.
+_RUN_DATASET_ENCODER = {
+    1: ("TCGA", "vgg16"), 2: ("TCGA", "mobilenet_v2"),
+    3: ("PANDA", "vgg16"), 4: ("PANDA", "mobilenet_v2"),
+    5: ("SIIM", "vgg16"), 6: ("SIIM", "mobilenet_v2"),
+    7: ("TCGA", "vgg16"), 8: ("TCGA", "mobilenet_v2"),
+    9: ("PANDA", "vgg16"), 10: ("PANDA", "mobilenet_v2"),
+    11: ("SIIM", "vgg16"), 12: ("SIIM", "mobilenet_v2"),
+    13: ("PANNUKE", "vgg16"), 14: ("PANNUKE", "mobilenet_v2"),
+    15: ("PANNUKE", "vgg16"), 16: ("PANNUKE", "mobilenet_v2"),
+    17: ("PANDA", "vgg16"), 18: ("PANDA", "vgg16"),
+    19: ("PANDA", "vgg16"), 20: ("PANDA", "vgg16"),
+    21: ("PANDA", "vgg16"), 22: ("PANDA", "vgg16"),
+    23: ("PANDA", "mobilenet_v2"), 24: ("PANNUKE", "mobilenet_v2"),
+    25: ("TCGA", "mobilenet_v2"), 26: ("PANDA", "mobilenet_v2"),
+}
 
 
 def _short_label(row, run_num: int) -> str:
-    """Build a short y-axis label like ``"01 TCGA·VGG16"`` or
-    ``"18 PANDA·VGG16 +GN"`` from the row's config.
+    """Build the per-run y-axis label like ``"01 TCGA·VGG16"`` or
+    ``"19 PANDA·VGG16 λ1:1"``.
 
-    The label is ``<run#> <DATASET>·<ENCODER>`` plus config modifiers
-    (``+GN`` / ``no-Mac`` / ``no-skip`` / ``λ<ratio>``). Modifiers are added
-    greedily and the result is truncated to :data:`_MAX_LABEL_LEN` characters
-    so every label fits the left margin.
+    The base part (``<run#> <DATASET>·<ENCODER>``) is derived from the row's
+    Dataset/Encoder columns; the differentiating modifier is pinned by
+    :data:`_LABEL_MODIFIERS` (never lost to length-based truncation). A
+    sanity guard asserts the row's dataset+encoder match the expected value
+    for that run number so the mapping cannot silently desync from the data.
     """
     ds = str(row["Dataset"]).upper()
     enc = _ENCODER_SHORT.get(str(row["Encoder"]), str(row["Encoder"]).upper())
+    expected_ds, expected_enc = _RUN_DATASET_ENCODER[run_num]
+    if ds != expected_ds or str(row["Encoder"]) != expected_enc:
+        raise AssertionError(
+            f"run {run_num:02d} dataset/encoder mismatch: "
+            f"got {ds}/{row['Encoder']}, expected {expected_ds}/{expected_enc}"
+        )
     label = f"{run_num:02d} {ds}\u00b7{enc}"
-    mods = []
-    if bool(row["Use GradNorm"]):
-        mods.append("+GN")
-    if not bool(row["Macenko"]):
-        mods.append("no-Mac")
-    if not bool(row["Skip Connections"]):
-        mods.append("no-skip")
-    lr = str(row["Lambda Ratio (Seg:Cls)"])
-    if lr and lr != "5:1":
-        mods.append(f"\u03bb{lr}")
-    for m in mods:
-        candidate = f"{label} {m}"
-        if len(candidate) <= _MAX_LABEL_LEN:
-            label = candidate
+    modifier = _LABEL_MODIFIERS[run_num]
+    if modifier is not None:
+        label = f"{label} {modifier}"
     return label
 
 
@@ -261,9 +288,11 @@ def verify() -> dict:
       * exactly 26 rows;
       * every row has a parsed 95% CI (Acc Lower/Upper not NaN);
       * no NaN measured values (Accuracy / Macro Dice);
-      * every row has a non-empty per-run tick label (26 per panel).
-    Prints the row count and the rendered limits / tick-label counts.
-    Returns a summary dict.
+      * every row has a non-empty per-run tick label (26 per panel);
+      * all 26 rendered labels match the explicit run-number mapping exactly
+        (and rows 23 vs 26 are no longer identical).
+    Prints the row count, the rendered limits / tick-label counts, and the
+    rendered labels. Returns a summary dict.
     """
     matrix = results_matrix()
     n = len(matrix)
@@ -298,12 +327,32 @@ def verify() -> dict:
         f"expected {n} non-empty row labels, got {n_nonempty}"
     )
 
+    # Every rendered label must match the explicit run-number mapping exactly
+    # (the F3c fix: no greedy truncation, so no label is silently altered).
+    expected_labels = [_short_label(matrix.iloc[i], i + 1) for i in range(n)]
+    mismatches = [
+        (i + 1, got, exp)
+        for i, (got, exp) in enumerate(zip(shared_labels, expected_labels))
+        if got != exp
+    ]
+    assert not mismatches, (
+        f"{len(mismatches)} row label(s) do not match the explicit mapping: "
+        f"{mismatches[:3]}"
+    )
+    # The F3c defect specifically: rows 23 and 26 must no longer be identical.
+    assert shared_labels[22] != shared_labels[25], (
+        "rows 23 and 26 render identical labels (F3c defect not fixed)"
+    )
+
     acc_xlim = tuple(float(v) for v in ax_acc.get_xlim())
     acc_ylim = tuple(float(v) for v in ax_acc.get_ylim())
     dice_xlim = tuple(float(v) for v in ax_dice.get_xlim())
     print(f"fig3 acc xlim={acc_xlim} ylim={acc_ylim} "
           f"y-ticks={n_acc_ticks} (non-empty labels {n_nonempty})")
     print(f"fig3 dice xlim={dice_xlim} y-ticks={n_dice_ticks}")
+    print("fig3 rendered row labels:")
+    for lbl in shared_labels:
+        print(f"    {lbl}")
 
     plt.close(fig)
 
@@ -315,6 +364,7 @@ def verify() -> dict:
         "n_acc_yticks": n_acc_ticks,
         "n_dice_yticks": n_dice_ticks,
         "n_nonempty_row_labels": n_nonempty,
+        "n_labels_match_mapping": n - len(mismatches),
         "acc_xlim": acc_xlim,
         "acc_ylim": acc_ylim,
         "dice_xlim": dice_xlim,
