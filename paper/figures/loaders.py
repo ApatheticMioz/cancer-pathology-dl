@@ -362,6 +362,64 @@ def run_epoch_windows() -> list:
 
 
 # ---------------------------------------------------------------------------
+# (c2) Per-epoch run trajectory (for trajectory figures)
+# ---------------------------------------------------------------------------
+
+def run_trajectory(run_num: int) -> pd.DataFrame:
+    """Return the per-epoch validation trajectory for one run.
+
+    ``run_num`` is the 1-based run number (the CSV row index, which equals the
+    ``run_NN`` log number). The run's log is located by its ``Final metrics``
+    timestamp, the attempt window containing that timestamp is selected, and
+    the epoch log is sliced by ``(dataset, encoder, timestamp-in-window)`` —
+    the exact same windowing as :func:`run_epoch_windows`.
+
+    Returns a :class:`pandas.DataFrame` with columns ``epoch``, ``vl_acc``,
+    ``best_vl_acc``, ``vl_dice`` (all percentages). ``best_vl_acc`` is the
+    running-best validation accuracy (the value the CSV ``Accuracy (%)``
+    column reports); ``vl_acc`` is the raw per-epoch value.
+
+    Returns an **empty** DataFrame (with those columns) when the run is not
+    attributable to a single epoch-log window (e.g. concurrent same-
+    (dataset, encoder) overlap) — callers should treat an empty result as
+    "skip this curve", not as a failure.
+    """
+    matrix = results_matrix()
+    if run_num < 1 or run_num > len(matrix):
+        return pd.DataFrame(columns=["epoch", "vl_acc", "best_vl_acc", "vl_dice"])
+    row = matrix.iloc[run_num - 1]
+    ds = str(row["Dataset"]).lower()
+    enc = str(row["Encoder"])
+    csv_ts = str(row["Timestamp"]).replace("T", " ")
+
+    epoch_log = _load_epoch_log()
+    for p in sorted(LOGS_DIR.glob("run_*.log")):
+        fm, wins = _parse_log_windows(p)
+        if fm is None or fm["ts"] != csv_ts:
+            continue
+        if fm["dataset"] != ds or fm["encoder"] != enc:
+            continue
+        csv_dt = _parse_dt(csv_ts)
+        chosen = [w for w in wins if w.contains(csv_dt)]
+        if not chosen:
+            return pd.DataFrame(columns=["epoch", "vl_acc", "best_vl_acc", "vl_dice"])
+        win = chosen[-1]
+        sel = _slice_window(epoch_log, ds, enc, win.start, win.end)
+        if not sel:
+            return pd.DataFrame(columns=["epoch", "vl_acc", "best_vl_acc", "vl_dice"])
+        out = pd.DataFrame(
+            {
+                "epoch": [int(r["epoch"]) for r in sel],
+                "vl_acc": [float(r["vl_acc"]) * 100.0 for r in sel],
+                "best_vl_acc": [float(r["best_vl_acc"]) * 100.0 for r in sel],
+                "vl_dice": [float(r["vl_dice"]) * 100.0 for r in sel],
+            }
+        )
+        return out.sort_values("epoch").reset_index(drop=True)
+    return pd.DataFrame(columns=["epoch", "vl_acc", "best_vl_acc", "vl_dice"])
+
+
+# ---------------------------------------------------------------------------
 # (d) Canonical GradNorm probe
 # ---------------------------------------------------------------------------
 
