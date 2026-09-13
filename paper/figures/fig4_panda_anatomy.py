@@ -57,12 +57,14 @@ style.apply()
 # Panel (a) curve definitions.
 # ---------------------------------------------------------------------------
 
-#: (run number, short direct label, linestyle) for the three PANDA runs.
-#: All use the locked PANDA color; linestyle + direct label distinguish them.
+#: (run number, legend label, linestyle) for the three PANDA runs.
+#: All use the locked PANDA color; linestyle distinguishes them in the
+#: frameless legend. The legend label carries the CSV-verified final
+#: validation accuracy (the value the CSV ``Accuracy (%)`` column reports).
 _PANDA_CURVES = [
-    (3, "03 baseline", "-"),
-    (10, "10 +GN pkg", "--"),
-    (18, "18 iso-GN", ":"),
+    (3, "03 baseline (45.15%)", "-"),
+    (10, "10 +GN package (34.70%)", "--"),
+    (18, "18 isolated GradNorm (29.04%)", ":"),
 ]
 
 #: The paper's claimed PANDA validation accuracy (reference line).
@@ -118,6 +120,9 @@ def _build_fig():
 
     # --- Panel (a): validation accuracy vs epoch -----------------------
     # PANDA curves (per-epoch best_vl_acc), gated on run_epoch_windows status.
+    # Each curve carries a ``label`` for the frameless legend below (the
+    # in-plot direct labels were removed: they collided with / struck through
+    # their own curves in the crowded 28-45% zone).
     for run_num, label, ls in _PANDA_CURVES:
         check = checks[run_num - 1]
         if check.status != "PASS":
@@ -127,28 +132,15 @@ def _build_fig():
         if traj.empty:
             continue
         ax_a.plot(traj["epoch"], traj["best_vl_acc"], color=panda_color,
-                  linestyle=ls, linewidth=1.4, zorder=3)
-        # Direct label at the final-epoch end, placed to the LEFT of the
-        # point (inside the plot) so it is never clipped by the panel edge.
-        ax_a.annotate(
-            label,
-            xy=(traj["epoch"].iloc[-1], traj["best_vl_acc"].iloc[-1]),
-            xytext=(-6, 0), textcoords="offset points",
-            fontsize=7, color=panda_color, va="center", ha="right",
-        )
+                  linestyle=ls, linewidth=1.4, zorder=3, label=label)
 
     # Canonical decoupled probe curve (running-max val acc) + CI band.
     c_epochs, c_runmax, c_lo, c_hi = _canonical_running_max()
     ax_a.fill_between(c_epochs, c_lo, c_hi, color="black", alpha=0.10,
                       zorder=1, label=None)
     ax_a.plot(c_epochs, c_runmax, color="black", linestyle=_CANON_LINESTYLE,
-              linewidth=1.4, zorder=3)
-    ax_a.annotate(
-        "canonical probe",
-        xy=(c_epochs[-1], c_runmax[-1]),
-        xytext=(-6, 0), textcoords="offset points",
-        fontsize=7, color="black", va="center", ha="right",
-    )
+              linewidth=1.4, zorder=3,
+              label="canonical decoupled probe (43.06%)")
 
     # Reference line at the paper's claimed accuracy.
     ax_a.axhline(_CLAIMED_ACC, color="black", linestyle="--", linewidth=1.0,
@@ -167,6 +159,13 @@ def _build_fig():
     ax_a.set_xlim(0.5, 35.5)
     ax_a.set_ylim(0, 100)
     ax_a.grid(True, linestyle="--", alpha=style.GRID_ALPHA)
+
+    # One frameless legend for the four curves, anchored upper-right inside
+    # the axes but pulled down (bbox_to_anchor y=0.85) so it sits in the free
+    # band *below* the claimed-88% hline (y ~ 71-84) and above the curves
+    # (which live in the 28-45% zone) — no curve is struck.
+    ax_a.legend(loc="upper right", bbox_to_anchor=(1.0, 0.85),
+                fontsize=7, frameon=False)
 
     # --- Panel (b): GradNorm task-weight dynamics ----------------------
     can = canonical_gradnorm()
