@@ -31,6 +31,7 @@ from __future__ import annotations
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
+from matplotlib.ticker import NullFormatter
 
 from . import style
 from .loaders import REPO_ROOT, results_matrix
@@ -105,10 +106,11 @@ def _build_fig():
             ds, enc, val, lo, hi = _arm_data(run_num)
             color = style.DATASET_COLORS[ds]
             marker = style.ENCODER_MARKERS[enc]
-            # Horizontal CI whisker with end caps.
+            # Horizontal CI whisker with slim end caps (~3pt; the previous
+            # 0.12-unit caps rendered disproportionately thick).
             ax.plot([lo, hi], [y, y], color=color, linewidth=1.2,
                     zorder=2, solid_capstyle="butt")
-            cap = 0.12
+            cap = 0.06
             ax.plot([lo, lo], [y - cap, y + cap], color=color, linewidth=1.2,
                     zorder=2)
             ax.plot([hi, hi], [y - cap, y + cap], color=color, linewidth=1.2,
@@ -136,6 +138,11 @@ def _build_fig():
     ax.set_xticks([0, 20, 40, 60, 80, 100])
     ax.set_ylim(-_ARM_OFFSET - 0.3,
                 (n_pairs - 1) * _PAIR_SPACING + _ARM_OFFSET + 0.3)
+    # The y-axis is categorical (pair row positions); the numeric tick values
+    # are meaningless and collide with the left-margin pair labels. Keep tick
+    # MARKS at the pair centers but suppress the numeric labels entirely.
+    ax.set_yticks(pair_centers)
+    ax.yaxis.set_major_formatter(NullFormatter())
     ax.set_xlabel("Validation Accuracy (%)", fontweight="bold")
     ax.set_title("Matched Ablation Pairs (95% Wilson CIs)", fontweight="bold")
     ax.grid(axis="x", linestyle="--", alpha=style.GRID_ALPHA)
@@ -182,7 +189,9 @@ def verify() -> dict:
       * 6 pairs / 12 arms are present;
       * every arm has parsed 95% CI bounds (not NaN);
       * each pair's rendered verdict text matches the overlap recomputed
-        from the CI bounds (overlap iff ``a_lo <= b_hi and b_lo <= a_hi``).
+        from the CI bounds (overlap iff ``a_lo <= b_hi and b_lo <= a_hi``);
+      * no numeric y-tick labels remain (the y-axis is categorical; the
+        left-margin pair labels are the only y identification).
     Prints the verdicts table. Returns a summary dict.
     """
     fig, ax = _build_fig()
@@ -196,6 +205,16 @@ def verify() -> dict:
     n_pairs = len(_PAIRS)
     assert n_pairs == 6, f"expected 6 pairs, got {n_pairs}"
     assert n_arms == 12, f"expected 12 arm annotations, got {n_arms}"
+
+    # No numeric y-tick labels may remain (NullFormatter suppresses them).
+    ytick_texts = [t.get_text() for t in ax.get_yticklabels()]
+    n_numeric_yticks = sum(
+        1 for t in ytick_texts
+        if t.strip() and any(c.isdigit() for c in t)
+    )
+    assert n_numeric_yticks == 0, (
+        f"{n_numeric_yticks} numeric y-tick label(s) remain: {ytick_texts}"
+    )
 
     # Every arm has CI bounds; recompute each pair's verdict from the CIs.
     verdicts = {}
@@ -230,6 +249,7 @@ def verify() -> dict:
         "n_pairs": n_pairs,
         "n_arms": n_arms,
         "n_arms_with_ci": n_arms_checked,
+        "n_numeric_ytick_labels": n_numeric_yticks,
         "verdicts": verdicts,
     }
 
