@@ -23,6 +23,7 @@ Usage::
     python -m paper.figures.build_all fig3       # build only Figure 3
     python -m paper.figures.build_all fig4       # build only Figure 4
     python -m paper.figures.build_all fig5       # build only Figure 5
+    python -m paper.figures.build_all fig6       # build only Figure 6
     python -m paper.figures.build_all --no-verify  # build without layout checks
 """
 
@@ -34,6 +35,7 @@ from . import style
 from . import fig1_macenko, fig2_empty_dice, fig3_results_dotplot
 from . import fig4_panda_anatomy
 from . import fig5_ablation_forest
+from . import fig6_lambda_sweep
 
 
 def _verify(mod, name: str) -> bool:
@@ -67,6 +69,8 @@ def build_all(verify: bool = True) -> int:
                  "Figure 4: PANDA Degradation Anatomy + GradNorm Weights"),
         "fig5": (fig5_ablation_forest,
                  "Figure 5: Matched-Ablation Forest Plot"),
+        "fig6": (fig6_lambda_sweep,
+                 "Figure 6: Lambda Loss-Weight Ratio Sweep"),
     }
 
     failures = 0
@@ -93,7 +97,7 @@ def main(argv: list) -> int:
 
     if args:
         wanted = set(args)
-        known = {"fig1", "fig2", "fig3", "fig4", "fig5"}
+        known = {"fig1", "fig2", "fig3", "fig4", "fig5", "fig6"}
         unknown = wanted - known
         if unknown:
             print(f"Unknown figure(s): {sorted(unknown)}; valid: {sorted(known)}",
@@ -108,6 +112,8 @@ def main(argv: list) -> int:
                      "Figure 4: PANDA Degradation Anatomy + GradNorm Weights"),
             "fig5": (fig5_ablation_forest,
                      "Figure 5: Matched-Ablation Forest Plot"),
+            "fig6": (fig6_lambda_sweep,
+                     "Figure 6: Lambda Loss-Weight Ratio Sweep"),
         }
         failures = 0
         for name in sorted(wanted):
