@@ -35,6 +35,14 @@ before each merge to `main` and before the submission tag.
 | F-15 | p9-feedback | No qualitative evidence anywhere in the figure suite — all seven figures are quantitative/schematic; segmentation papers are expected to show predicted pixels. | RESOLVED: see closure log (new fig8_qualitative module: 4 datasets × Image|GT|Prediction, canonical g1 VGG16 checkpoints, exact training val split reproduced, deterministic tile rule, per-tile Dice computed at runtime — SIIM row is the all-empty prediction on a lesion-bearing tile) |
 | F-16 | p9-integration | Enlarged Fig 2 (F-15 round) silently shrank in the compiled paper: stale `height=3.8cm,keepaspectratio` cap in its `\includegraphics`; after the cap fix the 58%-height float end-flushed Figures 2–8 past the References under its stale `[t]` placement (F-12 recurrence). Also: one GA layout dispatch died with `engine_empty_response` mid-task (F-11 class); its intended fix had not landed on disk. | RESOLVED: see closure log (cap removed → `width=\textwidth`; placement `[t]`→`[!tbp]`; engine crash verified from disk state before re-dispatch to a fresh session) |
 
+- 2026-09-15 (Multimodal Audit & Visual Rigor Gate Closure):
+  Resolved findings F-1..F-4 from the Lead Architect multimodal audit:
+  - F-1: Corrected dataset nomenclature from TCGA-BRCA to TCGA-LGG across Table 1, Figure 5 caption, `fig8_qualitative.py`, and `graphical_abstract.py`.
+  - F-2: Metric disambiguation on graphical abstract banner: left axis keyed to top-1 classification accuracy; middle panel chips explicitly annotated with metric units (`SIIM: 77.74% Dice floor`, `PANDA: 45.39% → 29.04% Acc`). Verified with 0 text overlaps and within-bbox assertions.
+  - F-3: Fig 1 panel (d) legend & bar discrepancy resolved: Macenko ON vs OFF conditions decoupled from dataset hue via diagonal hatching (`//`) for ON and solid fill for OFF, keyed by neutral swatches in the legend. Verified 0 overlaps with bar containers.
+  - F-4: Segmentation overlay visibility bug resolved: replaced unscaled RGB float with `_hex_to_rgb255` in `fig8_qualitative.py`, eliminating severe pixel darkening. Added 1-pixel solid boundary contours (`binary_dilation(m) ^ m`) for high-contrast clinical scrutiny of segmentation boundaries.
+  All visual assertions and LaTeX compilation verified (19pp, 0 errors, 0 warnings).
+
 - 2026-09-14 (Author Attribution & CRediT Finalization):
   Author attribution finalized with Muhammad Abdullah Ali (i232523) designated as main and corresponding author (\texorpdfstring{\corref{cor1}}{} suppressing hyperref PDF token warnings); all primary research, execution, data, and writing roles assigned to him in CRediT statement with secondary authors restricted to Writing -- review & editing. Verified 19pp clean build with 0 overfull boxes and 0 warnings.
 - 2026-09-14 (Pre-merge QA & merge to main):

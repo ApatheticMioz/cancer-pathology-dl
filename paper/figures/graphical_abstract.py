@@ -108,7 +108,7 @@ def _dataset_acc_ranges(matrix: pd.DataFrame) -> list[dict]:
     target, i.e. PanNuke).
     """
     order = [
-        ("TCGA", "TCGA-BRCA", style.DATASET_COLORS["TCGA"]),
+        ("TCGA", "TCGA-LGG", style.DATASET_COLORS["TCGA"]),
         ("PANDA", "PANDA", style.DATASET_COLORS["PANDA"]),
         ("SIIM", "SIIM-ACR", style.DATASET_COLORS["SIIM"]),
         ("PANNUKE", "PanNuke", style.DATASET_COLORS["PANNUKE"]),
@@ -226,7 +226,7 @@ def _chip_empty_mask(ax, floor: float) -> None:
     ax.text(0.18, 0.62, "empty-mask Dice crediting",
             va="center", ha="left", fontsize=_MIN_FONT, color="black")
     # Single-line value.
-    ax.text(0.18, 0.32, f"{floor:.2f}% empty-over-empty",
+    ax.text(0.18, 0.32, f"SIIM: {floor:.2f}% Dice floor",
             va="center", ha="left", fontsize=_MIN_FONT, color="black")
 
 
@@ -269,7 +269,7 @@ def _chip_task_interference(ax, static_acc: float, grad_acc: float) -> None:
     ax.text(0.18, 0.62, "task interference (GradNorm)",
             va="center", ha="left", fontsize=_MIN_FONT, color="black")
     # Single-line value.
-    ax.text(0.18, 0.32, f"{static_acc:.2f}% → {grad_acc:.2f}%",
+    ax.text(0.18, 0.32, f"PANDA: {static_acc:.2f}% → {grad_acc:.2f}% Acc",
             va="center", ha="left", fontsize=_MIN_FONT, color="black")
 
 

@@ -148,16 +148,22 @@ def _build_fig():
     off_err = [[a - lo for a, (lo, hi) in zip(off_acc, off_ci)],
                [hi - a for a, (lo, hi) in zip(off_acc, off_ci)]]
 
-    # Short legend labels ("Macenko ON" / "Macenko OFF") so the legend fits in
-    # the upper-left headroom (above the short PANDA bars) without overlapping
-    # the tall PanNuke bars; the full "Raw (Macenko OFF)" wording is in the
-    # panel title and caption.
+    # Short legend labels ("Macenko ON" / "Macenko OFF") with neutral condition
+    # keying: Macenko ON is hatched ('//') and Macenko OFF is solid, so the
+    # condition is visibly encoded across both PANDA (orange) and PanNuke (purple)
+    # bars without legend color conflation.
+    from matplotlib.patches import Patch
     axes[3].bar(x - width / 2, on_acc, width, yerr=on_err, capsize=3,
-                label="Macenko ON", color=on_color, edgecolor="black",
+                color=on_color, edgecolor="black", hatch="//",
                 linewidth=0.8, zorder=3)
     axes[3].bar(x + width / 2, off_acc, width, yerr=off_err, capsize=3,
-                label="Macenko OFF", color=off_color, edgecolor="black",
+                color=off_color, edgecolor="black",
                 linewidth=0.8, zorder=3)
+
+    legend_elements = [
+        Patch(facecolor="#D0D0D0", edgecolor="black", hatch="//", label="Macenko ON"),
+        Patch(facecolor="#707070", edgecolor="black", label="Macenko OFF"),
+    ]
 
     axes[3].set_ylabel("Top-1 Accuracy (%)", fontweight="bold")
     axes[3].set_title("(d) Ablation Accuracy Gain\n(Macenko ON vs OFF)", fontweight="bold")
@@ -165,9 +171,8 @@ def _build_fig():
     axes[3].set_xticklabels([f"{ds}\n(ISUP 0–5)" if ds == "PANDA" else f"{ds}\n(19 tissues)" for ds in labels])
     axes[3].set_ylim([20, 105])
     # Legend in the upper-left: the PANDA bars (left group) only reach ~40%,
-    # so the upper-left corner (y > ~45) is clear headroom. The previous
-    # "lower right" placement sat inside the tall PanNuke bars (y 20-99).
-    axes[3].legend(loc="upper left")
+    # so the upper-left corner (y > ~45) is clear headroom.
+    axes[3].legend(handles=legend_elements, loc="upper left")
     axes[3].grid(axis="y", linestyle="--", alpha=style.GRID_ALPHA)
 
     # Delta labels on top of the OFF (raw) bars.

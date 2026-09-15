@@ -4,7 +4,7 @@ A 4-row (one per dataset) x 3-column (Image | Ground truth | Prediction)
 grid of representative validation tiles, produced by **forward-pass
 inference only** on the canonical v1 naked VGG16 baselines:
 
-* Run 01 — TCGA-BRCA  (binary seg, sigmoid > 0.5)
+* Run 01 — TCGA-LGG   (binary seg, sigmoid > 0.5)
 * Run 03 — PANDA      (6-class seg, argmax)
 * Run 05 — SIIM-ACR   (binary seg, sigmoid > 0.5)
 * Run 13 — PanNuke    (6-class seg, argmax)
@@ -72,12 +72,12 @@ _OKABE_ITO = [
 _OVERLAY_ALPHA = 0.45
 
 
-def _hex_to_rgb01(hexstr: str) -> np.ndarray:
-    """Convert a ``#RRGGBB`` string to an ``(3,)`` float array in [0, 1]."""
+def _hex_to_rgb255(hexstr: str) -> np.ndarray:
+    """Convert a ``#RRGGBB`` string to an ``(3,)`` float array in [0, 255]."""
     h = hexstr.lstrip("#")
     return np.array(
         [int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)], dtype=np.float64
-    ) / 255.0
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -85,10 +85,10 @@ def _hex_to_rgb01(hexstr: str) -> np.ndarray:
 # ``ckpt`` is resolved from the run's summary JSON (never hard-coded).
 # ---------------------------------------------------------------------------
 _RUNS = [
-    {"dataset": "tcga",    "run": "01", "label": "TCGA-BRCA", "binary": True},
-    {"dataset": "panda",   "run": "03", "label": "PANDA",     "binary": False},
-    {"dataset": "siim",    "run": "05", "label": "SIIM-ACR",  "binary": True},
-    {"dataset": "pannuke", "run": "13", "label": "PanNuke",   "binary": False},
+    {"dataset": "tcga",    "run": "01", "label": "TCGA-LGG", "binary": True},
+    {"dataset": "panda",   "run": "03", "label": "PANDA",    "binary": False},
+    {"dataset": "siim",    "run": "05", "label": "SIIM-ACR", "binary": True},
+    {"dataset": "pannuke", "run": "13", "label": "PanNuke",  "binary": False},
 ]
 
 
@@ -261,23 +261,33 @@ def _infer(run: dict) -> dict:
 # Overlay rendering
 # ---------------------------------------------------------------------------
 def _overlay(img_rgb: np.ndarray, mask: np.ndarray, seg_classes: int) -> np.ndarray:
-    """Paint a mask over an RGB image using the Okabe-Ito palette.
+    """Paint a mask over an RGB image using the Okabe-Ito palette with boundary contours.
 
     Binary masks use the first palette color; multi-class masks use one
-    colorblind-safe color per class. Returns a new RGB array.
+    colorblind-safe color per class. Returns a new RGB array with semi-transparent
+    fill and sharp solid boundary contours.
     """
-    out = img_rgb.astype(np.float64)
+    from scipy.ndimage import binary_dilation
+
+    out = img_rgb.astype(np.float64).copy()
     if seg_classes == 1:
-        m = mask > 0
-        if m.any():
-            col = _hex_to_rgb01(_OKABE_ITO[0])
-            out[m] = out[m] * (1.0 - _OVERLAY_ALPHA) + col * _OVERLAY_ALPHA
+        classes_to_draw = [(1, mask > 0, _hex_to_rgb255(_OKABE_ITO[0]))]
     else:
-        for c in range(1, seg_classes):
-            m = mask == c
-            if m.any():
-                col = _hex_to_rgb01(_OKABE_ITO[c % len(_OKABE_ITO)])
-                out[m] = out[m] * (1.0 - _OVERLAY_ALPHA) + col * _OVERLAY_ALPHA
+        classes_to_draw = [
+            (c, mask == c, _hex_to_rgb255(_OKABE_ITO[c % len(_OKABE_ITO)]))
+            for c in range(1, seg_classes)
+        ]
+
+    for _c, m, col in classes_to_draw:
+        if not m.any():
+            continue
+        # Boundary delineation (1-pixel contour)
+        contour = binary_dilation(m, iterations=1) ^ m
+        # Semi-transparent mask fill
+        out[m] = out[m] * (1.0 - _OVERLAY_ALPHA) + col * _OVERLAY_ALPHA
+        # High-contrast solid contour for clinical boundary scrutiny
+        out[contour] = col
+
     return np.clip(out, 0, 255).astype(np.uint8)
 
 

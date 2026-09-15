@@ -231,7 +231,7 @@ where $I_0 = 255$ represents transmitted light intensity. The implementation com
 \toprule
 \textbf{Dataset} & \textbf{Runs $n$} & \textbf{Val Acc (\%)} & \textbf{Val Dice (\%)} & \textbf{$\Delta$Acc (pts)} & \textbf{Pub. Acc (\%)} & \textbf{Pub. Dice (\%)} \\
 \midrule
-TCGA-BRCA & 5 & 88.82--94.60 & 76.02--87.56 & $-0.18$--$4.60$ & 89.00--90.00 & 97.00--98.00 \\
+TCGA-LGG & 5 & 88.82--94.60 & 76.02--87.56 & $-0.18$--$4.60$ & 89.00--90.00 & 97.00--98.00 \\
 PANDA & 12 & 29.04--46.15 & 28.94--44.34 & $-57.96$--$-41.61$ & 87.00--88.00 & 98.00--99.00 \\
 SIIM-ACR & 4 & 81.08--83.47 & 77.74 & $-4.00$--$1.19$ & 82.00--87.00 & 99.00 \\
 PanNuke & 5 & 91.90--99.43 & 39.59--74.21 & --- & --- & --- \\
@@ -249,7 +249,7 @@ PanNuke & 5 & 91.90--99.43 & 39.59--74.21 & --- & --- & --- \\
 \begin{figure}[!tbp]
 \centering
 \includegraphics[width=0.82\textwidth,height=0.66\textheight,keepaspectratio]{fig8_qualitative_overlays.pdf}
-\caption{Qualitative ground-truth vs.\ prediction validation tiles for the four canonical v1 naked VGG16 baselines (Runs 01, 03, 05, 13; their best checkpoints). Each row is one dataset (TCGA-BRCA, PANDA, SIIM-ACR, PanNuke); the three columns are the input image, the ground-truth mask overlay, and the model's prediction overlay, with the per-tile Dice (binary Dice for TCGA/SIIM; macro Dice over the classes present in the ground truth for PANDA/PanNuke) shown in the prediction panel. The validation split is identical to training (single seed 42, single group-aware split). Tile selection is deterministic: the first validation tile (index order) with a non-empty ground-truth mask; for SIIM-ACR the selection advances to the first lesion-bearing tile whose prediction is all-empty, making the empty-mask degeneracy of Sec.~2.2 the visible face of the figure.}
+\caption{Qualitative ground-truth vs.\ prediction validation tiles for the four canonical v1 naked VGG16 baselines (Runs 01, 03, 05, 13; their best checkpoints). Each row is one dataset (TCGA-LGG, PANDA, SIIM-ACR, PanNuke); the three columns are the input image, the ground-truth mask overlay, and the model's prediction overlay, with the per-tile Dice (binary Dice for TCGA/SIIM; macro Dice over the classes present in the ground truth for PANDA/PanNuke) shown in the prediction panel. The validation split is identical to training (single seed 42, single group-aware split). Tile selection is deterministic: the first validation tile (index order) with a non-empty ground-truth mask; for SIIM-ACR the selection advances to the first lesion-bearing tile whose prediction is all-empty, making the empty-mask degeneracy of Sec.~2.2 the visible face of the figure.}
 \label{fig:qualitative}
 \end{figure}
 
