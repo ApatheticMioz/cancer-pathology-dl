@@ -1,253 +1,342 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------
-# Exhaustive Smoke Test Suite (Refactored Module Coverage)
+# R3-1 GPU SMOKE GATE
 # ---------------------------------------------------------------------------
-# Validates every unique Phase/Encoder/Ablation/Flag combination and verifies
-# all refactored module imports before committing to the 26-run concurrent
-# orchestrator for Q1 journal submission.
+# Fail-fast, unattended-safe pre-flight gate for the 26-run + 130-fold
+# campaign (run_all_experiments.sh). Validates, in order:
 #
-# Each test gets an isolated log file in smoke_test_logs/.
-# On failure, the last 20 lines of the offending log are dumped to console
-# so the developer instantly sees the Python traceback.
+#   (a) Parser dry-load of all 4 datasets with hard row-count asserts
+#       (tcga=3929, panda=10516, siim=10675, pannuke=7901), including the
+#       Macenko image paths (panda/pannuke default Macenko ON).
+#   (b) One REAL 2-epoch training run per dataset via main.py, mirroring
+#       run_all_experiments.sh flags (--phase v2, --num-workers 2). The
+#       HEAVIEST campaign encoder (vgg16) is used for every dataset so the
+#       VRAM probe reflects the worst case MAX_JOBS must be derived from.
+#   (c) Artifact gate: scripts/assert_artifacts.py on results/round2/<label>/
+#       (epoch_log.jsonl fields, 10-field per_slice_dice.jsonl, best.pt,
+#       final.state.pt, summary resume_branch/resumed_from_epoch).
+#   (d) Cross-process resume check: 1-epoch run, then rerun with the same
+#       --run-label at --epochs 2 -> assert resumed_from_epoch==1.
+#   (e) VRAM (nvidia-smi poll loop) + epoch-time sampling -> recommended
+#       MAX_JOBS and full-campaign wall-time estimate (26 single-split +
+#       130 fold-runs, 50 epochs each).
 #
 # Usage:
-#     bash run_smoke_test.sh
+#     bash run_smoke_test.sh            # real GPU run (fail-fast)
+#     bash run_smoke_test.sh --dry-run  # print planned invocations only
+#
+# Any failure aborts immediately (set -e + explicit FATAL exits).
 # ---------------------------------------------------------------------------
-
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# ── Colors ─────────────────────────────────────────────────────────────────
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-NC='\033[0m'
+# ── Argument parsing ───────────────────────────────────────────────────────
+DRY_RUN=0
+for a in "$@"; do
+    case "$a" in
+        --dry-run) DRY_RUN=1 ;;
+        -h|--help)
+            grep '^#' "$0" | head -30
+            exit 0 ;;
+        *)
+            echo "FATAL: unknown argument: $a (supported: --dry-run)" >&2
+            exit 1 ;;
+    esac
+done
 
-# ── Virtual environment ───────────────────────────────────────────────────
+# ── Virtual environment ────────────────────────────────────────────────────
 if [ -d "$SCRIPT_DIR/venv" ]; then
     source "$SCRIPT_DIR/venv/bin/activate"
 else
-    echo -e "${RED}ERROR: venv/ not found at $SCRIPT_DIR/venv${NC}"
+    echo "FATAL: venv/ not found at $SCRIPT_DIR/venv" >&2
     exit 1
 fi
 
-# ── Log directory ──────────────────────────────────────────────────────────
-LOG_DIR="$SCRIPT_DIR/smoke_test_logs"
-rm -rf "$LOG_DIR"
+# ── Thread limits (mirror run_all_experiments.sh; conservative for WSL) ───
+export OMP_NUM_THREADS=2
+export MKL_NUM_THREADS=2
+export OPENBLAS_NUM_THREADS=2
+export VECLIB_MAXIMUM_THREADS=2
+export NUMEXPR_NUM_THREADS=2
+
+# ── Gate constants ─────────────────────────────────────────────────────────
+# Heaviest campaign encoder: run_all_experiments.sh runs vgg16 AND
+# mobilenet_v2 for every dataset; VGG16 is the heavier backbone (params,
+# activations, VRAM), so the VRAM probe must use it.
+ENCODER="vgg16"
+NUM_WORKERS=2          # conservative DataLoader workers (WSL 10GB RAM cap)
+EPOCHS=2
+CAMPAIGN_EPOCHS=50     # phase v2 default
+DATASETS=(tcga panda siim pannuke)
+# Single-split run counts per dataset in the 26-run matrix (g1+g2+g4+g5):
+declare -A SINGLE_SPLIT_COUNT=( [tcga]=5 [panda]=12 [siim]=4 [pannuke]=5 )
+# Expected parser row counts (hard contract)
+declare -A EXPECTED_ROWS=( [tcga]=3929 [panda]=10516 [siim]=10675 [pannuke]=7901 )
+
+LOG_DIR="smoke_test_logs/r31"
 mkdir -p "$LOG_DIR"
 
-# ── Counters ───────────────────────────────────────────────────────────────
-PASS=0
-FAIL=0
-TEST_INDEX=0
-
-# ── Helpers ────────────────────────────────────────────────────────────────
-banner() {
-    local test_name="$1"
-    local cmd="$2"
-    echo ""
-    echo -e "${BLUE}============================================================${NC}"
-    echo -e "${BLUE}  SMOKE TEST #$TEST_INDEX: $test_name${NC}"
-    echo -e "${BLUE}  Command: $cmd${NC}"
-    echo -e "${BLUE}  Log:   $LOG_DIR/$(printf "%02d" $TEST_INDEX)_${test_name// /_}.log${NC}"
-    echo -e "${BLUE}============================================================${NC}"
-}
-
-run_test() {
-    local test_name="$1"
-    local cmd="$2"
-    local safe_name
-    safe_name=$(echo "$test_name" | sed 's/ /_/g; s/[^a-zA-Z0-9_]/_/g')
-    local log_file="$LOG_DIR/$(printf "%02d" $TEST_INDEX)_${safe_name}.log"
-
-    banner "$test_name" "$cmd"
-
-    if eval "$cmd" >"$log_file" 2>&1; then
-        echo -e "${GREEN}[PASS]${NC} $test_name"
-        PASS=$((PASS + 1))
-    else
-        echo -e "${RED}[FAIL]${NC} $test_name"
-        echo -e "${RED}  ┌─ Last 20 lines of $log_file:${NC}"
-        tail -n 20 "$log_file" | while IFS= read -r line; do
-            echo -e "${RED}  │ $line${NC}"
-        done
-        echo -e "${RED}  └────────────────────────────────────────────────────────${NC}"
-        FAIL=$((FAIL + 1))
-    fi
-
-    TEST_INDEX=$((TEST_INDEX + 1))
-}
-
-# ── Header ─────────────────────────────────────────────────────────────────
-echo -e "${YELLOW}========================================${NC}"
-echo -e "${YELLOW}  Exhaustive Smoke Test Suite${NC}"
-echo -e "${YELLOW}  $(date '+%Y-%m-%d %H:%M:%S')${NC}"
-echo -e "${YELLOW}  Log directory: $LOG_DIR${NC}"
-echo -e "${YELLOW}========================================${NC}"
-
-# ===========================================================================
-# MODULE IMPORT VERIFICATION (Refactored paths)
-# ===========================================================================
-echo -e "${CYAN}>> Phase 1: Verifying all refactored module imports...${NC}"
-
-run_test \
-    "Import_all_refactored_modules" \
-    "python -c \"from src.models import MultiTaskUNet, GradNormBalancer; from src.metrics import dice_coefficient; from src.loader_tuning import resolve_batch_size, _initial_loader_tuning, _select_cache_size, _logical_cpu_count, _available_ram_gb; from src.checkpoints import save_checkpoint, load_checkpoint, save_training_state, load_training_state; from src.training import train_single_run, _run_epoch; from src.config import REPRO_DISABLE_CUDNN, REPRO_STRICT_BATCH_CHECKS, REPRO_ALLOW_BIG_CACHE, REPRO_ALLOW_UNC_WORKERS, REPRO_TORCH_COMPILE_BACKEND; print('All imports OK')\""
-
-# ===========================================================================
-# TRAINING SMOKE TESTS
-# ===========================================================================
-# --smoke-test forces 1 epoch, 2 batches max, no checkpoint saving.
-# --compile is appended to all tests; main.py auto-disables it when
-# GradNorm is active (use_gradnorm=True), so V2 runs are safe.
-
-# ===========================================================================
-# A. ENCODER COVERAGE: VGG16
-# ===========================================================================
-echo -e "${CYAN}>> Phase 2A: Encoder coverage — VGG16${NC}"
-
-# A1. V1 (static loss) + VGG16
-run_test \
-    "Encoder_VGG16_V1_TCGA" \
-    "python main.py --phase v1 --datasets tcga --encoders vgg16 --compile --smoke-test"
-
-# A2. V2 (GradNorm) + VGG16
-run_test \
-    "Encoder_VGG16_V2_PanNuke" \
-    "python main.py --phase v2 --datasets pannuke --encoders vgg16 --compile --smoke-test"
-
-# ===========================================================================
-# B. ENCODER COVERAGE: MobileNetV2
-# ===========================================================================
-echo -e "${CYAN}>> Phase 2B: Encoder coverage — MobileNetV2${NC}"
-
-# B1. V1 (static loss) + MobileNetV2
-run_test \
-    "Encoder_MobileNetV2_V1_PANDA" \
-    "python main.py --phase v1 --datasets panda --encoders mobilenet_v2 --compile --smoke-test"
-
-# B2. V2 (GradNorm) + MobileNetV2
-run_test \
-    "Encoder_MobileNetV2_V2_SIIM" \
-    "python main.py --phase v2 --datasets siim --encoders mobilenet_v2 --compile --smoke-test"
-
-# ===========================================================================
-# C. PHASE COVERAGE: V1 (Static Loss)
-# ===========================================================================
-echo -e "${CYAN}>> Phase 2C: Phase coverage — V1 (static loss weights)${NC}"
-
-# C1. V1 + TCGA + VGG16 (already covered above, but explicit V1 label)
-run_test \
-    "Phase_V1_TCGA_VGG16_no_macenko" \
-    "python main.py --phase v1 --datasets tcga --encoders vgg16 --no-macenko --disable-gradnorm --static-weights --compile --smoke-test"
-
-# C2. V1 + PANDA + MobileNetV2
-run_test \
-    "Phase_V1_PANDA_MobileNetV2_no_macenko" \
-    "python main.py --phase v1 --datasets panda --encoders mobilenet_v2 --no-macenko --disable-gradnorm --static-weights --compile --smoke-test"
-
-# C3. V1 + Macenko ON (tests V1 path WITH preprocessing)
-run_test \
-    "Phase_V1_TCGA_MobileNetV2_with_macenko" \
-    "python main.py --phase v1 --datasets tcga --encoders mobilenet_v2 --disable-gradnorm --static-weights --compile --smoke-test"
-
-# ===========================================================================
-# D. PHASE COVERAGE: V2 (GradNorm Dynamic Loss)
-# ===========================================================================
-echo -e "${CYAN}>> Phase 2D: Phase coverage — V2 (GradNorm dynamic loss)${NC}"
-
-# D1. V2 + SIIM + MobileNetV2 (already covered above, but explicit V2 label)
-run_test \
-    "Phase_V2_SIIM_MobileNetV2" \
-    "python main.py --phase v2 --datasets siim --encoders mobilenet_v2 --compile --smoke-test"
-
-# D2. V2 + PanNuke + VGG16 (GradNorm + Macenko default ON)
-run_test \
-    "Phase_V2_PanNuke_VGG16" \
-    "python main.py --phase v2 --datasets pannuke --encoders vgg16 --compile --smoke-test"
-
-# D3. V2.1 control variant
-run_test \
-    "Phase_V2.1_PanNuke_MobileNetV2" \
-    "python main.py --phase v2.1 --datasets pannuke --encoders mobilenet_v2 --compile --smoke-test"
-
-# ===========================================================================
-# E. ABLATION: --no-skip-connections
-# ===========================================================================
-echo -e "${CYAN}>> Phase 2E: Ablation — skip connections disabled${NC}"
-
-# E1. V2 + TCGA + MobileNetV2 + no skip
-run_test \
-    "Ablation_NoSkip_V2_TCGA_MobileNetV2" \
-    "python main.py --phase v2 --datasets tcga --encoders mobilenet_v2 --no-skip-connections --compile --smoke-test"
-
-# E2. V2 + PANDA + MobileNetV2 + no skip
-run_test \
-    "Ablation_NoSkip_V2_PANDA_MobileNetV2" \
-    "python main.py --phase v2 --datasets panda --encoders mobilenet_v2 --no-skip-connections --compile --smoke-test"
-
-# ===========================================================================
-# F. ABLATION: --no-macenko (Preprocessing OFF)
-# ===========================================================================
-echo -e "${CYAN}>> Phase 2F: Ablation — Macenko normalization disabled${NC}"
-
-# F1. V2 + PanNuke + MobileNetV2 + no macenko
-run_test \
-    "Ablation_NoMacenko_V2_PanNuke_MobileNetV2" \
-    "python main.py --phase v2 --datasets pannuke --encoders mobilenet_v2 --no-macenko --compile --smoke-test"
-
-# F2. V2 + PANDA + MobileNetV2 + no macenko
-run_test \
-    "Ablation_NoMacenko_V2_PANDA_MobileNetV2" \
-    "python main.py --phase v2 --datasets panda --encoders mobilenet_v2 --no-macenko --compile --smoke-test"
-
-# ===========================================================================
-# G. ABLATION: Loss weights override
-# ===========================================================================
-echo -e "${CYAN}>> Phase 2G: Ablation — custom loss weights${NC}"
-
-# G1. Classification-heavy weights
-run_test \
-    "Ablation_Loss_PANDA_VGG16_cls_heavy" \
-    "python main.py --phase v2 --datasets panda --encoders vgg16 --lambda-seg 1 --lambda-cls 10 --compile --smoke-test"
-
-# G2. Segmentation-heavy weights
-run_test \
-    "Ablation_Loss_PANDA_VGG16_seg_heavy" \
-    "python main.py --phase v2 --datasets panda --encoders vgg16 --lambda-seg 10 --lambda-cls 1 --compile --smoke-test"
-
-# ===========================================================================
-# H. ABLATION: GradNorm alpha override
-# ===========================================================================
-echo -e "${CYAN}>> Phase 2H: Ablation — GradNorm alpha override${NC}"
-
-run_test \
-    "Ablation_GradNormAlpha_PANDA_VGG16_alpha05" \
-    "python main.py --phase v2 --datasets panda --encoders vgg16 --gradnorm-alpha 0.5 --compile --smoke-test"
-
-# ===========================================================================
-# SUMMARY
-# ===========================================================================
-TOTAL=$((PASS + FAIL))
-
-echo ""
-echo -e "${BLUE}============================================================${NC}"
-echo -e "${BLUE}  SMOKE TEST SUMMARY${NC}"
-echo -e "${BLUE}============================================================${NC}"
-echo -e "  Total : $TOTAL"
-echo -e "  ${GREEN}Passed: $PASS${NC}"
-echo -e "  ${RED}Failed: $FAIL${NC}"
-echo -e "  Logs  : $LOG_DIR/${NC}"
-echo -e "${BLUE}============================================================${NC}"
-
-if [ "$FAIL" -gt 0 ]; then
-    echo -e "${RED}Some smoke tests failed. See $LOG_DIR/ for individual logs.${NC}"
+fail() {
+    echo "FATAL: $*" >&2
+    echo "FATAL: R3-1 gate aborted at $(date '+%Y-%m-%d %H:%M:%S') (log dir: $LOG_DIR)" >&2
     exit 1
+}
+
+# run_or_print CMD... : execute in real mode, print in --dry-run mode
+run_or_print() {
+    if [ "$DRY_RUN" -eq 1 ]; then
+        echo "[DRY-RUN] $*"
+    else
+        echo "[RUN] $*"
+        "$@"
+    fi
+}
+
+echo "============================================================"
+echo " R3-1 GPU SMOKE GATE  ($(date '+%Y-%m-%d %H:%M:%S'))"
+if [ "$DRY_RUN" -eq 1 ]; then MODE="DRY-RUN (planned invocations only)"; else MODE="REAL (fail-fast)"; fi
+echo " Mode: $MODE"
+echo " Encoder probe: $ENCODER (heaviest campaign backbone)"
+echo "============================================================"
+
+# ── Preflight: GPU availability (real mode only) ───────────────────────────
+if [ "$DRY_RUN" -eq 0 ]; then
+    if ! command -v nvidia-smi >/dev/null 2>&1; then
+        fail "nvidia-smi not found; R3-1 is a GPU gate (use --dry-run for CPU authoring)"
+    fi
+    FREE_VRAM=$(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits | head -n 1 | tr -d ' ')
+    TOTAL_VRAM=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -n 1 | tr -d ' ')
+    echo " GPU: ${FREE_VRAM} MiB free / ${TOTAL_VRAM} MiB total"
+    if [ "$FREE_VRAM" -lt 8000 ]; then
+        fail "insufficient free VRAM (${FREE_VRAM} MiB < 8000 MiB); another process may hold the GPU"
+    fi
+else
+    echo "[DRY-RUN] preflight: nvidia-smi VRAM check (free >= 8000 MiB)"
 fi
 
-echo -e "${GREEN}All smoke tests passed.${NC}"
+# ===========================================================================
+# (a) Parser dry-load: all 4 datasets, hard row-count asserts, Macenko paths
+# ===========================================================================
+echo ""
+echo ">> (a) Parser dry-load with row-count asserts"
+if [ "$DRY_RUN" -eq 1 ]; then
+    echo "[DRY-RUN] python: load_dataset_bundle(tcga/panda/siim/pannuke, Macenko paths) asserting rows tcga=3929 panda=10516 siim=10675 pannuke=7901"
+else
+    python - <<'PY'
+import sys
+from src.config import DATASET_ROOTS
+from src.data import load_dataset_bundle
+
+expected = {"tcga": 3929, "panda": 10516, "siim": 10675, "pannuke": 7901}
+for ds in ("tcga", "panda", "siim", "pannuke"):
+    # skip_macenko=False -> default Macenko image paths for panda/pannuke
+    bundle = load_dataset_bundle(ds, DATASET_ROOTS[ds], skip_macenko=False)
+    n = len(bundle["images"])
+    if n != expected[ds]:
+        print(f"FATAL: {ds} row count {n} != expected {expected[ds]}", file=sys.stderr)
+        sys.exit(1)
+    print(f"OK: {ds:8s} rows={n} (expected {expected[ds]})")
+print("PASS: all 4 datasets parse with exact expected row counts")
+PY
+fi
+
+# ===========================================================================
+# (b) Per-dataset 2-epoch real training runs (heaviest encoder: vgg16)
+#     (c) Artifact gate per run
+# ===========================================================================
+echo ""
+echo ">> (b)+(c) Per-dataset 2-epoch runs (vgg16) + artifact gate"
+for ds in "${DATASETS[@]}"; do
+    label="r31_${ds}_${ENCODER}"
+    summary="checkpoints/summary_${label}.json"
+    log="$LOG_DIR/train_${label}.log"
+    vram_log="$LOG_DIR/vram_${label}.log"
+
+    if [ "$DRY_RUN" -eq 1 ]; then
+        echo "[DRY-RUN] python main.py --phase v2 --datasets $ds --encoders $ENCODER --epochs $EPOCHS --num-workers $NUM_WORKERS --no-resume --run-label $label --summary-out $summary"
+        echo "[DRY-RUN] python scripts/assert_artifacts.py --run-label $label --summary $summary"
+        continue
+    fi
+
+    # VRAM poll loop (2s) during this run
+    : > "$vram_log"
+    (
+        while true; do
+            nvidia-smi --query-gpu=memory.used,memory.free --format=csv,noheader,nounits >> "$vram_log" 2>/dev/null || break
+            sleep 2
+        done
+    ) &
+    poller=$!
+
+    echo " [$(date '+%H:%M:%S')] START $ds x $ENCODER (2 epochs, workers=$NUM_WORKERS)"
+    if ! python main.py --phase v2 --datasets "$ds" --encoders "$ENCODER" \
+            --epochs "$EPOCHS" --num-workers "$NUM_WORKERS" --no-resume \
+            --run-label "$label" --summary-out "$summary" > "$log" 2>&1; then
+        kill "$poller" 2>/dev/null || true
+        echo "  Last 30 lines of $log:" >&2
+        tail -n 30 "$log" >&2
+        fail "training run $label failed"
+    fi
+    kill "$poller" 2>/dev/null || true
+    wait "$poller" 2>/dev/null || true
+
+    # (c) artifact gate
+    if ! python scripts/assert_artifacts.py --run-label "$label" --summary "$summary"; then
+        fail "artifact gate failed for $label"
+    fi
+    echo " [$(date '+%H:%M:%S')] PASS $ds x $ENCODER"
+done
+
+# ===========================================================================
+# (d) Cross-process resume check: 1-epoch run, then rerun --epochs 2
+# ===========================================================================
+echo ""
+echo ">> (d) Cross-process resume check (tcga x vgg16)"
+R_LABEL="r31_resume_tcga"
+R_SUMMARY="checkpoints/summary_${R_LABEL}.json"
+R_LOG="$LOG_DIR/train_${R_LABEL}.log"
+
+if [ "$DRY_RUN" -eq 1 ]; then
+    echo "[DRY-RUN] python main.py --phase v2 --datasets tcga --encoders $ENCODER --epochs 1 --num-workers $NUM_WORKERS --no-resume --run-label $R_LABEL --summary-out $R_SUMMARY"
+    echo "[DRY-RUN] python main.py --phase v2 --datasets tcga --encoders $ENCODER --epochs 2 --num-workers $NUM_WORKERS --resume --run-label $R_LABEL --summary-out $R_SUMMARY"
+    echo "[DRY-RUN] python scripts/assert_artifacts.py --run-label $R_LABEL --summary $R_SUMMARY --expect-resumed-from-epoch 1 --expect-resume-branch resumed-from-epoch"
+else
+    # Pass 1: fresh 1-epoch run (mint final.state.pt at epoch 1)
+    if ! python main.py --phase v2 --datasets tcga --encoders "$ENCODER" \
+            --epochs 1 --num-workers "$NUM_WORKERS" --no-resume \
+            --run-label "$R_LABEL" --summary-out "$R_SUMMARY" > "$R_LOG" 2>&1; then
+        tail -n 30 "$R_LOG" >&2
+        fail "resume-check pass 1 (1 epoch) failed"
+    fi
+    # Pass 2: NEW process, same --run-label, --epochs 2 -> must resume from epoch 1
+    if ! python main.py --phase v2 --datasets tcga --encoders "$ENCODER" \
+            --epochs 2 --num-workers "$NUM_WORKERS" --resume \
+            --run-label "$R_LABEL" --summary-out "$R_SUMMARY" >> "$R_LOG" 2>&1; then
+        tail -n 30 "$R_LOG" >&2
+        fail "resume-check pass 2 (resume to 2 epochs) failed"
+    fi
+    if ! python scripts/assert_artifacts.py --run-label "$R_LABEL" --summary "$R_SUMMARY" \
+            --expect-resumed-from-epoch 1 --expect-resume-branch resumed-from-epoch; then
+        fail "resume-check artifact assertions failed (expected resumed_from_epoch==1)"
+    fi
+    echo " PASS: cross-process resume verified (resumed_from_epoch==1)"
+fi
+
+# ===========================================================================
+# (e) VRAM + epoch-time sampling -> recommended MAX_JOBS + campaign estimate
+# ===========================================================================
+echo ""
+echo ">> (e) VRAM / epoch-time sampling -> MAX_JOBS + campaign estimate"
+if [ "$DRY_RUN" -eq 1 ]; then
+    echo "[DRY-RUN] python: sample peak VRAM from $LOG_DIR/vram_*.log + epoch_sec from results/round2/r31_*/epoch_log.jsonl; print recommended MAX_JOBS and 26+130-run estimate"
+else
+    python - <<'PY'
+import json
+import math
+import os
+import re
+import subprocess
+from pathlib import Path
+
+log_dir = Path("smoke_test_logs/r31")
+datasets = ("tcga", "panda", "siim", "pannuke")
+single_split = {"tcga": 5, "panda": 12, "siim": 4, "pannuke": 5}  # 26 total
+campaign_epochs = 50
+
+# --- peak VRAM per dataset from the 2s nvidia-smi poll logs ---
+peak_vram = {}
+for ds in datasets:
+    p = log_dir / f"vram_r31_{ds}_vgg16.log"
+    peak = 0
+    if p.exists():
+        for line in p.read_text().splitlines():
+            m = re.match(r"\s*(\d+)\s*,\s*(\d+)", line)
+            if m:
+                peak = max(peak, int(m.group(1)))
+    peak_vram[ds] = peak
+worst_vram = max(peak_vram.values()) if peak_vram else 0
+
+# --- mean epoch time per dataset from per-run epoch logs ---
+epoch_sec = {}
+for ds in datasets:
+    p = Path("results/round2") / f"r31_{ds}_vgg16" / "epoch_log.jsonl"
+    vals = []
+    if p.exists():
+        for line in p.read_text().splitlines():
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(rec.get("epoch_sec"), (int, float)):
+                vals.append(float(rec["epoch_sec"]))
+    epoch_sec[ds] = (sum(vals) / len(vals)) if vals else None
+
+# --- recommended MAX_JOBS ---
+vram_jobs = cpu_jobs = ram_jobs = None
+free_vram = total_vram = None
+try:
+    out = subprocess.run(
+        ["nvidia-smi", "--query-gpu=memory.free,memory.total",
+         "--format=csv,noheader,nounits"],
+        capture_output=True, text=True, timeout=10,
+    ).stdout.strip().splitlines()[0].split(",")
+    free_vram, total_vram = int(out[0].strip()), int(out[1].strip())
+    if worst_vram > 0:
+        vram_jobs = max(1, free_vram // worst_vram)
+except Exception:
+    pass
+try:
+    mem = {}
+    for line in Path("/proc/meminfo").read_text().splitlines():
+        parts = line.split()
+        if parts[0].endswith(":"):
+            mem[parts[0][:-1]] = float(parts[1])
+    ram_jobs = max(1, int(mem.get("MemAvailable", 0) / 1024 / 1024 // 3))  # ~3GB/job
+except Exception:
+    pass
+cpu_jobs = max(1, (os.cpu_count() or 2) // 2)  # 2 intra-op threads per job
+
+candidates = [j for j in (vram_jobs, ram_jobs, cpu_jobs) if j]
+max_jobs = max(1, min(candidates)) if candidates else 1
+
+# --- full-campaign estimate: 26 single-split + 130 fold-runs, 50 epochs each ---
+total_epochs = 0
+missing = []
+for ds in datasets:
+    if epoch_sec[ds] is None:
+        missing.append(ds)
+        continue
+    total_epochs += (single_split[ds] + 5 * single_split[ds]) * campaign_epochs
+
+print("=" * 60)
+print(" R3-1 VRAM / THROUGHPUT REPORT")
+print("=" * 60)
+for ds in datasets:
+    print(f"  {ds:8s} peak_vram={peak_vram[ds]:>6} MiB  mean_epoch={epoch_sec[ds]}")
+print(f"  worst-case peak VRAM (vgg16): {worst_vram} MiB")
+if free_vram is not None:
+    print(f"  GPU now: {free_vram} MiB free / {total_vram} MiB total")
+print(f"  job budgets: vram={vram_jobs} ram={ram_jobs} cpu={cpu_jobs}")
+print(f"  RECOMMENDED MAX_JOBS = {max_jobs}")
+if missing:
+    print(f"  WARNING: no epoch timing for {missing}; estimate uses available data only")
+if total_epochs > 0:
+    # mean epoch time across datasets that have data
+    known = [epoch_sec[ds] for ds in datasets if epoch_sec[ds] is not None]
+    mean_ep = sum(known) / len(known)
+    serial_h = total_epochs * mean_ep / 3600.0
+    parallel_h = serial_h / max_jobs
+    print(f"  full campaign: 26 single-split + 130 fold-runs x {campaign_epochs} epochs "
+          f"= {total_epochs} epochs")
+    print(f"  estimate: {serial_h:.1f} h serial -> {parallel_h:.1f} h at MAX_JOBS={max_jobs}")
+else:
+    print("  WARNING: no epoch timings collected; cannot estimate campaign duration")
+print("=" * 60)
+PY
+fi
+
+echo ""
+echo "R3-1 gate $([ "$DRY_RUN" -eq 1 ] && echo 'dry-run complete (no GPU work executed)' || echo 'PASSED')"
 exit 0
