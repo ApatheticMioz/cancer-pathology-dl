@@ -164,7 +164,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=None,
         help="Run label for checkpoint naming (e.g. '01_g1_tcga_vgg16'). "
         "If omitted, auto-generated as '<dataset>_<encoder>'. "
-        "Checkpoints are always named ckpt_<run-label>_best_<timestamp>.pth.",
+        "Artifacts are deterministic: results/round2/<run-label>/best.pt and "
+        "results/round2/<run-label>/final.state.pt (no timestamps; the same "
+        "run-label always maps to the same paths, enabling resume).",
     )
 
     return p
@@ -380,10 +382,21 @@ def run_reproduction(args: argparse.Namespace) -> dict:
         run_key = f"{dataset}_{encoder}"
         run_label = args.run_label or run_key
 
+        # F-23: the authoritative resume decision (deterministic state path +
+        # config/dataset fingerprint validation + loud branch logging) happens
+        # inside train_single_run/_resolve_resume, where the per-fold run_label
+        # is known. We only log the intent here; no stale path check.
         if args.resume:
-            ckpt = CHECKPOINT_DIR / f"ckpt_{run_label}_best.pth"
-            if ckpt.exists():
-                logger.info("[%d/%d] %s: checkpoint exists; resuming if state available", i, len(runs), run_key)
+            logger.info(
+                "[%d/%d] %s: --resume on; will load results/round2/<run_label>/final.state.pt "
+                "if present (FATAL on corrupt/mismatch), else fresh start",
+                i, len(runs), run_key,
+            )
+        else:
+            logger.info(
+                "[%d/%d] %s: --no-resume; deliberate fresh start (prior state ignored)",
+                i, len(runs), run_key,
+            )
 
         if args.k_folds is not None and args.k_folds > 1:
             result = train_kfold_cv(

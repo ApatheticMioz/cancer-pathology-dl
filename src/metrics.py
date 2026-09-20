@@ -57,6 +57,61 @@ def dice_coefficient(
     return float(np.mean(scores))
 
 
+def dice_coefficient_per_sample(
+    seg_pred: torch.Tensor,
+    seg_target: torch.Tensor,
+    seg_classes: int,
+    empty_score: float = 1.0,
+) -> torch.Tensor:
+    """Compute per-sample Dice coefficient over a batch.
+
+    Binary branch (``seg_classes == 1``): returns the per-sample Dice tensor
+    ``(B,)`` computed with the same sigmoid-threshold and ``empty_score``
+    convention as :func:`dice_coefficient` (union == 0 -> ``empty_score``).
+
+    Multi-class branch: per-sample score is the mean over classes of that
+    sample's per-class Dice, using the same ``empty_score`` convention
+    (a class with zero foreground in both pred and target contributes
+    ``empty_score`` for that sample). Returns a tensor of shape ``(B,)``.
+
+    Args:
+        seg_pred: Raw segmentation logits (B, C, H, W) or (B, 1, H, W).
+        seg_target: Ground-truth masks.
+        seg_classes: Number of segmentation classes (1 = binary).
+        empty_score: Value assigned when both pred and target are empty.
+
+    Returns:
+        Per-sample Dice tensor of shape ``(B,)``.
+    """
+    if seg_classes == 1:
+        pred = (torch.sigmoid(seg_pred) > 0.5).float()
+        intersection = (pred * seg_target).sum(dim=(1, 2, 3))
+        union = pred.sum(dim=(1, 2, 3)) + seg_target.sum(dim=(1, 2, 3))
+        empty_val = torch.full_like(union, fill_value=empty_score)
+        return torch.where(
+            union == 0,
+            empty_val,
+            (2.0 * intersection) / (union + 1e-8),
+        )
+
+    # Multi-class: per-sample = mean over classes of that sample's per-class dice.
+    pred = torch.argmax(seg_pred, dim=1)
+    batch = seg_pred.size(0)
+    per_sample = torch.zeros(batch, dtype=torch.float32, device=seg_pred.device)
+    for c in range(seg_classes):
+        p = (pred == c).float()
+        t = (seg_target == c).float()
+        inter = (p * t).sum(dim=(1, 2) if p.ndim == 3 else (1, 2, 3))
+        union = p.sum(dim=(1, 2) if p.ndim == 3 else (1, 2, 3)) + t.sum(dim=(1, 2) if t.ndim == 3 else (1, 2, 3))
+        empty_val = torch.full_like(union, fill_value=empty_score)
+        per_sample += torch.where(
+            union == 0,
+            empty_val,
+            (2.0 * inter) / (union + 1e-8),
+        )
+    return per_sample / float(seg_classes)
+
+
 def positive_slice_dice(
     seg_pred: torch.Tensor,
     seg_target: torch.Tensor,

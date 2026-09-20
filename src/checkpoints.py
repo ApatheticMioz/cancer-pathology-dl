@@ -30,11 +30,23 @@ def load_checkpoint(model, path: Path, device: str) -> None:
 
 
 def save_training_state(
-    model, optimizer, gradnorm, path: Path, epoch: int,
+    model, optimizer, gradnorm, state_path: Path, epoch: int,
     best_val_loss: float, best_val_acc: float, best_val_dice: float,
     best_monitor_metric: float, patience_ctr: int, batch_size: int,
+    fingerprint: dict | None = None,
 ) -> None:
-    """Save full training state for resuming."""
+    """Save full training state for resuming.
+
+    ``state_path`` is the explicit, deterministic state-file path (F-23:
+    ``results/round2/<run_label>/final.state.pt``) — no longer derived from
+    the checkpoint name, so the state file is always found on resume.
+
+    ``fingerprint`` is a config/dataset identity dict (dataset, encoder,
+    seed, epochs, batch_size, k_folds, fold_idx, run_label) stamped into the
+    state file so a resumed run can verify it is loading the state of the
+    *same* run before trusting it (F-23).
+    """
+    state_path.parent.mkdir(parents=True, exist_ok=True)
     model_state = model._orig_mod.state_dict() if hasattr(model, "_orig_mod") else model.state_dict()
     torch.save(
         {
@@ -49,14 +61,14 @@ def save_training_state(
             "patience_ctr": int(patience_ctr),
             "gradnorm_log_weights": gradnorm.log_weights.detach().cpu() if gradnorm is not None else None,
             "gradnorm_initial_losses": gradnorm.initial_losses.detach().cpu() if gradnorm is not None else None,
+            "fingerprint": fingerprint,
         },
-        path.with_suffix(".state.pt"),
+        state_path,
     )
 
 
-def load_training_state(model, optimizer, gradnorm, path: Path, device: str) -> dict | None:
-    """Resume training state from checkpoint. Returns state dict or None."""
-    state_path = path.with_suffix(".state.pt")
+def load_training_state(model, optimizer, gradnorm, state_path: Path, device: str) -> dict | None:
+    """Resume training state from an explicit state-file path. Returns state dict or None."""
     if not state_path.exists():
         return None
     state = torch.load(state_path, map_location=device)

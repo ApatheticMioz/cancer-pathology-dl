@@ -9,6 +9,7 @@ Provides:
 from __future__ import annotations
 
 import gc
+import json
 import logging
 import os
 import time
@@ -23,10 +24,12 @@ from torch.utils.data import DataLoader
 from src.checkpoints import load_checkpoint, load_training_state, save_checkpoint, save_training_state
 from src.config import (
     CHECKPOINT_DIR,
+    DATASET_ROOTS,
     REPRO_ALLOW_BIG_CACHE,
     REPRO_ALLOW_UNC_WORKERS,
     REPRO_STRICT_BATCH_CHECKS,
     REPRO_TORCH_COMPILE_BACKEND,
+    RESULTS_DIR,
 )
 from src.data import MultiTaskDataset, build_transforms, make_group_kfold_splits, make_group_split
 from src.loader_tuning import (
@@ -36,11 +39,54 @@ from src.loader_tuning import (
     _select_cache_size,
     resolve_batch_size,
 )
-from src.metrics import dice_coefficient, iou_coefficient, positive_slice_dice
+from src.metrics import dice_coefficient, dice_coefficient_per_sample, iou_coefficient, positive_slice_dice
 from src.models import GradNormBalancer, MultiTaskUNet
 from src.utils import append_jsonl, fmt_seconds, now_iso
 
 logger = logging.getLogger(__name__)
+
+
+def _per_run_epoch_log_path(run_label: str) -> Path:
+    """Per-run epoch log under results/round2/<run_label>/epoch_log.jsonl."""
+    return RESULTS_DIR / "round2" / run_label / "epoch_log.jsonl"
+
+
+def _dump_per_slice_dice(
+    run_label: str,
+    dataset: str,
+    encoder: str,
+    fold: int,
+    seed: int,
+    per_sample_info: dict,
+) -> Path:
+    """Write per-slice Dice records to results/round2/<run_label>/per_slice_dice.jsonl.
+
+    Each record: {run_label, dataset, encoder, fold, seed, case_id, dice,
+    empty_pred, empty_gt, label_int}. ``fold`` is -1 when no fold is active.
+    """
+    out_path = RESULTS_DIR / "round2" / run_label / "per_slice_dice.jsonl"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    case_ids = per_sample_info.get("case_ids") or []
+    dice = per_sample_info.get("dice") or []
+    empty_pred = per_sample_info.get("empty_pred") or []
+    empty_gt = per_sample_info.get("empty_gt") or []
+    labels = per_sample_info.get("labels") or []
+    with out_path.open("w", encoding="utf-8") as f:
+        for i in range(len(dice)):
+            record = {
+                "run_label": run_label,
+                "dataset": dataset,
+                "encoder": encoder,
+                "fold": int(fold),
+                "seed": int(seed),
+                "case_id": case_ids[i] if i < len(case_ids) else str(i),
+                "dice": float(dice[i]),
+                "empty_pred": bool(empty_pred[i]) if i < len(empty_pred) else False,
+                "empty_gt": bool(empty_gt[i]) if i < len(empty_gt) else False,
+                "label_int": int(labels[i]) if i < len(labels) else -1,
+            }
+            f.write(json.dumps(record) + "\n")
+    return out_path
 
 
 def _run_epoch(
@@ -58,11 +104,23 @@ def _run_epoch(
     lambda_seg: float = 1.0,
     lambda_cls: float = 1.0,
     smoke_test: bool = False,
+    case_ids: list | None = None,
+    collect_per_sample: bool = False,
 ):
     """Run one training or validation epoch.
 
+    Args:
+        case_ids: Optional list of case identifiers aligned with the dataset
+            order (used only when ``collect_per_sample`` is True and the
+            loader is not shuffled, so batch order maps 1:1 to dataset order).
+        collect_per_sample: When True (validation), collect per-sample Dice
+            scores and case ids for downstream per-slice result dumps.
+
     Returns:
-        (mean_loss, accuracy, mean_dice).
+        (mean_loss, accuracy, mean_dice, per_sample_info) where
+        ``per_sample_info`` is None in train mode, or a dict with keys
+        ``case_ids``, ``dice``, ``empty_pred``, ``empty_gt``, ``labels``
+        (each a list aligned per sample) in val mode.
     """
     model.train() if train else model.eval()
 
@@ -71,6 +129,11 @@ def _run_epoch(
     correct = 0
     dice_vals: list[float] = []
     steps = 0
+    per_sample_dice: list[float] = []
+    per_sample_empty_pred: list[bool] = []
+    per_sample_empty_gt: list[bool] = []
+    per_sample_labels: list[int] = []
+    sample_offset = 0
     use_amp = device == "cuda"
     shared_params = []
     if train:
@@ -191,24 +254,149 @@ def _run_epoch(
             correct += int((preds == labels).sum().item())
             total += int(labels.size(0))
             dice_vals.append(dice_coefficient(seg_out.detach(), masks.detach(), seg_classes))
-            steps += 1
+
+            if collect_per_sample and not train:
+                per = dice_coefficient_per_sample(seg_out.detach(), masks.detach(), seg_classes)
+                per_sample_dice.extend(float(x) for x in per.tolist())
+                if seg_classes == 1:
+                    pred_bin = (torch.sigmoid(seg_out.detach()) > 0.5).float()
+                    pred_sums = pred_bin.sum(dim=(1, 2, 3))
+                    gt_sums = masks.detach().sum(dim=(1, 2, 3))
+                else:
+                    pred_bin = torch.argmax(seg_out.detach(), dim=1)
+                    pred_sums = (pred_bin > 0).float().sum(dim=(1, 2) if pred_bin.ndim == 3 else (1, 2, 3))
+                    gt_sums = (masks.detach() > 0).float().sum(dim=(1, 2) if masks.detach().ndim == 3 else (1, 2, 3))
+                per_sample_empty_pred.extend(bool(x) for x in (pred_sums == 0).tolist())
+                per_sample_empty_gt.extend(bool(x) for x in (gt_sums == 0).tolist())
+                per_sample_labels.extend(int(x) for x in labels.detach().cpu().tolist())
+                sample_offset += int(labels.size(0))
 
     if steps == 0 or total == 0:
-        return float("inf"), 0.0, 0.0
+        return float("inf"), 0.0, 0.0, None
 
-    return total_loss / steps, correct / total, float(np.mean(dice_vals))
+    per_sample_info = None
+    if collect_per_sample and not train:
+        per_sample_info = {
+            "case_ids": list(case_ids) if case_ids is not None else [str(i) for i in range(len(per_sample_dice))],
+            "dice": per_sample_dice,
+            "empty_pred": per_sample_empty_pred,
+            "empty_gt": per_sample_empty_gt,
+            "labels": per_sample_labels,
+        }
+
+    return total_loss / steps, correct / total, float(np.mean(dice_vals)), per_sample_info
 
 
-def _make_collision_free_path(base_path: Path) -> Path:
-    """Append a short timestamp suffix to prevent parallel-run collisions.
+def _deterministic_run_paths(run_label: str) -> tuple[Path, Path]:
+    """Return deterministic (best-checkpoint, training-state) paths for a run.
 
-    Transforms ``dataset_encoder_best.pth`` into
-    ``dataset_encoder_best_<YYYYMMDD><HHMMSS>.pth``.
+    F-23: artifact names are derived purely from ``run_label`` (which already
+    encodes the fold when k-fold CV is active, e.g. ``<label>_fold2of5``).
+    No timestamps, no randomization: the same ``run_label`` always maps to the
+    same two paths, so a resumed run can find and load prior artifacts.
+
+        results/round2/<run_label>/best.pt
+        results/round2/<run_label>/final.state.pt
     """
-    stem = base_path.stem
-    suffix = base_path.suffix
-    ts = time.strftime("%Y%m%d%H%M%S")
-    return base_path.with_name(f"{stem}_{ts}{suffix}")
+    run_dir = RESULTS_DIR / "round2" / run_label
+    return run_dir / "best.pt", run_dir / "final.state.pt"
+
+
+def _build_run_fingerprint(
+    dataset: str,
+    encoder: str,
+    args,
+    batch_size: int,
+    fold_idx: int | None,
+    k_folds: int | None,
+    run_label: str,
+) -> dict:
+    """Config/dataset identity stamped into the state file (F-23).
+
+    A resumed run rebuilds this from its own CLI args and compares it against
+    the fingerprint stored in the state file. A mismatch means the state was
+    minted by a *different* run (different dataset/encoder/seed/split) and
+    must be rejected loudly rather than silently loaded.
+    """
+    return {
+        "dataset": dataset,
+        "encoder": encoder,
+        "seed": int(getattr(args, "seed", -1)),
+        "epochs": int(getattr(args, "epochs", -1)),
+        "batch_size": int(batch_size),
+        "k_folds": int(k_folds) if k_folds is not None else None,
+        "fold_idx": int(fold_idx) if fold_idx is not None else None,
+        "run_label": run_label,
+    }
+
+
+def _resolve_resume(
+    model,
+    optimizer,
+    gradnorm,
+    state_path: Path,
+    device: str,
+    fingerprint: dict,
+    run_label: str,
+    resume_enabled: bool,
+) -> tuple[dict | None, str]:
+    """Decide the resume branch for a run and load state when valid (F-23).
+
+    Returns ``(state, branch)`` where ``branch`` is one of:
+      - ``"resumed-from-epoch"``  -- a valid state file was found and loaded.
+      - ``"fresh-start-no-state"``-- no state file present (or --no-resume).
+
+    Fail-fast: if a state file is present but is corrupt/unloadable, or its
+    fingerprint does not match the current run, this raises ``RuntimeError``
+    (FATAL) instead of silently starting fresh.
+    """
+    # --no-resume: deliberate fresh start, never touch prior state.
+    if not resume_enabled:
+        logger.info(
+            "[%s] RESUME BRANCH: fresh-start-no-state (--no-resume; prior state ignored)",
+            run_label,
+        )
+        return None, "fresh-start-no-state"
+
+    if not state_path.exists():
+        logger.info(
+            "[%s] RESUME BRANCH: fresh-start-no-state (no state file at %s)",
+            run_label, state_path,
+        )
+        return None, "fresh-start-no-state"
+
+    # State file present: it MUST load cleanly and match this run, else FATAL.
+    try:
+        state = load_training_state(model, optimizer, gradnorm, state_path, device)
+    except Exception as ex:  # corrupt / truncated / wrong-torch-format state
+        raise RuntimeError(
+            f"FATAL: cannot load training state for resume at {state_path} "
+            f"(corrupt or unreadable): {ex!r}. Refusing to silently start fresh."
+        ) from ex
+
+    if state is None:
+        raise RuntimeError(
+            f"FATAL: training state at {state_path} is present but has no "
+            f"model_state; refusing to silently start fresh."
+        )
+
+    stored_fp = state.get("fingerprint")
+    if stored_fp is not None:
+        for key in ("dataset", "encoder", "seed", "k_folds", "fold_idx", "run_label"):
+            if stored_fp.get(key) != fingerprint.get(key):
+                raise RuntimeError(
+                    f"FATAL: training state at {state_path} was minted by a "
+                    f"different run (fingerprint mismatch on '{key}': "
+                    f"stored={stored_fp.get(key)!r} vs current={fingerprint.get(key)!r}). "
+                    f"Refusing to resume."
+                )
+
+    start_epoch = int(state.get("epoch", 0)) + 1
+    logger.info(
+        "[%s] RESUME BRANCH: resumed-from-epoch (loading %s, continuing at epoch %d)",
+        run_label, state_path, start_epoch,
+    )
+    return state, "resumed-from-epoch"
 
 
 def train_single_run(
@@ -229,6 +417,7 @@ def train_single_run(
     val_idx: np.ndarray | None = None,
     fold_idx: int | None = None,
     k_folds: int | None = None,
+    splitter_branch: str | None = None,
 ) -> dict:
     """Train a single (dataset, encoder) run.
 
@@ -265,7 +454,14 @@ def train_single_run(
         raise RuntimeError(f"{dataset}: too few samples ({len(images)})")
 
     if train_idx is None or val_idx is None:
-        train_idx, val_idx = make_group_split(labels, groups, seed=args.seed, test_size=0.2)
+        _split_result = make_group_split(
+            labels, groups, seed=args.seed, test_size=0.2,
+            grouping=meta.get("grouping"),
+            provenance_path=DATASET_ROOTS[dataset] / "preprocessed" / "grouping_provenance.json",
+        )
+        train_idx, val_idx = _split_result
+        if splitter_branch is None:
+            splitter_branch = getattr(_split_result, "metadata", {}).get("branch")
     else:
         # Zero-leakage check on supplied fold indices
         tr_g = set(groups[train_idx])
@@ -390,11 +586,15 @@ def train_single_run(
         patience_ctr = 0
         best_monitor_metric = float("inf")
 
-        ckpt_base = args.checkpoint_dir / f"ckpt_{run_label}_best.pth"
-        ckpt_path = _make_collision_free_path(ckpt_base)
-        state_path = ckpt_path.with_suffix(".state.pt")
+        # F-23: deterministic artifact paths derived purely from run_label
+        # (which already encodes the fold for k-fold CV). No timestamps.
+        ckpt_path, state_path = _deterministic_run_paths(run_label)
+        fingerprint = _build_run_fingerprint(
+            dataset, encoder, args, batch_size, fold_idx, k_folds, run_label,
+        )
         start_epoch = 1
         resume_state = None
+        resume_branch = "fresh-start-no-state"
 
         logger.info(
             "[%d/%d] %s x %s | samples=%d train=%d val=%d bs=%d | "
@@ -404,8 +604,12 @@ def train_single_run(
             effective_workers, prefetch_factor, persistent_workers, train_cache_size,
         )
 
-        if args.resume and state_path.exists():
-            resume_state = load_training_state(model, optimizer, gradnorm, ckpt_path, device)
+        # F-23: single resume decision point. Loads the exact deterministic
+        # state path when present; FATAL on corrupt/mismatch; loud branch log.
+        resume_state, resume_branch = _resolve_resume(
+            model, optimizer, gradnorm, state_path, device,
+            fingerprint, run_label, resume_enabled=bool(getattr(args, "resume", False)),
+        )
 
         if resume_state is not None:
             start_epoch = int(resume_state.get("epoch", 0)) + 1
@@ -425,7 +629,7 @@ def train_single_run(
         try:
             for epoch in range(start_epoch, effective_epochs + 1):
                 t0 = time.time()
-                tr_loss, tr_acc, tr_dice = _run_epoch(
+                tr_loss, tr_acc, tr_dice, _ = _run_epoch(
                     model, train_loader, optimizer, seg_criterion, cls_criterion,
                     device, scaler, gradnorm, meta["seg_classes"], train=True,
                     static_weights=static_weights,
@@ -433,7 +637,7 @@ def train_single_run(
                     lambda_cls=args.lambda_cls,
                     smoke_test=smoke_test,
                 )
-                vl_loss, vl_acc, vl_dice = _run_epoch(
+                vl_loss, vl_acc, vl_dice, _ = _run_epoch(
                     model, val_loader, optimizer, seg_criterion, cls_criterion,
                     device, scaler, gradnorm, meta["seg_classes"], train=False,
                     static_weights=static_weights,
@@ -463,34 +667,42 @@ def train_single_run(
                     vl_loss, vl_acc, vl_dice, ep_s,
                 )
 
-                append_jsonl(
-                    epoch_log_file,
-                    {
-                        "timestamp": now_iso(),
-                        "dataset": dataset,
-                        "encoder": encoder,
-                        "epoch": epoch,
-                        "batch_size": batch_size,
-                        "tr_loss": round(tr_loss, 6),
-                        "tr_acc": round(tr_acc, 6),
-                        "tr_dice": round(tr_dice, 6),
-                        "vl_loss": round(vl_loss, 6),
-                        "vl_acc": round(vl_acc, 6),
-                        "vl_dice": round(vl_dice, 6),
-                        "best_vl_loss": round(best_val_loss, 6),
-                        "best_vl_acc": round(best_val_acc, 6),
-                        "best_vl_dice": round(best_val_dice, 6),
-                        "epoch_sec": round(ep_s, 2),
-                        "is_best": bool(is_best),
-                        "smoke_test": bool(smoke_test),
-                    },
-                )
+                epoch_record = {
+                    "timestamp": now_iso(),
+                    "dataset": dataset,
+                    "encoder": encoder,
+                    "epoch": epoch,
+                    "batch_size": batch_size,
+                    "tr_loss": round(tr_loss, 6),
+                    "tr_acc": round(tr_acc, 6),
+                    "tr_dice": round(tr_dice, 6),
+                    "vl_loss": round(vl_loss, 6),
+                    "vl_acc": round(vl_acc, 6),
+                    "vl_dice": round(vl_dice, 6),
+                    "best_vl_loss": round(best_val_loss, 6),
+                    "best_vl_acc": round(best_val_acc, 6),
+                    "best_vl_dice": round(best_val_dice, 6),
+                    "epoch_sec": round(ep_s, 2),
+                    "is_best": bool(is_best),
+                    "smoke_test": bool(smoke_test),
+                    # F-10 stamping: run identity + splitter provenance.
+                    "run_label": run_label,
+                    "fold": int(fold_idx) if fold_idx is not None else -1,
+                    "seed": int(getattr(args, "seed", -1)),
+                    "splitter_branch": splitter_branch,
+                }
+                # Legacy shared epoch log (paper/figures/loaders.py depends on it).
+                append_jsonl(epoch_log_file, epoch_record)
+                # Per-run epoch log under results/round2/<run_label>/ (F-10).
+                if run_label is not None:
+                    append_jsonl(_per_run_epoch_log_path(run_label), epoch_record)
 
                 if not smoke_test:
                     save_training_state(
-                        model, optimizer, gradnorm, ckpt_path, epoch,
+                        model, optimizer, gradnorm, state_path, epoch,
                         best_val_loss, best_val_acc, best_val_dice,
                         best_monitor_metric, patience_ctr, batch_size,
+                        fingerprint=fingerprint,
                     )
 
                 if patience_ctr >= args.patience:
@@ -505,13 +717,25 @@ def train_single_run(
                 final_acc, final_dice = vl_acc, vl_dice
             else:
                 load_checkpoint(model, ckpt_path, device)
-                _, final_acc, final_dice = _run_epoch(
+                _, final_acc, final_dice, final_per_sample = _run_epoch(
                     model, val_loader, optimizer, seg_criterion, cls_criterion,
                     device, scaler, gradnorm, meta["seg_classes"], train=False,
                     static_weights=static_weights,
                     lambda_seg=args.lambda_seg,
                     lambda_cls=args.lambda_cls,
+                    case_ids=list(val_ds.case_ids) if val_ds is not None else None,
+                    collect_per_sample=True,
                 )
+                # (3) Final best-checkpoint per-slice Dice dump.
+                if final_per_sample is not None and run_label is not None:
+                    _dump_per_slice_dice(
+                        run_label=run_label,
+                        dataset=dataset,
+                        encoder=encoder,
+                        fold=int(fold_idx) if fold_idx is not None else -1,
+                        seed=int(getattr(args, "seed", -1)),
+                        per_sample_info=final_per_sample,
+                    )
 
             duration = time.time() - start_ts
             return {
@@ -536,6 +760,9 @@ def train_single_run(
                 "fold_idx": int(fold_idx) if fold_idx is not None else None,
                 "k_folds": int(k_folds) if k_folds is not None else None,
                 "checkpoint": str(ckpt_path),
+                "state_path": str(state_path),
+                "resume_branch": resume_branch,
+                "resumed_from_epoch": int(start_epoch - 1) if resume_state is not None else 0,
                 "duration_sec": float(duration),
                 "duration_hms": fmt_seconds(duration),
                 "attempt": attempt,
@@ -631,7 +858,11 @@ def train_kfold_cv(
     """
     labels = bundle["labels"]
     groups = bundle["groups"]
-    splits = make_group_kfold_splits(labels, groups, n_splits=k_folds, seed=args.seed)
+    splits = make_group_kfold_splits(
+        labels, groups, n_splits=k_folds, seed=args.seed,
+        grouping=meta.get("grouping"),
+        provenance_path=DATASET_ROOTS[dataset] / "preprocessed" / "grouping_provenance.json",
+    )
 
     base_label = run_label or f"{dataset}_{encoder}"
     fold_results = []
@@ -674,6 +905,7 @@ def train_kfold_cv(
             val_idx=vl_idx,
             fold_idx=fold_idx,
             k_folds=k_folds,
+            splitter_branch=getattr(splits, "metadata", {}).get("branch"),
         )
         fold_results.append(fold_res)
 

@@ -198,3 +198,17 @@ GEMINI.md
 .gemini/
 .agents/
 .evo/
+
+# ============================================================
+# F-25: results/ (round-2 campaign artifacts) are tracked.
+# The parent dir is NOT ignored, so negations below re-include
+# the per-run epoch logs and per-slice dice dumps that would
+# otherwise be caught by the global *.jsonl / epoch_log.jsonl
+# patterns above.
+# ============================================================
+!results/
+!results/round2/
+!results/round2/*/
+!results/round2/*.jsonl
+!results/round2/*/epoch_log.jsonl
+!results/round2/*/per_slice_dice.jsonl
