@@ -75,6 +75,8 @@ The full experimental matrix covers 5 structured phases across 4 clinical datase
 
 <br>
 
+> **F-24**: This table mirrors the executable run definitions in [`run_all_experiments.sh`](run_all_experiments.sh) and `src/aggregate_results.py::EXPECTED_RUNS` (the script is ground truth); run IDs, phases, datasets, backbones, and loss ratios match exactly.
+
 | Run ID | Phase | Dataset | Backbone | LR | GradNorm | Macenko | Skip Conn | Loss Ratio (Seg:Cls) | Acc (%) | Macro Dice (%) | Primary Finding |
 | :--- | :--- | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
 | **Phase 1: Baseline Reproductions (V1: $\eta=10^{-3}$, 5:1 loss)** | | | | | | | | | | | |
@@ -85,29 +87,29 @@ The full experimental matrix covers 5 structured phases across 4 clinical datase
 | `Run-05` | V1 | SIIM-ACR | VGG16 | 1e-3 | ✗ | ✗ | ✓ | 5:1 | 77.70 | 77.74 | All-empty prediction matches empty floor |
 | `Run-06` | V1 | SIIM-ACR | MobileNetV2 | 1e-3 | ✗ | ✗ | ✓ | 5:1 | 74.24 | 77.74 | All-empty prediction matches empty floor |
 | **Phase 2: Enhanced Optimization (V2: GradNorm + Macenko, $\eta=10^{-4}$)** | | | | | | | | | | | |
-| `Run-07` | V2 | TCGA-LGG | MobileNetV2 | 1e-4 | ✓ (1.5) | ✓ | ✓ | 5:1 | 93.19 | 84.76 | Stable convergence with GradNorm |
-| `Run-08` | V2 | TCGA-LGG | VGG16 | 1e-4 | ✓ (1.5) | ✓ | ✓ | 5:1 | 92.03 | 84.88 | Competitive under lower learning rate |
+| `Run-07` | V2 | TCGA-LGG | VGG16 | 1e-4 | ✓ (1.5) | ✓ | ✓ | 5:1 | 92.03 | 84.88 | Competitive under lower learning rate |
+| `Run-08` | V2 | TCGA-LGG | MobileNetV2 | 1e-4 | ✓ (1.5) | ✓ | ✓ | 5:1 | 93.19 | 84.76 | Stable convergence with GradNorm |
 | `Run-09` | V2 | PANDA | VGG16 | 1e-4 | ✓ (1.5) | ✓ | ✓ | 5:1 | 33.98 | 17.40 | Severe degradation under GradNorm+Macenko |
 | `Run-10` | V2 | PANDA | MobileNetV2 | 1e-4 | ✓ (1.5) | ✓ | ✓ | 5:1 | 37.07 | 35.27 | -50.9% Acc drop vs claimed |
-| `Run-11` | V2 | SIIM-ACR | MobileNetV2 | 1e-4 | ✓ (1.5) | ✓ | ✓ | 5:1 | 80.42 | 77.74 | Invariant to optimizer; hits 77.74% floor |
-| `Run-12` | V2 | SIIM-ACR | VGG16 | 1e-4 | ✓ (1.5) | ✓ | ✓ | 5:1 | 82.30 | 77.74 | Invariant to optimizer; hits 77.74% floor |
+| `Run-11` | V2 | SIIM-ACR | VGG16 | 1e-4 | ✓ (1.5) | ✓ | ✓ | 5:1 | 82.30 | 77.74 | Invariant to optimizer; hits 77.74% floor |
+| `Run-12` | V2 | SIIM-ACR | MobileNetV2 | 1e-4 | ✓ (1.5) | ✓ | ✓ | 5:1 | 80.42 | 77.74 | Invariant to optimizer; hits 77.74% floor |
 | **Phase 3: External Multi-Organ Control (PanNuke: 19 Tissues)** | | | | | | | | | | | |
-| `Run-13` | V1 | PanNuke | MobileNetV2 | 1e-3 | ✗ | ✗ | ✓ | 5:1 | 93.11 | 65.41 | High classification, solid multi-organ seg |
-| `Run-14` | V2 | PanNuke | VGG16 | 1e-4 | ✓ (1.5) | ✓ | ✓ | 5:1 | 73.45 | 10.97 | Catastrophic VGG16 gradient collapse |
-| `Run-15` | V1 | PanNuke | VGG16 | 1e-3 | ✗ | ✗ | ✓ | 5:1 | 79.96 | 61.76 | Plain VGG16 without Macenko recovers Dice |
+| `Run-13` | V1 | PanNuke | VGG16 | 1e-3 | ✗ | ✗ | ✓ | 5:1 | 79.96 | 61.76 | Plain VGG16 without Macenko recovers Dice |
+| `Run-14` | V1 | PanNuke | MobileNetV2 | 1e-3 | ✗ | ✗ | ✓ | 5:1 | 93.11 | 65.41 | High classification, solid multi-organ seg |
+| `Run-15` | V2 | PanNuke | VGG16 | 1e-4 | ✓ (1.5) | ✓ | ✓ | 5:1 | 73.45 | 10.97 | Catastrophic VGG16 gradient collapse |
 | `Run-16` | V2 | PanNuke | MobileNetV2 | 1e-4 | ✓ (1.5) | ✓ | ✓ | 5:1 | 97.89 | 65.53 | Optimal multi-organ performance |
 | **Phase 4: Loss Weighting Teardown (PANDA: $\lambda_{seg}:\lambda_{cls}$)** | | | | | | | | | | | |
 | `Run-17` | V2 | PANDA | VGG16 | 1e-4 | ✗ | ✗ | ✓ | 5:1 | 43.63 | 41.30 | Static loss outperforms GradNorm on PANDA |
-| `Run-18` | V1 | PANDA | VGG16 | 1e-3 | ✗ | ✗ | ✓ | 1:1 | 39.92 | 38.72 | Equal weighting baseline |
-| `Run-19` | V1 | PANDA | VGG16 | 1e-3 | ✗ | ✗ | ✓ | 1:10 | 40.59 | 38.08 | Classification-prioritized weighting |
-| `Run-20` | V1 | PANDA | VGG16 | 1e-3 | ✗ | ✗ | ✓ | 10:1 | 40.30 | 41.31 | Segmentation-prioritized weighting |
+| `Run-18` | V1 | PANDA | VGG16 | 1e-3 | ✓ (1.5) | ✗ | ✓ | 5:1 | 29.04 | 31.43 | Isolating GradNorm (V1, no Macenko) degrades PANDA vs naked baseline |
+| `Run-19` | V1 | PANDA | VGG16 | 1e-3 | ✗ | ✗ | ✓ | 1:1 | 39.92 | 38.72 | Equal weighting baseline |
+| `Run-20` | V1 | PANDA | VGG16 | 1e-3 | ✗ | ✗ | ✓ | 5:1 | 45.39 | 44.08 | 5:1 static-weight control (V1) tracks the naked baseline |
+| `Run-21` | V1 | PANDA | VGG16 | 1e-3 | ✗ | ✗ | ✓ | 1:10 | 40.59 | 38.08 | Classification-prioritized weighting |
+| `Run-22` | V1 | PANDA | VGG16 | 1e-3 | ✗ | ✗ | ✓ | 10:1 | 40.30 | 41.31 | Segmentation-prioritized weighting |
 | **Phase 5: Architectural & Stain Normalization Ablations** | | | | | | | | | | | |
-| `Run-21` | V2 | TCGA-LGG | MobileNetV2 | 1e-4 | ✓ (1.5) | ✓ | ✗ | 5:1 | 94.22 | 83.47 | Skip connections show zero measurable gain |
-| `Run-22` | V2 | PANDA | MobileNetV2 | 1e-4 | ✓ (1.5) | ✗ | ✓ | 5:1 | 39.54 | 37.24 | Removing Macenko improves accuracy (+2.47%) |
-| `Run-23` | V2 | PanNuke | MobileNetV2 | 1e-4 | ✓ (1.5) | ✗ | ✓ | 5:1 | 99.49 | 74.66 | Removing Macenko yields best PanNuke Dice |
-| `Run-24` | V2 | PANDA | MobileNetV2 | 1e-4 | ✓ (1.5) | ✓ | ✗ | 5:1 | 36.60 | 32.20 | No skip connections on PANDA |
-| `Run-25` | V1 | PANDA | MobileNetV2 | 1e-3 | ✗ | ✗ | ✗ | 5:1 | 41.12 | 43.05 | Skip ablation baseline at high learning rate |
-| `Run-26` | V1 | SIIM-ACR | MobileNetV2 | 1e-3 | ✗ | ✗ | ✗ | 5:1 | 75.10 | 77.74 | Skip ablation on sparse CXR (still hits floor) |
+| `Run-23` | V2 | PANDA | MobileNetV2 | 1e-4 | ✓ (1.5) | ✗ | ✓ | 5:1 | 39.54 | 37.24 | Removing Macenko improves accuracy (+2.47%) |
+| `Run-24` | V2 | PanNuke | MobileNetV2 | 1e-4 | ✓ (1.5) | ✗ | ✓ | 5:1 | 99.49 | 74.66 | Removing Macenko yields best PanNuke Dice |
+| `Run-25` | V2 | TCGA-LGG | MobileNetV2 | 1e-4 | ✓ (1.5) | ✓ | ✗ | 5:1 | 94.22 | 83.47 | Skip connections show zero measurable gain |
+| `Run-26` | V2 | PANDA | MobileNetV2 | 1e-4 | ✓ (1.5) | ✓ | ✗ | 5:1 | 36.60 | 32.20 | No skip connections on PANDA |
 
 </details>
 
