@@ -11,9 +11,9 @@
 
 ## 🔬 Executive Overview
 
-Multi-task deep learning (MTL)—simultaneously predicting patient-level diagnostic categories and dense pixel-wise lesion segmentation—is widely promoted as an efficient paradigm for computational pathology. Recently, **Rhanoui et al. (*Onco* 2025, [doi:10.3390/onco5010034](https://doi.org/10.3390/onco5010034))** reported near-perfect diagnostic efficacy using standard hard-parameter sharing U-Nets (VGG16 and MobileNetV2), claiming **98.0%–99.0% Dice coefficients** alongside **82.0%–90.0% classification accuracy** across TCGA brain tumor MRIs, PANDA prostate biopsies, and SIIM-ACR pneumothorax radiographs.
+Multi-task deep learning (MTL)—simultaneously predicting patient-level diagnostic categories and dense pixel-wise lesion segmentation—is widely promoted as an efficient paradigm for computational pathology. Recently, **Rhanoui et al. (*Onco* 2025, [doi:10.3390/onco5030034](https://doi.org/10.3390/onco5030034))** reported near-perfect diagnostic efficacy using standard hard-parameter sharing U-Nets (VGG16 and MobileNetV2), claiming **98.0%–99.0% Dice coefficients** alongside **82.0%–90.0% classification accuracy** across TCGA brain tumor MRIs, PANDA prostate biopsies, and SIIM-ACR pneumothorax radiographs.
 
-Through an exhaustive, mathematically grounded **26-run experimental reproduction and ablation matrix**—incorporating an external 19-tissue multi-organ control (**PanNuke**), dynamic gradient balancing (**GradNorm**), **Macenko optical density stain normalization**, and strict **patient-level boundary enforcement**—**we demonstrate that these headline claims are methodologically invalid**.
+Through a mathematically grounded **26-run experimental reproduction and ablation matrix**—incorporating an external 19-tissue multi-organ control (**PanNuke**), dynamic gradient balancing (**GradNorm**), **Macenko optical density stain normalization**, and strict **patient-level boundary enforcement**—we show that these headline figures do not survive a controlled, patient-disjoint replication: the reported Dice levels are attainable only as empty-mask scoring artifacts, the accuracies depend on patch-level splits that leak patient identity, and the joint optimization recipe itself degrades the grading task. The audit evaluates a recent, widely cited pipeline as a representative instance of failure modes that the broader medical-imaging literature has documented independently (see the paper's Related Work for the field-wide evidence base).
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -275,7 +275,7 @@ All findings uncovered during peer review and revision are tracked with strict v
 ## 📚 Key Literature & Theoretical References
 
 - **Audited Publication**:
-  - Rhanoui, M., Belghiti, K. A., & Mikram, M. (2025). Multi-Task Deep Learning for Simultaneous Classification and Segmentation of Cancer Pathologies in Diverse Medical Imaging Modalities. *Onco*, 5(1), 34. [DOI: 10.3390/onco5010034](https://doi.org/10.3390/onco5010034).
+  - Rhanoui, M., Belghiti, K. A., & Mikram, M. (2025). Multi-Task Deep Learning for Simultaneous Classification and Segmentation of Cancer Pathologies in Diverse Medical Imaging Modalities. *Onco*, 5(3), 34. [DOI: 10.3390/onco5030034](https://doi.org/10.3390/onco5030034).
 - **Data Leakage & Shortcut Learning**:
   - DeGrave, A. J., Janizek, J. D., & Lee, S. I. (2021). AI for radiographic COVID-19 detection selects shortcuts over signal. *Nature Machine Intelligence*, 3(7), 610–619. [DOI: 10.1038/s42256-021-00338-7](https://doi.org/10.1038/s42256-021-00338-7).
   - Saeb, S., Lonini, L., Jayaraman, A., Mohr, D. C., & Kording, K. P. (2017). The need to approximate the use-case in clinical machine learning. *GigaScience*, 6(5), gix019. [DOI: 10.1093/gigascience/gix019](https://doi.org/10.1093/gigascience/gix019).

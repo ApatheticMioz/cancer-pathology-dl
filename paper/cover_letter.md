@@ -10,7 +10,7 @@
 
 Dear Editors-in-Chief,
 
-We are pleased to submit our manuscript, "All Dice, No Slice: Metric Artifacts, Data Leakage, and Task Interference in Multi-Task Computational Pathology," for consideration in *Computers in Biology and Medicine*.
+We are pleased to submit our manuscript, "All Dice, No Slice: Metric Artifacts, Data Leakage, and Task Interference in Multi-Task Computational Pathology," for consideration in *Computers in Biology and Medicine* as an Original Research Article.
 
 ## Summary of the work
 
@@ -30,6 +30,8 @@ All training scripts, per-run JSON summaries, evaluation checkpoints, generated 
 ## Declarations
 
 This manuscript has not been published previously and is not under consideration elsewhere. All authors have read and approved the submitted version. The authors declare no conflicts of interest. AI-assisted tools were used for language refinement and figure preparation only; all scientific content, experiments, data analysis, and conclusions are the sole work of the authors.
+
+We wish to emphasize that this audit is not directed at a single study. The three mechanisms we quantify — empty-mask Dice crediting on sparsely annotated corpora, patient-level leakage from patch-based splits, and task interference under joint optimization — are each documented independently in the evaluation and machine-learning literatures (Reinke et al., *Nature Methods* 2024; Eelbode et al., *IEEE TMI* 2020; Kapoor & Narayanan, *Patterns* 2023; Zech et al., *PLoS Medicine* 2018; Standley et al., *ICML* 2020, among others, reviewed in our Related Work section). The audited pipeline was selected because it is recent, visible, and widely cited as evidence of multi-task efficacy — in other words, a representative instance of a recipe the field is actively reusing. Our contribution is the controlled quantification, per failure class, of *how* headline figures of this kind arise, together with a released, re-runnable protocol for preventing them.
 
 We believe this audit will be of broad interest to the CBM readership, as it identifies failure modes that can silently inflate reported performance in multi-task medical imaging studies and offers a reproducible protocol to prevent them.
 

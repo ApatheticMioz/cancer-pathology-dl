@@ -94,7 +94,9 @@ Computational Pathology \sep Multi-Task Learning \sep U-Net \sep Reproducibility
 \section{Introduction}
 Deep learning systems in digital pathology and radiology are increasingly required to deliver both diagnostic categorization and lesion delineation~\cite{litjens2017survey,campanella2019clinical}. Large visual foundation models (e.g., UNI~\cite{chen2024uni}, CONCH~\cite{lu2024conch}, and Virchow~\cite{vorontsov2024virchow}) show that clinically actionable representations require massive pretraining and self-supervised objectives across gigapixel whole-slide images (WSIs). In resource-constrained deployments, hard parameter sharing via an encoder--decoder backbone (a U-Net~\cite{ronneberger2015u} with dual prediction heads) remains a lightweight alternative that couples both objectives in a single forward pass.
 
-Recently, Rhanoui et al.~\cite{rhanoui2025multitask} claimed that a standard U-Net with lightweight encoders (VGG16~\cite{simonyan2014very} and MobileNetV2~\cite{sandler2018mobilenetv2}) trained with static loss weights ($\lambda_{seg}=5.0, \lambda_{cls}=1.0$) and a high learning rate ($\eta=10^{-3}$) simultaneously solves both classification and segmentation across four distinct medical modalities (Brain MRI, Skin Dermoscopy, Prostate Histopathology, and Chest X-Ray), reporting $82\%-90\%$ classification accuracy and $97\%-99\%$ Dice similarity coefficients.
+Recently, Rhanoui et al.~\cite{rhanoui2025multitask} reported that a standard U-Net with lightweight encoders (VGG16~\cite{simonyan2014very} and MobileNetV2~\cite{sandler2018mobilenetv2}) trained with static loss weights ($\lambda_{seg}=5.0, \lambda_{cls}=1.0$) and a high learning rate ($\eta=10^{-3}$) simultaneously solves both classification and segmentation across four distinct medical modalities (Brain MRI, Skin Dermoscopy, Prostate Histopathology, and Chest X-Ray), reporting $82\%-90\%$ classification accuracy and $97\%-99\%$ Dice similarity coefficients.
+
+These figures attach to a recipe --- a stock U-Net under static loss weighting --- rather than to any architecture- or data-specific innovation, which makes them consequential well beyond a single study: the recipe is precisely the lightweight joint pipeline that a resource-constrained deployment would copy first. They are also figures that the evaluation literature gives us independent reasons to distrust. Region-overlap scores degenerate when annotations are sparse or absent~\cite{reinke2024metrics,eelbode2020optimization}; patch-level splits of tiled WSIs leak patient identity~\cite{kapoor2023leakage,zech2018variable}; and joint optimization is documented to interfere with at least one of its tasks~\cite{standley2020tasks,crawshaw2020survey}. Section~\ref{sec:related} reviews each strand. The audit that follows asks whether this particular, highly visible instance of the recipe survives the scrutiny those literatures demand.
 
 In this paper, we report a 26-run replication study and systematic methodological audit. Our findings demonstrate that:
 \begin{enumerate}
@@ -136,6 +138,19 @@ To facilitate complete reproducibility, all training scripts, raw JSON summaries
 \label{fig:pipeline}
 \end{figure}
 
+\section{Related Work: Documented Failure Modes in Multi-Task Medical Segmentation}
+\label{sec:related}
+
+None of the three problems interrogated in this audit is peculiar to the pipeline we examine. Each corresponds to a failure mode that the evaluation and machine-learning literatures have described, measured, and warned about independently of any single study. This section situates our contribution within those strands; the audit itself, to our knowledge, is the first to instantiate all three in one controlled, artifact-released reproduction of a recent joint detection--segmentation recipe.
+
+\emph{Metric degeneracy under sparse annotation.} The convention of scoring an empty prediction against an empty reference as perfect agreement (Dice $=1$) is a recognized pitfall rather than a technicality: Reinke et al.~\cite{reinke2024metrics} catalogue it among the metric-related failures that distort validation in image analysis at large, and Eelbode et al.~\cite{eelbode2020optimization} show formally that region-overlap scores behave counter-intuitively precisely where annotations are small or absent. Liu et al.~\cite{liu2024dice} trace the same region-size bias into the Dice losses themselves. Slice-averaged Dice on a corpus whose lesion-free fraction approaches $78\%$ sits squarely inside this documented failure class --- Section~\ref{sec:dice} quantifies what the convention credits.
+
+\emph{Patient-level leakage in evaluation protocols.} Kapoor and Narayanan~\cite{kapoor2023leakage} document leakage as a reproducibility crisis spanning ML-based science, with patched data splits its most common medical form; Zech et al.~\cite{zech2018variable} had already demonstrated chest-radiograph models exploiting patient- and site-level confounds that evaporate under external validation; and the clinical-grade computational-pathology standard established by Campanella et al.~\cite{campanella2019clinical} evaluates at the slide level for exactly this reason. Patch-level random splits of tiled WSIs, the protocol our audit tests under patient-disjoint \texttt{GroupKFold}, instantiate this class directly.
+
+\emph{Task interference and negative transfer.} Whether classification and segmentation help or harm one another under a shared encoder is an empirical question with a substantial negative-answer literature: Standley et al.~\cite{standley2020tasks} measure task affinity at scale and find naive co-training frequently destructive; Crawshaw's survey~\cite{crawshaw2020survey} collects the negative-transfer evidence; and dynamic gradient balancing~\cite{chen2018gradnorm} is the mitigation family our runs put to the test. The degradation we measure on 6-class ordinal grading under the audited recipe is an instance of exactly this phenomenon.
+
+\emph{Propagation and convergence.} These strands converge on the study audited here. Rhanoui et al.~\cite{rhanoui2025multitask} is a careful, well-motivated attempt to couple diagnosis and delineation under scarce labels --- and its headline figures ($97$--$99\%$ Dice alongside $82$--$90\%$ accuracy) have already been carried, largely uncritically, into follow-on multi-task oncology work. At least one 2026 study independently declines to trust near-saturated joint performance, building an explicitly leakage-safe framework with external validation in response~\cite{imcet2026leakagesafe}. The concern, in other words, is now field-recognized; what has been missing is controlled quantification of \emph{how} such numbers arise. Supplying that quantification --- one recent, visible pipeline; three documented failure classes; every artifact released --- is the contribution of the remainder of this paper.
+
 \section{Multi-Task Formulation \& Evaluation Metrics}
 
 \subsection{Architectural Formulation}
@@ -159,7 +174,7 @@ where $\mathcal{L}_{cls}$ is categorical cross-entropy $\mathcal{L}_{CE}$. In th
 \end{equation}
 The Dice similarity coefficient (DSC) is evaluated post-hoc as a validation metric, not as an active loss term during gradient descent.
 
-\subsection{The Empty-Mask Dice Metric Artifact}
+\subsection{The Empty-Mask Dice Metric Artifact}\label{sec:dice}
 The S{\o}rensen--Dice coefficient between ground-truth mask $Y$ and binary prediction $\hat{Y}$ ($Y, \hat{Y} \in \{0, 1\}^{H \times W}$) is:
 \begin{equation}
     \text{Dice}(Y, \hat{Y}) = \frac{2 |Y \cap \hat{Y}|}{|Y| + |\hat{Y}| + \epsilon}, \quad \epsilon = 10^{-8}; \;\; \text{Dice} := 1 \;\text{if}\; |Y| + |\hat{Y}| = 0.
@@ -315,6 +330,8 @@ Holding GradNorm off, reducing the learning rate from $\eta=10^{-3}$ (Run 20: $4
 
 \section{Conclusion \& Recommendations}
 Across 26 experiments, the claimed $88\%-99\%$ metrics did not reproduce under patient isolation. The residual gap stems from dataset difficulty and the joint optimization recipe: skip connections are a null result, while joint balancing ($\alpha=1.5$) destabilizes classification ($45.39\% \to 29.04\%$ Acc). We recommend: (1) mandatory patient/biopsy-level \texttt{GroupKFold} splitting; (2) explicit reporting of the Dice evaluation convention, with foreground-only or zero-penalty scoring on sparse-lesion datasets; and (3) 95\% Wilson score intervals on matched single-run ablation comparisons to distinguish genuine architectural effects from stochastic variance. We further recommend (4) validation on diverse multi-organ benchmarks such as PanNuke, and (5) systematic evaluation of multi-task balancing hyperparameters before clinical translation.
+
+None of the mechanisms quantified here is exotic; each is documented independently in the evaluation literature (Section~\ref{sec:related}), and the study whose figures motivated this audit is already being cited as evidence of multi-task efficacy in follow-on oncology work. The recommendations above are therefore offered not as a verdict on a single pipeline but as a minimum verification checklist for any joint detection--segmentation claim intended for clinical consumption.
 
 \section*{Declaration of generative AI and AI-assisted technologies in the writing process}
 AI-assisted tools were used for language refinement and figure preparation. All scientific content, experiments, data analysis, and conclusions are the sole work of the authors, who reviewed and approved the final manuscript.
