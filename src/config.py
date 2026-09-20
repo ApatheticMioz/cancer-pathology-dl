@@ -23,6 +23,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 CHECKPOINT_DIR = BASE_DIR / "checkpoints"
 DATASET_AUDIT_FILE = CHECKPOINT_DIR / "dataset_audit.json"
 EPOCH_LOG_FILE = CHECKPOINT_DIR / "epoch_log.jsonl"
+RESULTS_DIR = BASE_DIR / "results"
 REPRO_SUMMARY_FILE = CHECKPOINT_DIR / "optimized_summary.json"
 
 # ---------------------------------------------------------------------------
@@ -54,6 +55,23 @@ DATASET_ROOTS = {
 # ---------------------------------------------------------------------------
 # Dataset metadata
 # ---------------------------------------------------------------------------
+# ``grouping`` declares the semantic unit of the ``groups`` column for each
+# dataset. The splitters (src/data.py) validate this declaration against the
+# actual group cardinality:
+#   - 'patient': groups are patient-level; the splitter REQUIRES
+#     n_unique_groups < n_samples (multiple images per patient), else FATAL.
+#   - 'image' / 'patch': groups are per-image / per-patch; trivial groups
+#     (one sample per group) are expected and allowed.
+#
+# Release caveats:
+#   - PANDA and SIIM releases have exactly ONE image per group unit, so their
+#     group_id columns are trivial (one per sample). PANDA is declared 'image'
+#     (consistent). SIIM is declared 'patient', but its on-disk index.csv
+#     currently carries per-image group_ids, so the splitter FATALs until the
+#     index is regenerated at patient level (scripts/prep_siim_full.py
+#     --index-only).
+#   - The PanNuke mirror has no slide IDs; groups are per-patch, so 'patch'
+#     is the correct declaration and trivial groups are expected.
 DATASET_META = {
     "tcga": {
         "num_classes": 2,
@@ -61,12 +79,14 @@ DATASET_META = {
         "seg_classes": 1,
         "binary_positive_min": 1,
         "use_macenko": False,
+        "grouping": "patient",
     },
     "panda": {
         "num_classes": 6,
         "img_size": 128,
         "seg_classes": 6,
         "use_macenko": True,
+        "grouping": "image",
     },
     "siim": {
         "num_classes": 2,
@@ -74,12 +94,14 @@ DATASET_META = {
         "seg_classes": 1,
         "binary_positive_min": 1,
         "use_macenko": False,
+        "grouping": "patient",
     },
     "pannuke": {
         "num_classes": 19,
         "img_size": 256,
         "seg_classes": 6,
         "use_macenko": True,
+        "grouping": "patch",
     },
 }
 

@@ -9,6 +9,7 @@ Provides:
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 from collections import OrderedDict
@@ -71,44 +72,233 @@ def build_transforms(img_size: int):
 # Train/Val splitting (Group-aware & 5-Fold CV with Zero-Leakage Guarantee)
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Split result containers (carry branch metadata for persistence)
+# ---------------------------------------------------------------------------
+
+class GroupKFoldSplits(list):
+    """K-fold split list that also records the executed branch metadata.
+
+    Behaves as a plain ``list`` of ``(train_idx, val_idx)`` tuples so existing
+    callers (``splits[fold_idx]``) keep working, but additionally exposes
+    ``.metadata`` so training can persist which splitter branch was executed.
+    """
+
+    def __new__(cls, splits, metadata):
+        obj = super().__new__(cls)
+        obj.extend(splits)
+        obj.metadata = metadata
+        return obj
+
+    def __init__(self, splits, metadata):
+        # __new__ already populated the list and metadata; no-op here so the
+        # inherited list.__init__ (which accepts at most 1 arg) is not called.
+        pass
+
+
+class GroupSplitResult(tuple):
+    """A ``(train_idx, val_idx)`` pair that also records branch metadata.
+
+    Behaves as a plain 2-tuple so existing callers (``tr, vl = ...``) keep
+    working, but additionally exposes ``.metadata`` for persistence.
+    """
+
+    def __new__(cls, train_idx, val_idx, metadata):
+        obj = super().__new__(cls, (train_idx, val_idx))
+        obj.metadata = metadata
+        return obj
+
+    def __init__(self, train_idx, val_idx, metadata):
+        # __new__ already built the 2-tuple and metadata; no-op here so the
+        # inherited tuple.__init__ (which accepts at most 1 arg) is not called.
+        pass
+
+
+def _load_grouping_provenance(provenance_path):
+    """Load the grouping-provenance sidecar if it exists.
+
+    The sidecar (``grouping_provenance.json``) is written next to the dataset
+    index by the preprocessing builder and records the *semantic source* of the
+    ``group_id`` column (e.g. ``"PatientID"``) plus cardinality facts. It lets
+    the splitters distinguish a *legitimate* degenerate cardinality (a release
+    that genuinely has one image per patient) from an *unproven* one.
+
+    Returns the parsed dict, or ``None`` if the path is unset / missing / unreadable.
+    """
+    if provenance_path is None:
+        return None
+    p = Path(provenance_path)
+    if not p.exists():
+        return None
+    try:
+        with open(p, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Could not read grouping provenance sidecar %s: %s", p, exc)
+        return None
+
+
+def _validate_grouping(declared, n_samples, n_unique_groups, provenance=None):
+    """Validate a declared grouping unit against actual group cardinality.
+
+    Returns a *verdict* string that the caller uses to pick the executed branch:
+      - ``None``: normal path (non-trivial groups, or ``image``/``patch`` trivial
+        groups). The caller uses its standard branch.
+      - ``"trivial_patient"``: declared ``'patient'`` with degenerate cardinality
+        (``n_unique_groups == n_samples``) that is PROVEN legitimate by a
+        ``grouping_provenance.json`` sidecar whose ``source == "PatientID"``.
+        This is a data property (the release genuinely has one image per
+        patient), so the caller must use the loud, recorded trivial-patient
+        branch — NOT fatal.
+
+    Raises:
+      - ``ValueError``: unknown declaration.
+      - ``RuntimeError`` (FATAL): declared ``'patient'`` with degenerate
+        cardinality and NO provenance sidecar proving the groups are
+        patient-derived (an unproven claim).
+    """
+    if declared is None:
+        return None
+    if declared not in {"patient", "image", "patch"}:
+        raise ValueError(f"Unknown grouping declaration: {declared!r}")
+    if declared == "patient" and n_unique_groups == n_samples:
+        if provenance is not None and provenance.get("source") == "PatientID":
+            return "trivial_patient"
+        raise RuntimeError(
+            "FATAL GROUPING DEFECT: declared grouping='patient' but "
+            f"n_unique_groups ({n_unique_groups}) == n_samples ({n_samples}); "
+            "every sample is its own group, so group-aware splitting is vacuous, "
+            "and no grouping_provenance.json sidecar proves the groups are "
+            "patient-derived. Regenerate the index at patient level (emitting the "
+            "provenance sidecar) or correct the declaration."
+        )
+    return None
+
+
+def _check_fold_class_coverage(splits, labels):
+    """Assert every fold's val set contains >=1 sample of every overall class.
+
+    Raises FATAL with a per-fold class-count table on violation. Returns the
+    per-fold class-count table (dict) for metadata persistence.
+    """
+    all_classes = sorted(int(c) for c in np.unique(labels))
+    table = {}
+    for fold_idx, (tr_idx, vl_idx) in enumerate(splits):
+        val_counts = {c: 0 for c in all_classes}
+        for lab in labels[vl_idx]:
+            val_counts[int(lab)] += 1
+        table[f"fold{fold_idx + 1}"] = val_counts
+        missing = [c for c in all_classes if val_counts[c] == 0]
+        if missing:
+            lines = [
+                "FATAL CLASS-COVERAGE DEFECT: a fold's val set is missing one or more overall classes."
+            ]
+            lines.append(f"  overall classes: {all_classes}")
+            for f, counts in table.items():
+                lines.append(f"  {f}: " + ", ".join(f"class {c}={counts[c]}" for c in all_classes))
+            lines.append(f"  missing in fold {fold_idx + 1}: {missing}")
+            raise RuntimeError("\n".join(lines))
+    return table
+
+
 def make_group_kfold_splits(
     labels: np.ndarray,
     groups: np.ndarray,
     n_splits: int = 5,
     seed: int = 42,
-) -> list[tuple[np.ndarray, np.ndarray]]:
-    """Create bulletproof group-aware K-Fold cross-validation splits.
+    grouping: str | None = None,
+    provenance_path: str | Path | None = None,
+) -> GroupKFoldSplits:
+    """Create group-aware K-Fold cross-validation splits with validated grouping.
 
-    Guarantees strict zero-leakage across folds by ensuring no patient group
-    spans both the training and validation sets of any fold.
+    Guarantees strict zero-leakage across folds (no group spans train and val of
+    any fold) and validates the declared grouping unit against the actual group
+    cardinality. Every executed branch is explicitly logged and recorded in the
+    returned object's ``.metadata`` so training can persist it.
 
     Args:
         labels: Classification labels array.
         groups: Group identifiers (e.g. patient ID or slide ID).
         n_splits: Number of folds (default 5).
         seed: Random seed for reproducible shuffling.
+        grouping: Declared grouping unit from ``DATASET_META`` ('patient',
+            'image', or 'patch'). ``None`` skips declaration validation but the
+            executed branch is still logged and recorded.
+        provenance_path: Optional path to a ``grouping_provenance.json`` sidecar
+            next to the dataset index. When present and its ``source`` is
+            ``"PatientID"``, a degenerate (one-group-per-sample) cardinality for
+            a declared-'patient' dataset is treated as a legitimate data property
+            (loud, recorded trivial-patient branch) instead of a FATAL defect.
 
     Returns:
-        List of (train_indices, val_indices) tuples of length n_splits.
+        ``GroupKFoldSplits``: a list of (train_indices, val_indices) tuples of
+        length ``n_splits`` with a ``.metadata`` dict recording the executed
+        branch, declaration, provenance, and per-fold class coverage.
     """
     n_samples = len(labels)
     unique_groups = np.unique(groups)
     n_unique_groups = len(unique_groups)
 
+    provenance = _load_grouping_provenance(provenance_path)
+    verdict = _validate_grouping(grouping, n_samples, n_unique_groups, provenance)
+
+    metadata = {
+        "n_samples": n_samples,
+        "n_unique_groups": n_unique_groups,
+        "declared_grouping": grouping,
+        "n_splits": n_splits,
+        "seed": seed,
+        "grouping_provenance": provenance,
+    }
+
     if n_unique_groups == n_samples:
-        # Fallback when each sample is its own independent group
-        splitter = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
-        splits = list(splitter.split(np.zeros(n_samples), labels))
+        if verdict == "trivial_patient":
+            # Legitimate degenerate cardinality: the release genuinely has one
+            # image per patient (proven by the sidecar). Loud + recorded, NOT
+            # fatal. Group-aware splitting is vacuous here, so we stratify on
+            # class only — but we say so explicitly.
+            branch = "stratified_kfold_trivial_patient_groups"
+            logger.warning(
+                "make_group_kfold_splits: declared grouping='patient' but the release "
+                "has exactly 1 image per patient (n_unique_groups == n_samples == %d). "
+                "Provenance sidecar source=%r confirms this is a data property, not a "
+                "misdeclaration. Using %s (group-aware splitting is vacuous; class "
+                "stratification only).",
+                n_samples, provenance.get("source") if provenance else None, branch,
+            )
+            splitter = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
+            splits = list(splitter.split(np.zeros(n_samples), labels))
+        else:
+            # Trivial groups: every sample is its own group. Only reachable when
+            # grouping is 'image'/'patch' (or None); a 'patient' declaration
+            # without a provenance sidecar would have FATALed above.
+            branch = "StratifiedKFold (trivial-group fallback)"
+            logger.warning(
+                "make_group_kfold_splits: trivial groups (n_unique_groups == n_samples == %d); "
+                "using %s. declared_grouping=%r",
+                n_samples, branch, grouping,
+            )
+            splitter = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
+            splits = list(splitter.split(np.zeros(n_samples), labels))
     else:
         # Attempt StratifiedGroupKFold for balanced class-group partitioning
         try:
             splitter = StratifiedGroupKFold(n_splits=n_splits, shuffle=True, random_state=seed)
             splits = list(splitter.split(np.zeros(n_samples), labels, groups))
-        except Exception:
+            branch = "StratifiedGroupKFold"
+        except Exception as exc:
+            logger.warning(
+                "make_group_kfold_splits: StratifiedGroupKFold failed (%s: %s); "
+                "falling back to GroupKFold.",
+                type(exc).__name__, exc,
+            )
             splitter = GroupKFold(n_splits=n_splits)
             splits = list(splitter.split(np.zeros(n_samples), labels, groups))
+            branch = "GroupKFold (fallback from StratifiedGroupKFold)"
 
-    # Strict zero-leakage mathematical assertion
+    metadata["branch"] = branch
+
+    # Strict zero-leakage mathematical assertion (stays FATAL)
     for fold_idx, (tr_idx, vl_idx) in enumerate(splits):
         tr_g = set(groups[tr_idx])
         vl_g = set(groups[vl_idx])
@@ -123,7 +313,10 @@ def make_group_kfold_splits(
             fold_idx + 1, n_splits, len(tr_idx), len(tr_g), len(vl_idx), len(vl_g)
         )
 
-    return splits
+    # Per-fold class coverage (FATAL with counts table on violation)
+    metadata["per_fold_class_coverage"] = _check_fold_class_coverage(splits, labels)
+
+    return GroupKFoldSplits(splits, metadata)
 
 
 def make_group_split(
@@ -131,40 +324,101 @@ def make_group_split(
     groups: np.ndarray,
     seed: int = 42,
     test_size: float = 0.2,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Create a single group-aware or stratified train/val split with zero-leakage check.
+    grouping: str | None = None,
+    provenance_path: str | Path | None = None,
+) -> GroupSplitResult:
+    """Create a single group-aware or stratified train/val split with validated grouping.
 
-    Uses GroupShuffleSplit when groups have meaningful cardinality
-    (fewer unique groups than samples). Falls back to StratifiedShuffleSplit
-    when every sample has a unique group identifier.
+    Uses GroupShuffleSplit when groups have meaningful cardinality (fewer unique
+    groups than samples). Falls back to StratifiedShuffleSplit when every sample
+    has a unique group identifier. The declared grouping unit is validated
+    against the actual group cardinality, and the executed branch is explicitly
+    logged and recorded in the returned object's ``.metadata`` for persistence.
 
     Args:
         labels: Classification labels.
         groups: Group identifiers (e.g., patient ID).
         seed: Random seed for reproducibility.
         test_size: Fraction reserved for validation.
+        grouping: Declared grouping unit from ``DATASET_META`` ('patient',
+            'image', or 'patch'). ``None`` skips declaration validation but the
+            executed branch is still logged and recorded.
+        provenance_path: Optional path to a ``grouping_provenance.json`` sidecar
+            next to the dataset index. When present and its ``source`` is
+            ``"PatientID"``, a degenerate (one-group-per-sample) cardinality for
+            a declared-'patient' dataset is treated as a legitimate data property
+            (loud, recorded trivial-patient branch) instead of a FATAL defect.
 
     Returns:
-        (train_indices, val_indices).
+        ``GroupSplitResult``: a ``(train_indices, val_indices)`` pair with a
+        ``.metadata`` dict recording the executed branch, declaration, and
+        provenance.
     """
-    if len(np.unique(groups)) == len(labels):
-        splitter = StratifiedShuffleSplit(n_splits=1, test_size=test_size, random_state=seed)
-        splits = list(splitter.split(np.zeros(len(labels)), labels))
+    n_samples = len(labels)
+    n_unique_groups = len(np.unique(groups))
+
+    provenance = _load_grouping_provenance(provenance_path)
+    verdict = _validate_grouping(grouping, n_samples, n_unique_groups, provenance)
+
+    metadata = {
+        "n_samples": n_samples,
+        "n_unique_groups": n_unique_groups,
+        "declared_grouping": grouping,
+        "seed": seed,
+        "test_size": test_size,
+        "grouping_provenance": provenance,
+    }
+
+    if n_unique_groups == n_samples:
+        if verdict == "trivial_patient":
+            # Legitimate degenerate cardinality: the release genuinely has one
+            # image per patient (proven by the sidecar). Loud + recorded, NOT
+            # fatal. Group-aware splitting is vacuous here, so we stratify on
+            # class only — but we say so explicitly.
+            branch = "stratified_shufflesplit_trivial_patient_groups"
+            logger.warning(
+                "make_group_split: declared grouping='patient' but the release has "
+                "exactly 1 image per patient (n_unique_groups == n_samples == %d). "
+                "Provenance sidecar source=%r confirms this is a data property, not a "
+                "misdeclaration. Using %s (group-aware splitting is vacuous; class "
+                "stratification only).",
+                n_samples, provenance.get("source") if provenance else None, branch,
+            )
+            splitter = StratifiedShuffleSplit(n_splits=1, test_size=test_size, random_state=seed)
+            splits = list(splitter.split(np.zeros(n_samples), labels))
+            if not splits:
+                raise RuntimeError("Could not create stratified split")
+            tr_idx, vl_idx = splits[0]
+        else:
+            # Trivial groups: every sample is its own group. Only reachable when
+            # grouping is 'image'/'patch' (or None); a 'patient' declaration
+            # without a provenance sidecar would have FATALed above.
+            branch = "StratifiedShuffleSplit (trivial-group fallback)"
+            logger.warning(
+                "make_group_split: trivial groups (n_unique_groups == n_samples == %d); "
+                "using %s. declared_grouping=%r",
+                n_samples, branch, grouping,
+            )
+            splitter = StratifiedShuffleSplit(n_splits=1, test_size=test_size, random_state=seed)
+            splits = list(splitter.split(np.zeros(n_samples), labels))
+            if not splits:
+                raise RuntimeError("Could not create stratified split")
+            tr_idx, vl_idx = splits[0]
+    else:
+        branch = "GroupShuffleSplit"
+        splitter = GroupShuffleSplit(n_splits=1, test_size=test_size, random_state=seed)
+        splits = list(splitter.split(np.zeros(n_samples), labels, groups))
         if not splits:
-            raise RuntimeError("Could not create stratified split")
-        return splits[0]
+            raise RuntimeError("Could not create group split")
+        tr_idx, vl_idx = splits[0]
 
-    splitter = GroupShuffleSplit(n_splits=1, test_size=test_size, random_state=seed)
-    splits = list(splitter.split(np.zeros(len(labels)), labels, groups))
-    if not splits:
-        raise RuntimeError("Could not create group split")
+    metadata["branch"] = branch
 
-    tr_idx, vl_idx = splits[0]
     overlap = set(groups[tr_idx]) & set(groups[vl_idx])
     if overlap:
         raise RuntimeError(f"FATAL LEAKAGE DEFECT: make_group_split has {len(overlap)} overlapping groups!")
 
-    return tr_idx, vl_idx
+    return GroupSplitResult(tr_idx, vl_idx, metadata)
 
 # ---------------------------------------------------------------------------
 # Dataset parsers
@@ -481,10 +735,19 @@ class MultiTaskDataset(Dataset):
         crop_to_mask_bbox: bool = False,
         transform=None,
         cache_size: int = 0,
+        case_ids=None,
     ):
         self.image_paths = image_paths
         self.mask_paths = mask_paths
         self.labels = labels
+        # Case identifiers for per-sample result dumps. Defaults to the image
+        # filename stem (stable, unique per sample); callers may override.
+        if case_ids is None:
+            self.case_ids = [
+                Path(str(p)).stem for p in image_paths
+            ]
+        else:
+            self.case_ids = list(case_ids)
         self.seg_classes = seg_classes
         self.binary_positive_min = max(1, int(binary_positive_min))
         self.crop_to_mask_bbox = bool(crop_to_mask_bbox)
@@ -494,6 +757,10 @@ class MultiTaskDataset(Dataset):
 
     def __len__(self) -> int:
         return len(self.image_paths)
+
+    def case_id(self, idx: int) -> str:
+        """Return the case identifier for sample ``idx`` (for result dumps)."""
+        return str(self.case_ids[idx])
 
     def _load_pair(self, idx: int) -> tuple[np.ndarray, np.ndarray]:
         """Load (image, mask) pair, using cache if enabled."""
