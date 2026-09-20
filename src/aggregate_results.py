@@ -12,6 +12,7 @@ Usage:
 from __future__ import annotations
 
 import csv
+import importlib.util
 import json
 import re
 import sys
@@ -24,8 +25,12 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 CHECKPOINT_DIR = BASE_DIR / "checkpoints"
 LOGS_DIR = BASE_DIR / "logs"
 PAPER_DIR = BASE_DIR / "paper"
+RESULTS_DIR = BASE_DIR / "results"
+ROUND2_DIR = RESULTS_DIR / "round2"
 CSV_OUTPUT = PAPER_DIR / "paper_results_matrix.csv"
 LATEX_OUTPUT = PAPER_DIR / "paper_results_latex_table.txt"
+# New CI-augmented matrix (kfold mean±SD + Wilson Acc CIs + bootstrap Dice CIs).
+CSV_WITH_CI_OUTPUT = PAPER_DIR / "paper_results_matrix_with_ci.csv"
 
 # ---------------------------------------------------------------------------
 # Expected 26-run experimental matrix (from run_all_experiments.sh)
@@ -88,6 +93,23 @@ CSV_FIELDS = [
     "Dice Delta (%)",
     "Status",
     "Timestamp",
+    # --- Round-2 CI augmentation (kfold CV + bootstrap/Wilson) ---
+    "Kfold Acc Mean (%)",
+    "Kfold Acc SD (%)",
+    "Kfold Dice Mean (%)",
+    "Kfold Dice SD (%)",
+    "Kfold N",
+    "Acc 95% CI Lower",
+    "Acc 95% CI Upper",
+    "Acc 95% CI",
+    "Dice 95% CI Lower (bootstrap)",
+    "Dice 95% CI Upper (bootstrap)",
+    "Dice 95% CI (bootstrap)",
+    "Dice 95% CI Lower (pos-only)",
+    "Dice 95% CI Upper (pos-only)",
+    "Dice 95% CI Lower (neg-only)",
+    "Dice 95% CI Upper (neg-only)",
+    "Splitter Branch",
 ]
 
 
@@ -371,6 +393,289 @@ def deduplicate_records(records: list[dict]) -> list[dict]:
     return result
 
 
+# ---------------------------------------------------------------------------
+# Round-2 CI augmentation: kfold CV mean±SD + Wilson Acc CIs + bootstrap Dice CIs
+# ---------------------------------------------------------------------------
+# Wilson CIs are strictly Acc-only (reused from scripts/compute_wilson_ci.py);
+# Dice CIs are strictly percentile-bootstrap (reused from
+# scripts/bootstrap_dice_ci.py).  The two are NEVER blurred.
+
+# Exact per-dataset validation-set sizes (pinned from run logs; mirrors
+# scripts/compute_wilson_ci.py::DATASET_VAL_SIZES) for single-split Wilson CIs.
+DATASET_VAL_SIZES = {
+    "TCGA": 778,
+    "PANDA": 2104,
+    "SIIM": 2135,
+    "PANNUKE": 1567,
+}
+
+_BOOTSTRAP_MOD = None
+_WILSON_MOD = None
+
+
+def _load_script_module(name: str):
+    """Import a scripts/*.py file by path (they are not a package)."""
+    path = BASE_DIR / "scripts" / name
+    mod_name = "agg_" + name.replace(".py", "")
+    spec = importlib.util.spec_from_file_location(mod_name, path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _bootstrap_mod():
+    global _BOOTSTRAP_MOD
+    if _BOOTSTRAP_MOD is None:
+        _BOOTSTRAP_MOD = _load_script_module("bootstrap_dice_ci.py")
+    return _BOOTSTRAP_MOD
+
+
+def _wilson_mod():
+    global _WILSON_MOD
+    if _WILSON_MOD is None:
+        _WILSON_MOD = _load_script_module("compute_wilson_ci.py")
+    return _WILSON_MOD
+
+
+def _resolve_round2_dir() -> Path:
+    """Round-2 results dir, overridable via AGG_ROUND2_DIR (for /tmp fixtures)."""
+    import os
+    env = os.environ.get("AGG_ROUND2_DIR")
+    if env:
+        return Path(env)
+    return ROUND2_DIR
+
+
+def discover_kfold_summaries(round2_dir: Path | None = None) -> dict[str, Path]:
+    """Map kfold run_name -> summary path for <round2>/kfold_<run_name>.json.
+
+    run_folds.sh writes one consolidated summary per 5-fold run to
+    ``results/round2/kfold_<orig-label>.json`` (orig-label = the run name from
+    the 26-run matrix, e.g. ``g1_tcga_vgg16``).
+    """
+    base = round2_dir or ROUND2_DIR
+    out: dict[str, Path] = {}
+    if not base.is_dir():
+        return out
+    for p in sorted(base.glob("kfold_*.json")):
+        run_name = p.stem[len("kfold_"):]
+        out[run_name] = p
+    return out
+
+
+def parse_kfold_summary(path: Path) -> dict | None:
+    """Parse a kfold summary into mean±SD + total val samples.
+
+    Schema (from src/training.py::train_kfold_cv return, stored under the
+    ``<dataset>_<encoder>`` run key by main.py):
+      {status, dataset, encoder, k_folds, completed_folds,
+       mean_val_acc, std_val_acc, mean_val_dice, std_val_dice,
+       mean_val_loss, std_val_loss, fold_results: [{final_val_acc,
+       final_val_dice, val_samples, ...}, ...]}
+    """
+    try:
+        data = json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError) as exc:
+        print(f"  [WARN] kfold summary {path.name}: {exc}", file=sys.stderr)
+        return None
+    if data.get("status") not in ("completed", "running"):
+        return None
+    runs = data.get("runs", {})
+    if not runs:
+        return None
+    result = None
+    for _key, val in runs.items():
+        if isinstance(val, dict) and "mean_val_acc" in val:
+            result = val
+            break
+    if result is None:
+        return None
+    fold_results = result.get("fold_results", []) or []
+    val_samples = sum(int(f.get("val_samples", 0)) for f in fold_results)
+    return {
+        "mean_val_acc": float(result.get("mean_val_acc", 0.0)),
+        "std_val_acc": float(result.get("std_val_acc", 0.0)),
+        "mean_val_dice": float(result.get("mean_val_dice", 0.0)),
+        "std_val_dice": float(result.get("std_val_dice", 0.0)),
+        "completed_folds": int(result.get("completed_folds", len(fold_results))),
+        "val_samples": val_samples,
+    }
+
+
+def _read_splitter_branch(base_label: str, round2_dir: Path | None = None) -> str:
+    """Read ``splitter_branch`` from the first epoch-log record of a run's dumps.
+
+    The branch is recorded per epoch in ``<round2>/<run_label>/epoch_log.jsonl``
+    (see src/training.py::train_single_run).  For kfold runs the per-fold dumps
+    live under ``<base>_fold<N>of<K>/``.
+    """
+    base = round2_dir or ROUND2_DIR
+    if not base.is_dir():
+        return ""
+    candidates: list[Path] = []
+    base_dir = base / base_label
+    if base_dir.is_dir():
+        candidates.append(base_dir / "epoch_log.jsonl")
+    for d in sorted(base.glob(f"{base_label}_fold*of*")):
+        candidates.append(d / "epoch_log.jsonl")
+    for c in candidates:
+        if not c.is_file():
+            continue
+        try:
+            with open(c) as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    rec = json.loads(line)
+                    branch = rec.get("splitter_branch")
+                    if branch:
+                        return str(branch)
+                    break
+        except (json.JSONDecodeError, OSError):
+            continue
+    return ""
+
+
+def _find_dump_dirs(*base_labels: str, round2_dir: Path | None = None) -> list[Path]:
+    """Find per_slice_dice.jsonl dump dirs for any of the candidate base labels.
+
+    Matches the base dir itself plus ``<base>_fold<N>of<K>`` fold dirs.
+    """
+    base = round2_dir or ROUND2_DIR
+    if not base.is_dir():
+        return []
+    dirs: list[Path] = []
+    for label in base_labels:
+        base_dir = base / label
+        if base_dir.is_dir() and (base_dir / "per_slice_dice.jsonl").is_file():
+            dirs.append(base_dir)
+        for d in sorted(base.glob(f"{label}_fold*of*")):
+            if (d / "per_slice_dice.jsonl").is_file():
+                dirs.append(d)
+    return dirs
+
+
+def compute_dice_ci(*base_labels: str, round2_dir: Path | None = None) -> dict:
+    """Pool per-case dice across a run's dump dirs; bootstrap CI per stratum.
+
+    Returns ``{stratum: {point, lo, hi, n}}`` for overall / positive_only /
+    negative_only.  Dice CIs are strictly percentile-bootstrap (never Wilson).
+    """
+    bmod = _bootstrap_mod()
+    dump_dirs = _find_dump_dirs(*base_labels, round2_dir=round2_dir)
+    if not dump_dirs:
+        return {}
+    records: list[dict] = []
+    for d in dump_dirs:
+        records.extend(bmod.load_records(d / "per_slice_dice.jsonl"))
+    if not records:
+        return {}
+    rows = bmod.stratum_rows(base_labels[0], records, None, 10_000, 42)
+    out: dict[str, dict] = {}
+    for r in rows:
+        out[r["stratum"]] = {
+            "point": r["point_estimate"],
+            "lo": r["ci_low"],
+            "hi": r["ci_high"],
+            "n": r["n"],
+        }
+    return out
+
+
+def compute_wilson_ci(acc_frac: float, n: int) -> tuple[float, float]:
+    """95% Wilson score interval (Acc-only) reusing scripts/compute_wilson_ci.py."""
+    wmod = _wilson_mod()
+    if n <= 0:
+        return (0.0, 0.0)
+    successes = round(acc_frac * n)
+    return wmod.wilson_score_interval(successes, n)
+
+
+def augment_records_with_ci(
+    records: list[dict],
+    kfold_map: dict[str, dict],
+    round2_dir: Path | None = None,
+) -> list[dict]:
+    """Attach kfold mean±SD, Wilson Acc CIs, bootstrap Dice CIs, splitter branch.
+
+    ``kfold_map`` maps run_name -> parsed kfold summary.  Wilson CIs are
+    Acc-only; Dice CIs are bootstrap-only; the two are never mixed.
+    """
+    for rec in records:
+        run_name = rec.get("_run_name", "")
+        # Defaults (empty until a source populates them).
+        rec["Kfold Acc Mean (%)"] = ""
+        rec["Kfold Acc SD (%)"] = ""
+        rec["Kfold Dice Mean (%)"] = ""
+        rec["Kfold Dice SD (%)"] = ""
+        rec["Kfold N"] = ""
+        rec["Acc 95% CI Lower"] = ""
+        rec["Acc 95% CI Upper"] = ""
+        rec["Acc 95% CI"] = ""
+        rec["Dice 95% CI Lower (bootstrap)"] = ""
+        rec["Dice 95% CI Upper (bootstrap)"] = ""
+        rec["Dice 95% CI (bootstrap)"] = ""
+        rec["Dice 95% CI Lower (pos-only)"] = ""
+        rec["Dice 95% CI Upper (pos-only)"] = ""
+        rec["Dice 95% CI Lower (neg-only)"] = ""
+        rec["Dice 95% CI Upper (neg-only)"] = ""
+        rec["Splitter Branch"] = ""
+
+        kf = kfold_map.get(run_name)
+        if kf:
+            rec["Kfold Acc Mean (%)"] = round(100.0 * kf["mean_val_acc"], 2)
+            rec["Kfold Acc SD (%)"] = round(100.0 * kf["std_val_acc"], 2)
+            rec["Kfold Dice Mean (%)"] = round(100.0 * kf["mean_val_dice"], 2)
+            rec["Kfold Dice SD (%)"] = round(100.0 * kf["std_val_dice"], 2)
+            rec["Kfold N"] = kf["completed_folds"]
+            # Wilson Acc CI from the kfold mean (point estimate) over total val samples.
+            lo, hi = compute_wilson_ci(kf["mean_val_acc"], kf["val_samples"])
+            rec["Acc 95% CI Lower"] = round(100.0 * lo, 2)
+            rec["Acc 95% CI Upper"] = round(100.0 * hi, 2)
+            rec["Acc 95% CI"] = f"[{100.0 * lo:.2f} - {100.0 * hi:.2f}]"
+            rec["Splitter Branch"] = _read_splitter_branch(f"kfold_{run_name}", round2_dir)
+        else:
+            # Single-split: Wilson Acc CI from the point-estimate accuracy.
+            acc_pct = rec.get("Accuracy (%)")
+            n = DATASET_VAL_SIZES.get(rec.get("Dataset", ""), 0)
+            if isinstance(acc_pct, (int, float)) and acc_pct != "" and n:
+                lo, hi = compute_wilson_ci(float(acc_pct) / 100.0, n)
+                rec["Acc 95% CI Lower"] = round(100.0 * lo, 2)
+                rec["Acc 95% CI Upper"] = round(100.0 * hi, 2)
+                rec["Acc 95% CI"] = f"[{100.0 * lo:.2f} - {100.0 * hi:.2f}]"
+            rec["Splitter Branch"] = _read_splitter_branch(run_name, round2_dir)
+
+        # Bootstrap Dice CIs (strictly separate from the Wilson Acc CIs above).
+        dice = compute_dice_ci(f"kfold_{run_name}", run_name, round2_dir=round2_dir)
+        if dice:
+            ov = dice.get("overall")
+            if ov:
+                rec["Dice 95% CI Lower (bootstrap)"] = round(100.0 * ov["lo"], 2)
+                rec["Dice 95% CI Upper (bootstrap)"] = round(100.0 * ov["hi"], 2)
+                rec["Dice 95% CI (bootstrap)"] = f"[{100.0 * ov['lo']:.2f} - {100.0 * ov['hi']:.2f}]"
+            pos = dice.get("positive_only")
+            if pos:
+                rec["Dice 95% CI Lower (pos-only)"] = round(100.0 * pos["lo"], 2)
+                rec["Dice 95% CI Upper (pos-only)"] = round(100.0 * pos["hi"], 2)
+            neg = dice.get("negative_only")
+            if neg:
+                rec["Dice 95% CI Lower (neg-only)"] = round(100.0 * neg["lo"], 2)
+                rec["Dice 95% CI Upper (neg-only)"] = round(100.0 * neg["hi"], 2)
+    return records
+
+
+def export_csv_with_ci(records: list[dict], output_path: Path) -> None:
+    """Write the CI-augmented matrix to paper/paper_results_matrix_with_ci.csv."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=CSV_FIELDS, extrasaction="ignore")
+        writer.writeheader()
+        for rec in records:
+            writer.writerow(rec)
+    print(f"  CSV (with CI) exported: {output_path}")
+
+
 def export_csv(records: list[dict], output_path: Path) -> None:
     """Write records to a CSV file."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -613,9 +918,32 @@ def main() -> int:
     latex_str = generate_latex(unique_records)
     export_latex(latex_str, LATEX_OUTPUT)
 
+    # Phase 5: Round-2 CI augmentation (kfold mean±SD + Wilson Acc + bootstrap Dice).
+    print(f"\n{'=' * 60}")
+    print(f"  PHASE 5: CI augmentation (kfold CV + Wilson Acc + bootstrap Dice)")
+    print(f"{'=' * 60}")
+
+    round2_dir = _resolve_round2_dir()
+    kfold_paths = discover_kfold_summaries(round2_dir)
+    kfold_map: dict[str, dict] = {}
+    for run_name, p in kfold_paths.items():
+        parsed = parse_kfold_summary(p)
+        if parsed:
+            kfold_map[run_name] = parsed
+            print(f"  [OK]   kfold {run_name}: {parsed['completed_folds']} folds, "
+                  f"acc={100.0 * parsed['mean_val_acc']:.2f}±{100.0 * parsed['std_val_acc']:.2f}")
+        else:
+            print(f"  [WARN] kfold {run_name}: summary not usable ({p.name})")
+    if not kfold_map:
+        print("  [INFO] No kfold summaries found; Wilson Acc CIs from single-split point estimates.")
+
+    augmented = augment_records_with_ci(unique_records, kfold_map, round2_dir=round2_dir)
+    export_csv_with_ci(augmented, CSV_WITH_CI_OUTPUT)
+
     print("\n" + "=" * 60)
     print("  Aggregation complete.")
     print(f"  CSV:   {CSV_OUTPUT}")
+    print(f"  CSV+CI:{CSV_WITH_CI_OUTPUT}")
     print(f"  LaTeX: {LATEX_OUTPUT}")
     print("=" * 60)
 
