@@ -11,6 +11,7 @@ from __future__ import annotations
 import gc
 import json
 import logging
+import math
 import os
 import time
 from pathlib import Path
@@ -25,6 +26,8 @@ from src.checkpoints import load_checkpoint, load_training_state, save_checkpoin
 from src.config import (
     CHECKPOINT_DIR,
     DATASET_ROOTS,
+    GRAD_CLIP_MAX_NORM,
+    GRADNORM_WEIGHT_CLAMP,
     REPRO_ALLOW_BIG_CACHE,
     REPRO_ALLOW_UNC_WORKERS,
     REPRO_STRICT_BATCH_CHECKS,
@@ -44,6 +47,148 @@ from src.models import GradNormBalancer, MultiTaskUNet
 from src.utils import append_jsonl, fmt_seconds, now_iso
 
 logger = logging.getLogger(__name__)
+
+
+class NonFiniteMetricsError(RuntimeError):
+    """Raised when an epoch/batch metric is non-finite (NaN/Inf).
+
+    Zero-silent-fallback mandate: a non-finite training or validation metric
+    is FATAL, never a soft "restore best and end". The exception carries a
+    structured diagnosis (first non-finite batch, raw batch loss, LR,
+    AMP/scaler state, grad-norm, img/mask batch stats) so the failure is loud
+    and self-explaining instead of a masked traceback.
+    """
+
+    def __init__(self, phase: str, epoch: int, diagnosis: dict,
+                 per_sample_info: dict | None = None,
+                 ended_early: str = "nan"):
+        self.phase = phase
+        self.epoch = epoch
+        self.diagnosis = diagnosis
+        # Partial per-slice data captured before the non-finite batch (so a
+        # NaN-ended run can still dump "what evaluated" as a partial artifact).
+        self.per_sample_info = per_sample_info
+        # Explicit early-termination reason stamped into the summary
+        # (e.g. "nan"). Never a silent soft-end.
+        self.ended_early = ended_early
+        super().__init__(self._format())
+
+    def _format(self) -> str:
+        d = self.diagnosis
+        lines = [
+            f"FATAL: non-finite {self.phase} metric at epoch {self.epoch} "
+            f"(zero-silent-fallback: run aborted, no soft restore).",
+            f"  first_nonfinite_batch : {d.get('first_nonfinite_batch')}",
+            f"  raw_batch_loss        : {d.get('raw_batch_loss')}",
+            f"  lr                    : {d.get('lr')}",
+            f"  amp_dtype             : {d.get('amp_dtype')}",
+            f"  amp_enabled           : {d.get('amp_enabled')}",
+            f"  scaler_enabled        : {d.get('scaler_enabled')}",
+            f"  scaler_scale          : {d.get('scaler_scale')}",
+            f"  scaler_growth_factor  : {d.get('scaler_growth_factor')}",
+            f"  scaler_growth_cnt     : {d.get('scaler_growth_cnt')}",
+            f"  scaler_backoff_cnt    : {d.get('scaler_backoff_cnt')}",
+            f"  grad_norm             : {d.get('grad_norm')}",
+            f"  img_min/max/any_nan   : {d.get('img_min')} / {d.get('img_max')} / {d.get('img_any_nan')}",
+            f"  mask_min/max/any_nan  : {d.get('mask_min')} / {d.get('mask_max')} / {d.get('mask_any_nan')}",
+            f"  batch_size            : {d.get('batch_size')}",
+            f"  compile_active        : {d.get('compile_active')}",
+            f"  torch_version         : {d.get('torch_version')}",
+            f"  cuda_version          : {d.get('cuda_version')}",
+        ]
+        return "\n".join(lines)
+
+
+def _build_nan_diagnosis(
+    phase: str,
+    epoch: int,
+    batch_idx: int | None,
+    raw_batch_loss,
+    lr,
+    scaler,
+    grad_norm,
+    images,
+    masks,
+    batch_size: int,
+    compile_active: bool,
+) -> dict:
+    """Build a structured, JSON-serializable diagnosis of a non-finite metric.
+
+    Captures exactly what is needed to discriminate the root-cause hypotheses
+    (AMP fp16/bf16 overflow, torch.compile miscompile, LR/scaler, bad data
+    batch): the first non-finite batch, its raw loss, the current LR, the
+    AMP/scaler state (dtype, scale, growth/backoff counters), the grad-norm if
+    computed, and per-batch img/mask statistics (min/max/any-NaN).
+    """
+    def _scalar(x):
+        if x is None:
+            return None
+        try:
+            # Detach tensors before float() to avoid the "Converting a tensor
+            # to a Python scalar" UserWarning (and any grad-graph side effects)
+            # when the value is a 0-dim / 1-elem tensor requiring grad.
+            if torch.is_tensor(x):
+                return float(x.detach())
+            return float(x)
+        except (TypeError, ValueError):
+            return None
+
+    def _tensor_stats(t):
+        if t is None:
+            return None, None, None
+        try:
+            with torch.no_grad():
+                return (
+                    float(t.min()),
+                    float(t.max()),
+                    bool(torch.isnan(t).any()),
+                )
+        except Exception:
+            return None, None, None
+
+    img_min, img_max, img_nan = _tensor_stats(images)
+    mask_min, mask_max, mask_nan = _tensor_stats(masks)
+
+    amp_dtype = "bfloat16"  # matches torch.autocast(dtype=torch.bfloat16) in _run_epoch
+    amp_enabled = (scaler is not None) and bool(getattr(scaler, "enabled", False))
+    scaler_scale = None
+    scaler_growth_factor = None
+    scaler_growth_cnt = None
+    scaler_backoff_cnt = None
+    if scaler is not None:
+        try:
+            scaler_scale = float(scaler._scale.item())
+        except Exception:
+            scaler_scale = None
+        scaler_growth_factor = getattr(scaler, "_growth_factor", None)
+        scaler_growth_cnt = getattr(scaler, "_growth_cnt", None)
+        scaler_backoff_cnt = getattr(scaler, "_backoff_cnt", None)
+
+    return {
+        "phase": phase,
+        "epoch": int(epoch),
+        "first_nonfinite_batch": int(batch_idx) if batch_idx is not None else None,
+        "raw_batch_loss": _scalar(raw_batch_loss),
+        "lr": _scalar(lr),
+        "amp_dtype": amp_dtype,
+        "amp_enabled": bool(amp_enabled),
+        "scaler_enabled": bool(amp_enabled),
+        "scaler_scale": scaler_scale,
+        "scaler_growth_factor": scaler_growth_factor,
+        "scaler_growth_cnt": scaler_growth_cnt,
+        "scaler_backoff_cnt": scaler_backoff_cnt,
+        "grad_norm": _scalar(grad_norm),
+        "img_min": img_min,
+        "img_max": img_max,
+        "img_any_nan": img_nan,
+        "mask_min": mask_min,
+        "mask_max": mask_max,
+        "mask_any_nan": mask_nan,
+        "batch_size": int(batch_size),
+        "compile_active": bool(compile_active),
+        "torch_version": torch.__version__,
+        "cuda_version": torch.version.cuda,
+    }
 
 
 def _per_run_epoch_log_path(run_label: str) -> Path:
@@ -106,6 +251,10 @@ def _run_epoch(
     smoke_test: bool = False,
     case_ids: list | None = None,
     collect_per_sample: bool = False,
+    lr: float | None = None,
+    compile_active: bool = False,
+    epoch: int = 1,
+    run_label: str | None = None,
 ):
     """Run one training or validation epoch.
 
@@ -115,12 +264,19 @@ def _run_epoch(
             loader is not shuffled, so batch order maps 1:1 to dataset order).
         collect_per_sample: When True (validation), collect per-sample Dice
             scores and case ids for downstream per-slice result dumps.
+        lr: Current learning rate (for non-finite diagnosis).
+        compile_active: Whether torch.compile is active (for diagnosis).
+        epoch: 1-based epoch number (for non-finite diagnosis).
 
     Returns:
         (mean_loss, accuracy, mean_dice, per_sample_info) where
         ``per_sample_info`` is None in train mode, or a dict with keys
         ``case_ids``, ``dice``, ``empty_pred``, ``empty_gt``, ``labels``
         (each a list aligned per sample) in val mode.
+
+    Raises:
+        NonFiniteMetricsError: if any batch loss or the epoch mean metric is
+            non-finite (zero-silent-fallback: FATAL, never a soft skip/end).
     """
     model.train() if train else model.eval()
 
@@ -129,6 +285,7 @@ def _run_epoch(
     correct = 0
     dice_vals: list[float] = []
     steps = 0
+    last_grad_norm: float | None = None
     per_sample_dice: list[float] = []
     per_sample_empty_pred: list[bool] = []
     per_sample_empty_gt: list[bool] = []
@@ -198,10 +355,41 @@ def _run_epoch(
                 else:
                     loss = seg_loss + cls_loss
 
+            # Zero-silent-fallback: a non-finite batch loss is FATAL (never a
+            # soft skip). Capture the FIRST non-finite batch with full diagnosis
+            # plus the partial per-sample data that evaluated before it.
+            if not torch.isfinite(loss):
+                partial_per_sample = None
+                if collect_per_sample and not train and per_sample_dice:
+                    partial_per_sample = {
+                        "case_ids": (list(case_ids)[:len(per_sample_dice)]
+                                     if case_ids is not None
+                                     else [str(i) for i in range(len(per_sample_dice))]),
+                        "dice": list(per_sample_dice),
+                        "empty_pred": list(per_sample_empty_pred),
+                        "empty_gt": list(per_sample_empty_gt),
+                        "labels": list(per_sample_labels),
+                    }
+                raise NonFiniteMetricsError(
+                    phase="train" if train else "val",
+                    epoch=epoch,
+                    diagnosis=_build_nan_diagnosis(
+                        phase="train" if train else "val",
+                        epoch=epoch,
+                        batch_idx=batch_idx,
+                        raw_batch_loss=loss,
+                        lr=lr,
+                        scaler=scaler,
+                        grad_norm=last_grad_norm,
+                        images=images,
+                        masks=masks,
+                        batch_size=int(images.size(0)),
+                        compile_active=compile_active,
+                    ),
+                    per_sample_info=partial_per_sample,
+                )
+
             if train:
-                if not torch.isfinite(loss):
-                    optimizer.zero_grad(set_to_none=True)
-                    continue
 
                 if gradnorm is not None and not static_weights and not bool(gradnorm.has_initial_losses.item()):
                     gradnorm.set_initial_losses(seg_loss.detach(), cls_loss.detach())
@@ -243,7 +431,28 @@ def _run_epoch(
                 clip_params = list(model.parameters())
                 if gradnorm is not None and not static_weights:
                     clip_params += list(gradnorm.parameters())
-                torch.nn.utils.clip_grad_norm_(clip_params, max_norm=1.0)
+                # PROTOCOL: global grad-norm clip (documented in config + run
+                # summary + paper §4.1). ``clip_grad_norm_`` returns the
+                # PRE-clip total norm, so a value > GRAD_CLIP_MAX_NORM means the
+                # clip actually engaged this step. Log it loudly (throttled) so
+                # an exploding batch is visible in the run log, not just in the
+                # post-hoc NaN diagnosis. Clipping bounds the per-step update so
+                # a single 1e5+ norm cannot push the shared encoder into a
+                # near-overflow regime; it does NOT suppress a genuine NaN (a
+                # non-finite forward loss is still FATAL above).
+                last_grad_norm = float(
+                    torch.nn.utils.clip_grad_norm_(
+                        clip_params, max_norm=GRAD_CLIP_MAX_NORM
+                    ).item()
+                )
+                if last_grad_norm > GRAD_CLIP_MAX_NORM:
+                    logger.warning(
+                        "[%s] epoch %d batch %d: grad-norm %.1f exceeded clip "
+                        "max_norm=%.3f -> clipped (stabilizer engaged; a "
+                        "non-finite loss would still be FATAL)",
+                        run_label, epoch, batch_idx, last_grad_norm,
+                        GRAD_CLIP_MAX_NORM,
+                    )
                 scaler.step(optimizer)
                 scaler.update()
                 if gradnorm is not None and not static_weights:
@@ -254,6 +463,7 @@ def _run_epoch(
             correct += int((preds == labels).sum().item())
             total += int(labels.size(0))
             dice_vals.append(dice_coefficient(seg_out.detach(), masks.detach(), seg_classes))
+            steps += 1
 
             if collect_per_sample and not train:
                 per = dice_coefficient_per_sample(seg_out.detach(), masks.detach(), seg_classes)
@@ -272,7 +482,79 @@ def _run_epoch(
                 sample_offset += int(labels.size(0))
 
     if steps == 0 or total == 0:
-        return float("inf"), 0.0, 0.0, None
+        # No batches were consumed (e.g. empty loader). This is a data/loader
+        # defect, not a numeric one: fail loud with a clear message.
+        raise NonFiniteMetricsError(
+            phase="train" if train else "val",
+            epoch=epoch,
+            diagnosis={
+                "phase": "train" if train else "val",
+                "epoch": int(epoch),
+                "first_nonfinite_batch": None,
+                "raw_batch_loss": None,
+                "lr": lr,
+                "amp_dtype": "bfloat16",
+                "amp_enabled": bool(getattr(scaler, "enabled", False)) if scaler is not None else False,
+                "scaler_enabled": bool(getattr(scaler, "enabled", False)) if scaler is not None else False,
+                "scaler_scale": None,
+                "scaler_growth_factor": None,
+                "scaler_growth_cnt": None,
+                "scaler_backoff_cnt": None,
+                "grad_norm": None,
+                "img_min": None,
+                "img_max": None,
+                "img_any_nan": None,
+                "mask_min": None,
+                "mask_max": None,
+                "mask_any_nan": None,
+                "batch_size": 0,
+                "compile_active": bool(compile_active),
+                "torch_version": torch.__version__,
+                "cuda_version": torch.version.cuda,
+                "note": "no batches consumed (empty loader / 0 steps)",
+            },
+        )
+
+    mean_loss = total_loss / steps
+    mean_acc = correct / total
+    mean_dice = float(np.mean(dice_vals))
+
+    # Zero-silent-fallback: a non-finite EPOCH MEAN metric is FATAL. (A single
+    # non-finite batch is already caught above; this guards the aggregate.)
+    if not (math.isfinite(mean_loss) and math.isfinite(mean_acc) and math.isfinite(mean_dice)):
+        raise NonFiniteMetricsError(
+            phase="train" if train else "val",
+            epoch=epoch,
+            diagnosis={
+                "phase": "train" if train else "val",
+                "epoch": int(epoch),
+                "first_nonfinite_batch": None,
+                "raw_batch_loss": None,
+                "lr": lr,
+                "amp_dtype": "bfloat16",
+                "amp_enabled": bool(getattr(scaler, "enabled", False)) if scaler is not None else False,
+                "scaler_enabled": bool(getattr(scaler, "enabled", False)) if scaler is not None else False,
+                "scaler_scale": float(scaler._scale.item()) if scaler is not None else None,
+                "scaler_growth_factor": getattr(scaler, "_growth_factor", None) if scaler is not None else None,
+                "scaler_growth_cnt": getattr(scaler, "_growth_cnt", None) if scaler is not None else None,
+                "scaler_backoff_cnt": getattr(scaler, "_backoff_cnt", None) if scaler is not None else None,
+                "grad_norm": last_grad_norm,
+                "img_min": None,
+                "img_max": None,
+                "img_any_nan": None,
+                "mask_min": None,
+                "mask_max": None,
+                "mask_any_nan": None,
+                "batch_size": int(total / max(steps, 1)),
+                "compile_active": bool(compile_active),
+                "torch_version": torch.__version__,
+                "cuda_version": torch.version.cuda,
+                "note": "epoch-mean metric non-finite (aggregate); per-batch check did not fire",
+                "mean_loss": mean_loss,
+                "mean_acc": mean_acc,
+                "mean_dice": mean_dice,
+            },
+        )
 
     per_sample_info = None
     if collect_per_sample and not train:
@@ -284,7 +566,7 @@ def _run_epoch(
             "labels": per_sample_labels,
         }
 
-    return total_loss / steps, correct / total, float(np.mean(dice_vals)), per_sample_info
+    return mean_loss, mean_acc, mean_dice, per_sample_info
 
 
 def _deterministic_run_paths(run_label: str) -> tuple[Path, Path]:
@@ -571,7 +853,8 @@ def train_single_run(
         gradnorm = None
         if use_gradnorm:
             gradnorm = GradNormBalancer(
-                args.lambda_seg, args.lambda_cls, getattr(args, "gradnorm_alpha", 1.5)
+                args.lambda_seg, args.lambda_cls, getattr(args, "gradnorm_alpha", 1.5),
+                weight_clamp=GRADNORM_WEIGHT_CLAMP,
             ).to(device)
 
         optimizer = optim.Adam(
@@ -593,6 +876,7 @@ def train_single_run(
             dataset, encoder, args, batch_size, fold_idx, k_folds, run_label,
         )
         start_epoch = 1
+        last_completed_epoch = 0
         resume_state = None
         resume_branch = "fresh-start-no-state"
 
@@ -636,6 +920,10 @@ def train_single_run(
                     lambda_seg=args.lambda_seg,
                     lambda_cls=args.lambda_cls,
                     smoke_test=smoke_test,
+                    lr=args.lr,
+                    compile_active=compile_active,
+                    epoch=epoch,
+                    run_label=run_label,
                 )
                 vl_loss, vl_acc, vl_dice, _ = _run_epoch(
                     model, val_loader, optimizer, seg_criterion, cls_criterion,
@@ -644,6 +932,10 @@ def train_single_run(
                     lambda_seg=args.lambda_seg,
                     lambda_cls=args.lambda_cls,
                     smoke_test=smoke_test,
+                    lr=args.lr,
+                    compile_active=compile_active,
+                    epoch=epoch,
+                    run_label=run_label,
                 )
                 ep_s = time.time() - t0
 
@@ -705,37 +997,80 @@ def train_single_run(
                         fingerprint=fingerprint,
                     )
 
+                # This epoch completed cleanly (both train and val finite).
+                last_completed_epoch = epoch
+
                 if patience_ctr >= args.patience:
                     logger.info("Early stop at epoch %d (patience=%d)", epoch, args.patience)
                     break
-
-                if not (np.isfinite(tr_loss) and np.isfinite(vl_loss)):
-                    logger.warning("NaN/Inf encountered, restoring best and ending run")
-                    break
+                # NOTE: the old soft-end NaN check is GONE. A non-finite
+                # train/val metric now raises NonFiniteMetricsError from
+                # _run_epoch (zero-silent-fallback: FATAL, never a soft end).
 
             if smoke_test:
                 final_acc, final_dice = vl_acc, vl_dice
             else:
-                load_checkpoint(model, ckpt_path, device)
-                _, final_acc, final_dice, final_per_sample = _run_epoch(
-                    model, val_loader, optimizer, seg_criterion, cls_criterion,
-                    device, scaler, gradnorm, meta["seg_classes"], train=False,
-                    static_weights=static_weights,
-                    lambda_seg=args.lambda_seg,
-                    lambda_cls=args.lambda_cls,
-                    case_ids=list(val_ds.case_ids) if val_ds is not None else None,
-                    collect_per_sample=True,
-                )
-                # (3) Final best-checkpoint per-slice Dice dump.
-                if final_per_sample is not None and run_label is not None:
-                    _dump_per_slice_dice(
+                # Defect 2: the final-eval best.pt load is CONDITIONAL. A run
+                # that ended early (e.g. NaN) may never have written best.pt,
+                # so an unconditional load would crash with FileNotFoundError
+                # and mask the real diagnosis. Only load when the file exists.
+                if ckpt_path.exists():
+                    load_checkpoint(model, ckpt_path, device)
+                    _, final_acc, final_dice, final_per_sample = _run_epoch(
+                        model, val_loader, optimizer, seg_criterion, cls_criterion,
+                        device, scaler, gradnorm, meta["seg_classes"], train=False,
+                        static_weights=static_weights,
+                        lambda_seg=args.lambda_seg,
+                        lambda_cls=args.lambda_cls,
+                        case_ids=list(val_ds.case_ids) if val_ds is not None else None,
+                        collect_per_sample=True,
+                        lr=args.lr,
+                        compile_active=compile_active,
+                        epoch=epoch,
                         run_label=run_label,
-                        dataset=dataset,
-                        encoder=encoder,
-                        fold=int(fold_idx) if fold_idx is not None else -1,
-                        seed=int(getattr(args, "seed", -1)),
-                        per_sample_info=final_per_sample,
                     )
+                    # (3) Final best-checkpoint per-slice Dice dump.
+                    if final_per_sample is not None and run_label is not None:
+                        _dump_per_slice_dice(
+                            run_label=run_label,
+                            dataset=dataset,
+                            encoder=encoder,
+                            fold=int(fold_idx) if fold_idx is not None else -1,
+                            seed=int(getattr(args, "seed", -1)),
+                            per_sample_info=final_per_sample,
+                        )
+                else:
+                    # No best checkpoint was ever written (e.g. the run ended
+                    # before any epoch produced a finite best). Fall back to the
+                    # current (last) model weights for a best-effort final eval
+                    # so the run still yields a summary + partial artifacts.
+                    logger.warning(
+                        "[%s] best.pt not found at %s (run ended before a best "
+                        "checkpoint was written); using current weights for final eval.",
+                        run_label, ckpt_path,
+                    )
+                    _, final_acc, final_dice, final_per_sample = _run_epoch(
+                        model, val_loader, optimizer, seg_criterion, cls_criterion,
+                        device, scaler, gradnorm, meta["seg_classes"], train=False,
+                        static_weights=static_weights,
+                        lambda_seg=args.lambda_seg,
+                        lambda_cls=args.lambda_cls,
+                        case_ids=list(val_ds.case_ids) if val_ds is not None else None,
+                        collect_per_sample=True,
+                        lr=args.lr,
+                        compile_active=compile_active,
+                        epoch=epoch,
+                        run_label=run_label,
+                    )
+                    if final_per_sample is not None and run_label is not None:
+                        _dump_per_slice_dice(
+                            run_label=run_label,
+                            dataset=dataset,
+                            encoder=encoder,
+                            fold=int(fold_idx) if fold_idx is not None else -1,
+                            seed=int(getattr(args, "seed", -1)),
+                            per_sample_info=final_per_sample,
+                        )
 
             duration = time.time() - start_ts
             return {
@@ -771,6 +1106,114 @@ def train_single_run(
                 "compile_mode": "max-autotune",
                 "skip_connections_ablated": bool(skip_connections),
                 "smoke_test": bool(smoke_test),
+                # PROTOCOL parameters (paper §4.1): the exact stabilizer settings
+                # used by this run (global grad-norm clip + GradNorm weight clamp).
+                "grad_clip_max_norm": GRAD_CLIP_MAX_NORM,
+                "gradnorm_weight_clamp": GRADNORM_WEIGHT_CLAMP,
+            }
+
+        except NonFiniteMetricsError as ex:
+            # Zero-silent-fallback: a non-finite metric is FATAL. Fail loud with
+            # a structured diagnosis, write partial artifacts (per-slice dump of
+            # what evaluated + an epoch-log record with ended_early: nan), and
+            # return a result dict that main.py stamps into the summary with an
+            # explicit ended_early: nan branch. No traceback masks the diagnosis.
+            logger.error(
+                "[%s] %s", run_label, ex,
+            )
+            diag = ex.diagnosis
+            # (a) Partial per-slice dump of whatever evaluated before the
+            #     non-finite batch (only when we have partial data).
+            if ex.per_sample_info is not None and run_label is not None:
+                try:
+                    _dump_per_slice_dice(
+                        run_label=run_label,
+                        dataset=dataset,
+                        encoder=encoder,
+                        fold=int(fold_idx) if fold_idx is not None else -1,
+                        seed=int(getattr(args, "seed", -1)),
+                        per_sample_info=ex.per_sample_info,
+                    )
+                except Exception as dump_ex:
+                    logger.warning("[%s] partial per-slice dump failed: %s", run_label, dump_ex)
+            # (b) Epoch-log record with an explicit ended_early: nan branch.
+            if run_label is not None:
+                nan_record = {
+                    "timestamp": now_iso(),
+                    "dataset": dataset,
+                    "encoder": encoder,
+                    "epoch": int(ex.epoch),
+                    "batch_size": int(batch_size),
+                    "ended_early": "nan",
+                    "nonfinite_phase": ex.phase,
+                    "first_nonfinite_batch": diag.get("first_nonfinite_batch"),
+                    "raw_batch_loss": diag.get("raw_batch_loss"),
+                    "lr": diag.get("lr"),
+                    "amp_dtype": diag.get("amp_dtype"),
+                    "amp_enabled": diag.get("amp_enabled"),
+                    "scaler_enabled": diag.get("scaler_enabled"),
+                    "scaler_scale": diag.get("scaler_scale"),
+                    "scaler_growth_factor": diag.get("scaler_growth_factor"),
+                    "scaler_growth_cnt": diag.get("scaler_growth_cnt"),
+                    "scaler_backoff_cnt": diag.get("scaler_backoff_cnt"),
+                    "grad_norm": diag.get("grad_norm"),
+                    "img_min": diag.get("img_min"),
+                    "img_max": diag.get("img_max"),
+                    "img_any_nan": diag.get("img_any_nan"),
+                    "mask_min": diag.get("mask_min"),
+                    "mask_max": diag.get("mask_max"),
+                    "mask_any_nan": diag.get("mask_any_nan"),
+                    "compile_active": diag.get("compile_active"),
+                    "torch_version": diag.get("torch_version"),
+                    "cuda_version": diag.get("cuda_version"),
+                    "run_label": run_label,
+                    "fold": int(fold_idx) if fold_idx is not None else -1,
+                    "seed": int(getattr(args, "seed", -1)),
+                    "splitter_branch": splitter_branch,
+                    # PROTOCOL parameters (paper §4.1): the stabilizer settings
+                    # active when this run hit the non-finite batch.
+                    "grad_clip_max_norm": GRAD_CLIP_MAX_NORM,
+                    "gradnorm_weight_clamp": GRADNORM_WEIGHT_CLAMP,
+                }
+                append_jsonl(_per_run_epoch_log_path(run_label), nan_record)
+                append_jsonl(epoch_log_file, nan_record)
+            duration = time.time() - start_ts
+            return {
+                "status": "ended_early",
+                "ended_early": "nan",
+                "nonfinite_phase": ex.phase,
+                "nonfinite_epoch": int(ex.epoch),
+                "diagnosis": diag,
+                "dataset": dataset,
+                "encoder": encoder,
+                "samples": int(len(images)),
+                "train_samples": int(len(train_idx)),
+                "val_samples": int(len(val_idx)),
+                "batch_size": int(batch_size),
+                "best_val_loss": float(best_val_loss),
+                "best_val_acc": float(best_val_acc),
+                "best_val_dice": float(best_val_dice),
+                "final_val_acc": (float(vl_acc) if "vl_acc" in locals() and vl_acc is not None else None),
+                "final_val_dice": (float(vl_dice) if "vl_dice" in locals() and vl_dice is not None else None),
+                "last_completed_epoch": int(last_completed_epoch),
+                "fold_idx": int(fold_idx) if fold_idx is not None else None,
+                "k_folds": int(k_folds) if k_folds is not None else None,
+                "checkpoint": str(ckpt_path),
+                "state_path": str(state_path),
+                "resume_branch": resume_branch,
+                "resumed_from_epoch": int(start_epoch - 1) if resume_state is not None else 0,
+                "duration_sec": float(duration),
+                "duration_hms": fmt_seconds(duration),
+                "attempt": attempt,
+                "compile_enabled": bool(compile_active),
+                "compile_backend": REPRO_TORCH_COMPILE_BACKEND or None,
+                "compile_mode": "max-autotune",
+                "skip_connections_ablated": bool(skip_connections),
+                "smoke_test": bool(smoke_test),
+                # PROTOCOL parameters (paper §4.1): the exact stabilizer settings
+                # used by this run (global grad-norm clip + GradNorm weight clamp).
+                "grad_clip_max_norm": GRAD_CLIP_MAX_NORM,
+                "gradnorm_weight_clamp": GRADNORM_WEIGHT_CLAMP,
             }
 
         except RuntimeError as ex:

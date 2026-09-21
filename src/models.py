@@ -9,6 +9,8 @@ Provides:
 """
 from __future__ import annotations
 
+import math
+
 import torch
 import torch.nn as nn
 import segmentation_models_pytorch as smp
@@ -27,24 +29,37 @@ class GradNormBalancer(nn.Module):
         alpha: GradNorm asymmetry exponent (default 1.5).
     """
 
-    def __init__(self, init_seg: float, init_cls: float, alpha: float):
+    def __init__(self, init_seg: float, init_cls: float, alpha: float,
+                 weight_clamp: float = 10.0):
         super().__init__()
         init = torch.tensor([float(init_seg), float(init_cls)], dtype=torch.float32)
         self.log_weights = nn.Parameter(torch.log(init.clamp(min=1e-4)))
         self.alpha = float(alpha)
+        # Defense-in-depth bound on the task-weight ratio. ``normalize_`` already
+        # rescales the weights to sum to 2 each step, but the *log*-weights are
+        # free parameters updated by the GradNorm objective between steps; if a
+        # hard batch drives one log-weight far positive, ``exp()`` can overflow
+        # float32 (exp(>~88) -> inf) and the combined loss becomes non-finite.
+        # Clamping the log-weights to +/-log(weight_clamp) caps each weight at
+        # ``weight_clamp`` (and its reciprocal at the low end) so the task-weight
+        # ratio is bounded and ``exp()`` stays finite. PROTOCOL parameter: the
+        # value is stamped into the run summary and referenced in the paper's
+        # §4.1 protocol sentence.
+        self.weight_clamp = float(weight_clamp)
+        self._log_clamp = float(math.log(self.weight_clamp))
         self.register_buffer("initial_losses", torch.zeros(2, dtype=torch.float32))
         self.register_buffer("has_initial_losses", torch.tensor(False))
 
     def weights(self) -> torch.Tensor:
-        """Return current (positive) loss weights."""
-        return torch.exp(self.log_weights)
+        """Return current (positive) loss weights (log-weights clamped)."""
+        return torch.exp(self.log_weights.clamp(min=-self._log_clamp, max=self._log_clamp))
 
     def normalize_(self) -> None:
-        """Normalize weights so they sum to 2."""
+        """Normalize weights so they sum to 2 (log-weights clamped)."""
         with torch.no_grad():
             w = self.weights().clamp(min=1e-4)
             w = w * (2.0 / w.sum().clamp(min=1e-4))
-            self.log_weights.copy_(w.log())
+            self.log_weights.copy_(w.log().clamp(min=-self._log_clamp, max=self._log_clamp))
 
     def set_initial_losses(self, seg_loss: torch.Tensor, cls_loss: torch.Tensor) -> None:
         """Record initial per-task losses for relative-rate computation."""

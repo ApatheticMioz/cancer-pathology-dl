@@ -38,6 +38,8 @@ from src.config import (
     DEFAULT_DATASETS,
     DEFAULT_ENCODERS,
     EPOCH_LOG_FILE,
+    GRAD_CLIP_MAX_NORM,
+    GRADNORM_WEIGHT_CLAMP,
     PHASE_CONFIGS,
     PAPER_TARGETS,
     RANDOM_SEED,
@@ -229,16 +231,23 @@ def _selected_runs(matrix_mode: str, datasets: list[str], encoders: list[str]) -
 
 
 def _paper_compare(dataset: str, encoder: str, result: dict) -> dict:
-    """Compare run results against paper reference targets."""
+    """Compare run results against paper reference targets.
+
+    Robust to ``ended_early`` runs (e.g. NaN) where ``final_val_acc`` /
+    ``final_val_dice`` may be ``None``: the deltas are then ``None`` rather
+    than raising, so the summary is still written with the diagnosis intact.
+    """
     key = f"{dataset}_{encoder}"
     target = PAPER_TARGETS.get(key)
     if not target:
         return {}
+    fva = result.get("final_val_acc")
+    fvd = result.get("final_val_dice")
     return {
         "paper_acc": float(target["acc"]),
         "paper_dice": float(target["dice"]),
-        "acc_delta": float(result["final_val_acc"] - target["acc"]),
-        "dice_delta": float(result["final_val_dice"] - target["dice"]),
+        "acc_delta": (float(fva) - float(target["acc"])) if fva is not None else None,
+        "dice_delta": (float(fvd) - float(target["dice"])) if fvd is not None else None,
     }
 
 
@@ -455,6 +464,11 @@ def run_reproduction(args: argparse.Namespace) -> dict:
                 "lambda_cls": args.lambda_cls,
                 "gradnorm_alpha": args.gradnorm_alpha,
                 "use_gradnorm": args.use_gradnorm,
+                # PROTOCOL parameters (paper §4.1): global grad-norm clip and
+                # GradNorm log-weight clamp. Stamped so the exact stabilizer
+                # settings used by this run are auditable.
+                "grad_clip_max_norm": GRAD_CLIP_MAX_NORM,
+                "gradnorm_weight_clamp": GRADNORM_WEIGHT_CLAMP,
                 "num_workers": args.num_workers,
                 "cache_size": args.cache_size,
                 "compile": args.compile,
@@ -476,6 +490,12 @@ def run_reproduction(args: argparse.Namespace) -> dict:
         if "std_val_acc" in r and "std_val_dice" in r:
             acc_str = f"{100.0 * r['mean_val_acc']:.2f} +/- {100.0 * r['std_val_acc']:.2f}"
             dice_str = f"{100.0 * r['mean_val_dice']:.2f} +/- {100.0 * r['std_val_dice']:.2f}"
+        elif r.get("final_val_acc") is None or r.get("final_val_dice") is None:
+            # ended_early (e.g. NaN): final metrics unavailable. Surface the
+            # early-termination reason instead of a misleading 0.00.
+            reason = r.get("ended_early", "unknown")
+            acc_str = f"N/A (ended_early={reason})"
+            dice_str = f"N/A (ended_early={reason})"
         else:
             acc_str = f"{100.0 * r['final_val_acc']:.2f}"
             dice_str = f"{100.0 * r['final_val_dice']:.2f}"
@@ -491,9 +511,19 @@ def run_reproduction(args: argparse.Namespace) -> dict:
             }
         )
 
+    # Zero-silent-fallback: if any run ended early (e.g. NaN), the top-level
+    # summary must say so explicitly (never a silent "completed").
+    ended_early_runs = {
+        key: r.get("ended_early")
+        for key, r in run_results.items()
+        if r.get("ended_early")
+    }
+    overall_status = "ended_early" if ended_early_runs else "completed"
+
     final_summary = {
         "timestamp": now_iso(),
-        "status": "completed",
+        "status": overall_status,
+        "ended_early": ended_early_runs or None,
         "phase": args.phase,
         "device": device,
         "hardware": hardware,
@@ -513,6 +543,10 @@ def run_reproduction(args: argparse.Namespace) -> dict:
             "lambda_cls": args.lambda_cls,
             "gradnorm_alpha": args.gradnorm_alpha,
             "use_gradnorm": args.use_gradnorm,
+            # PROTOCOL parameters (paper §4.1): global grad-norm clip and
+            # GradNorm log-weight clamp.
+            "grad_clip_max_norm": GRAD_CLIP_MAX_NORM,
+            "gradnorm_weight_clamp": GRADNORM_WEIGHT_CLAMP,
             "num_workers": args.num_workers,
             "cache_size": args.cache_size,
             "compile": args.compile,
@@ -582,7 +616,17 @@ def main() -> int:
     # Set checkpoint directory
     args.checkpoint_dir = CHECKPOINT_DIR
 
-    run_reproduction(args)
+    summary = run_reproduction(args)
+    # Zero-silent-fallback: a run that ended early (e.g. NaN) must produce a
+    # non-zero exit code so unattended gates (set -e) fail loudly. The summary
+    # and partial artifacts are already written with the full diagnosis.
+    if isinstance(summary, dict) and summary.get("status") == "ended_early":
+        logger.error(
+            "One or more runs ended early: %s (see summary + per-run epoch log "
+            "for the non-finite diagnosis). Exiting non-zero.",
+            summary.get("ended_early"),
+        )
+        return 1
     return 0
 
 

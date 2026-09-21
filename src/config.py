@@ -113,6 +113,22 @@ RANDOM_SEED = 42
 DEFAULT_ENCODERS = ["vgg16", "mobilenet_v2"]
 DEFAULT_DATASETS = ["tcga", "panda", "siim", "pannuke"]
 
+# Global gradient-norm clipping applied to every optimizer step (model + any
+# GradNorm balancer parameters). This is a PROTOCOL parameter: it bounds the
+# per-step update magnitude so a single exploding batch (e.g. a 1e5+ total
+# grad norm on a hard TCGA batch) cannot push the shared encoder into a
+# near-overflow regime. The value is stamped into every run summary and is
+# referenced by the paper's §4.1 protocol sentence. It is a stabilizer, NOT a
+# NaN suppressor: a non-finite metric is still FATAL (zero-silent-fallback).
+GRAD_CLIP_MAX_NORM = 1.0
+
+# GradNormBalancer log-weight clamp (applied in normalize_ before exp()).
+# Bounds the task-weight imbalance so no single task's gradient can dominate
+# the shared encoder into a near-overflow regime, and prevents exp() from
+# overflowing/underflowing float32 (exp(>~88) -> inf, exp(<~-88) -> 0).
+# Also a PROTOCOL parameter stamped into the run summary.
+GRADNORM_WEIGHT_CLAMP = 10.0
+
 REQUIRED_MATRIX = [
     ("tcga", "vgg16"),
     ("tcga", "mobilenet_v2"),
