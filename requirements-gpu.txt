@@ -1,0 +1,27 @@
+# GPU environment for the training campaign (RTX 3090 / WSL).
+#
+# Rationale: requirements.txt pins torch==2.14.0+cpu on purpose — the CPU
+# wheel is what the paper figure-regeneration scripts (paper/generate_figures.py,
+# scripts/*fig*.py) use, and it keeps those runs deterministic and
+# dependency-light on any machine. The 26-run + 130-fold training campaign
+# (run_all_experiments.sh, gated by run_smoke_test.sh) needs CUDA, so it
+# installs the SAME torch major (2.14.0) from the cu126 wheel index instead.
+# Driver 615.71.08 (CUDA 13.4 UMD) runs cu126 wheels; the cu128 index does
+# not publish torch 2.14.0, so cu126 is the only index that fits.
+#
+# Install (into the project venv):
+#   pip install torch==2.14.0 torchvision==0.29.0 \
+#       --index-url https://download.pytorch.org/whl/cu126
+#   pip install "cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvrtc,nvtx]==12.6.3" \
+#       nvidia-cusparselt-cu12==0.7.1 nvidia-nvshmem-cu12==3.4.5 \
+#       --index-url https://download.pytorch.org/whl/cu126
+#
+# The nvidia-* / cuda-toolkit pins are the exact versions torch 2.14.0+cu126
+# declares; installing them explicitly avoids pip resolving newer,
+# incompatible CUDA runtime packages from the index.
+#
+# Everything else (segmentation_models_pytorch==0.5.0, timm, numpy, pandas,
+# matplotlib, ...) is shared with requirements.txt and must stay in sync.
+#
+# Verify:
+#   python -c "import torch; assert torch.cuda.is_available(); print(torch.cuda.get_device_name(0))"

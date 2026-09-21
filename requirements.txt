@@ -1,5 +1,7 @@
 # Pinned environment for figure regeneration + verification (CPU-only torch wheel).
 # Install: pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
+# NOTE: the training campaign (run_all_experiments.sh / run_smoke_test.sh) needs
+# CUDA torch — use requirements-gpu.txt (same torch major, cu126 wheels) instead.
 attrs==26.1.0
 bleach==6.4.0
 certifi==2026.7.22

@@ -218,6 +218,18 @@ pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
 pip install segmentation-models-pytorch albumentations scikit-learn pandas scipy opencv-python-headless matplotlib tabulate
 ```
 
+> **Environment note (CPU vs GPU torch).** `requirements.txt` pins
+> `torch==2.14.0+cpu` on purpose: it is the wheel used for **figure
+> regeneration** (`paper/generate_figures.py` and the `scripts/*fig*.py`
+> helpers), which must stay deterministic and dependency-light on any
+> machine. The **training campaign** (`run_all_experiments.sh`, gated by
+> `run_smoke_test.sh`) needs CUDA — point campaign runs at
+> [`requirements-gpu.txt`](requirements-gpu.txt), which installs the same
+> torch major (`2.14.0`) from the `cu126` wheel index (the `cu128` index
+> does not publish torch 2.14.0; driver 615.71.08 / CUDA 13.4 UMD runs
+> cu126). Do not mix the two: keep `requirements.txt` for figure work and
+> `requirements-gpu.txt` for campaign runs.
+
 ### 2. Fast Smoke Test Suite
 Run the 10-test validation suite to verify dataloaders, model architectures, GradNorm loss balancing, and Macenko stain normalization:
 
