@@ -46,8 +46,8 @@ from . import style
 from .loaders import (
     REPO_ROOT,
     canonical_gradnorm,
+    round2_run_trajectory,
     run_epoch_windows,
-    run_trajectory,
 )
 
 # Apply the locked style contract once for this module.

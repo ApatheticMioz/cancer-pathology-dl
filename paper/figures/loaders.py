@@ -34,6 +34,50 @@ Loaders
     ``logs/canonical_gradnorm_run18.log``: per-epoch train/val accuracy,
     validation CI bounds, validation Dice, and the adaptive seg/cls weights.
 
+Round-2 artifact contract (results/round2/)
+-------------------------------------------
+``per_run_epoch_log(run_label)``
+    The per-run epoch log ``results/round2/<run_label>/epoch_log.jsonl``
+    (written by ``src/training.py::train_single_run``; F-10). Records carry
+    ``run_label / fold / seed / splitter_branch / epoch / tr_loss / tr_acc /
+    tr_dice / vl_loss / vl_acc / vl_dice / best_vl_loss / best_vl_acc /
+    best_vl_dice / epoch_sec / is_best / smoke_test``. This is the round-2
+    replacement for the legacy shared ``checkpoints/epoch_log.jsonl``.
+``per_slice_dice(run_label)``
+    The per-slice Dice dump ``results/round2/<run_label>/per_slice_dice.jsonl``
+    (10-field contract: run_label, dataset, encoder, fold, seed, case_id,
+    dice, empty_pred, empty_gt, label_int).
+``kfold_summary(run_name)``
+    The k-fold CV summary ``results/round2/kfold_<run_name>.json`` (written
+    by ``main.py --summary-out`` for ``train_kfold_cv`` runs; the ``runs``
+    dict carries the ``train_kfold_cv`` return: mean/std val acc/dice/loss,
+    completed_folds, fold_results).
+``dice_ci_summary()``
+    The bootstrap Dice-CI table ``results/round2/dice_ci_summary.csv``
+    (written by ``scripts/bootstrap_dice_ci.py``; 95% percentile bootstrap,
+    seed 42, 10,000 resamples). One row per run x stratum (overall /
+    positive_only / negative_only / across_folds).
+``canonical_gradnorm_probe()``
+    The NEW seeded canonical GradNorm probe log
+    ``results/round2/canonical_gradnorm_probe/probe_log.jsonl`` (seed 42,
+    deterministic): per-epoch ``epoch / loss / train_acc / val_acc /
+    val_acc_ci_lo / val_acc_ci_hi / val_dice / seg_weight / cls_weight``.
+    :func:`canonical_gradnorm` prefers this JSONL and falls back to the
+    legacy text log when the JSONL is absent.
+``deterministic_best_ckpt(run_label)``
+    The deterministic best-checkpoint path
+    ``results/round2/<run_label>/best.pt`` (F-23 layout; the same
+    ``run_label`` always maps to the same path).
+``run_name_for_run_num(run_num)``
+    The 26-run-matrix run name (e.g. ``g1_panda_vgg16``) for a 1-based CSV
+    row number, from ``src/aggregate_results.py::EXPECTED_RUNS``.
+``dice_ci_for_run(run_num)``
+    The 95% bootstrap Dice-CI bounds (percent) for one matrix row, joined
+    through the kfold summary's ``dataset``/``encoder`` to the
+    ``dice_ci_summary.csv`` row for the same run (``overall`` stratum, or
+    ``across_folds`` for k-fold runs). Returns ``None`` when the CI table
+    does not cover the run yet.
+
 Self-test
 ---------
 ``python -m paper.figures.loaders --selftest``
@@ -66,6 +110,21 @@ DICE_DEGENERACY_CSV = REPO_ROOT / "paper" / "dice_degeneracy_curve.csv"
 EPOCH_LOG_JSONL = REPO_ROOT / "checkpoints" / "epoch_log.jsonl"
 LOGS_DIR = REPO_ROOT / "logs"
 CANONICAL_GRADNORM_LOG = REPO_ROOT / "logs" / "canonical_gradnorm_run18.log"
+
+# ---------------------------------------------------------------------------
+# Round-2 artifact contract (results/round2/)
+# ---------------------------------------------------------------------------
+
+#: Round-2 results root: per-run dirs ``<run_label>/`` plus kfold summaries
+#: and the bootstrap Dice-CI table.
+ROUND2_DIR: Path = REPO_ROOT / "results" / "round2"
+
+#: Bootstrap Dice-CI table (scripts/bootstrap_dice_ci.py output).
+DICE_CI_SUMMARY_CSV: Path = ROUND2_DIR / "dice_ci_summary.csv"
+
+#: New seeded canonical GradNorm probe log (seed 42, deterministic).
+CANONICAL_PROBE_DIR: Path = ROUND2_DIR / "canonical_gradnorm_probe"
+CANONICAL_PROBE_LOG: Path = CANONICAL_PROBE_DIR / "probe_log.jsonl"
 
 #: Tolerance (in percentage points) for the epoch-log vs CSV assertion.
 ASSERT_TOL = 0.01
@@ -108,7 +167,7 @@ def dice_degeneracy() -> pd.DataFrame:
 # The epoch number may carry a trailing '*' (best-so-far marker).
 _EPOCH_RE = re.compile(
     r"^(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) \[INFO\] src\.training:\s+"
-    r"(?P<epoch>\d+)\*? \| "
+    r"(?P<epoch>\d+)*? \|"
     r"(?P<tr_loss>[\d.]+) (?P<tr_acc>[\d.]+)\s+(?P<tr_dice>[\d.]+) \| "
     r"(?P<vl_loss>[\d.]+) (?P<vl_acc>[\d.]+)\s+(?P<vl_dice>[\d.]+) \| "
     r"(?P<sec>[\d.]+)\s*$"
@@ -434,19 +493,64 @@ _CANON_EPOCH_RE = re.compile(
     r"Weights: \[seg=(?P<seg>[\d.]+), cls=(?P<cls>[\d.]+)\]"
 )
 
+#: Column order of the canonical probe DataFrame (JSONL and text-log sources
+#: both normalize to this).
+_CANON_COLUMNS = [
+    "epoch", "loss", "train_acc", "val_acc",
+    "val_acc_ci_lo", "val_acc_ci_hi", "val_dice", "seg_weight", "cls_weight",
+]
+
+
+def canonical_gradnorm_probe() -> pd.DataFrame:
+    """Parse the NEW seeded canonical GradNorm probe log (round-2 contract).
+
+    Source: ``results/round2/canonical_gradnorm_probe/probe_log.jsonl`` — one
+    JSON object per epoch with fields ``epoch / loss / train_acc / val_acc /
+    val_acc_ci_lo / val_acc_ci_hi / val_dice / seg_weight / cls_weight``
+    (seed 42, deterministic). Returns an **empty** DataFrame (with the
+    canonical columns) when the JSONL is absent.
+    """
+    if not CANONICAL_PROBE_LOG.exists():
+        return pd.DataFrame(columns=_CANON_COLUMNS)
+    rows = []
+    with CANONICAL_PROBE_LOG.open() as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            rec = json.loads(line)
+            rows.append(
+                {
+                    "epoch": int(rec["epoch"]),
+                    "loss": float(rec["loss"]),
+                    "train_acc": float(rec["train_acc"]),
+                    "val_acc": float(rec["val_acc"]),
+                    "val_acc_ci_lo": float(rec["val_acc_ci_lo"]),
+                    "val_acc_ci_hi": float(rec["val_acc_ci_hi"]),
+                    "val_dice": float(rec["val_dice"]),
+                    "seg_weight": float(rec["seg_weight"]),
+                    "cls_weight": float(rec["cls_weight"]),
+                }
+            )
+    return pd.DataFrame(rows, columns=_CANON_COLUMNS)
+
 
 def canonical_gradnorm() -> pd.DataFrame:
-    """Parse the canonical GradNorm probe log into a per-epoch DataFrame.
+    """Per-epoch canonical GradNorm probe DataFrame (round-2 aware).
 
-    Columns: ``epoch``, ``loss``, ``train_acc``, ``val_acc``, ``val_acc_ci_lo``,
-    ``val_acc_ci_hi``, ``val_dice``, ``seg_weight``, ``cls_weight`` (all
-    percentages/weights as floats).
+    Prefers the new seeded JSONL probe log
+    (:func:`canonical_gradnorm_probe`); falls back to the legacy text log
+    ``logs/canonical_gradnorm_run18.log`` when the JSONL is absent.
+
+    Columns: ``epoch``, ``loss``, ``train_acc``, ``val_acc``,
+    ``val_acc_ci_lo``, ``val_acc_ci_hi``, ``val_dice``, ``seg_weight``,
+    ``cls_weight`` (all percentages/weights as floats).
     """
+    probe = canonical_gradnorm_probe()
+    if not probe.empty:
+        return probe
     if not CANONICAL_GRADNORM_LOG.exists():
-        return pd.DataFrame(
-            columns=["epoch", "loss", "train_acc", "val_acc", "val_acc_ci_lo",
-                     "val_acc_ci_hi", "val_dice", "seg_weight", "cls_weight"]
-        )
+        return pd.DataFrame(columns=_CANON_COLUMNS)
     text = CANONICAL_GRADNORM_LOG.read_text(errors="replace")
     rows = []
     for m in _CANON_EPOCH_RE.finditer(text):
@@ -463,7 +567,219 @@ def canonical_gradnorm() -> pd.DataFrame:
                 "cls_weight": float(m.group("cls")),
             }
         )
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows, columns=_CANON_COLUMNS)
+
+
+# ---------------------------------------------------------------------------
+# (e) Round-2 per-run artifacts (results/round2/)
+# ---------------------------------------------------------------------------
+
+def per_run_epoch_log(run_label: str, round2_dir: Path | None = None) -> pd.DataFrame:
+    """Load ``results/round2/<run_label>/epoch_log.jsonl`` (F-10 per-run log).
+
+    Returns a :class:`pandas.DataFrame` with the record fields (``epoch``,
+    ``tr_loss``, ``tr_acc``, ``tr_dice``, ``vl_loss``, ``vl_acc``,
+    ``vl_dice``, ``best_vl_loss``, ``best_vl_acc``, ``best_vl_dice``,
+    ``run_label``, ``fold``, ``seed``, ``splitter_branch``, ...) sorted by
+    ``epoch``. Returns an **empty** DataFrame when the file is absent.
+
+    ``round2_dir`` overrides the ``results/round2`` root (e.g. a /tmp fixture
+    dir) for standalone verification.
+    """
+    base = round2_dir or ROUND2_DIR
+    path = base / run_label / "epoch_log.jsonl"
+    if not path.exists():
+        return pd.DataFrame()
+    with path.open() as fh:
+        records = [json.loads(line) for line in fh if line.strip()]
+    if not records:
+        return pd.DataFrame()
+    return pd.DataFrame(records).sort_values("epoch").reset_index(drop=True)
+
+
+def per_slice_dice(run_label: str, round2_dir: Path | None = None) -> pd.DataFrame:
+    """Load ``results/round2/<run_label>/per_slice_dice.jsonl`` (10-field contract).
+
+    Fields: ``run_label, dataset, encoder, fold, seed, case_id, dice,
+    empty_pred, empty_gt, label_int``. Returns an **empty** DataFrame when
+    the file is absent.
+
+    ``round2_dir`` overrides the ``results/round2`` root (e.g. a /tmp fixture
+    dir) for standalone verification.
+    """
+    base = round2_dir or ROUND2_DIR
+    path = base / run_label / "per_slice_dice.jsonl"
+    if not path.exists():
+        return pd.DataFrame()
+    with path.open() as fh:
+        records = [json.loads(line) for line in fh if line.strip()]
+    if not records:
+        return pd.DataFrame()
+    return pd.DataFrame(records)
+
+
+def kfold_summary(run_name: str, round2_dir: Path | None = None) -> dict | None:
+    """Load ``results/round2/kfold_<run_name>.json`` (k-fold CV summary).
+
+    The file is written by ``main.py --summary-out`` for
+    ``train_kfold_cv`` runs; its ``runs`` dict carries the
+    ``train_kfold_cv`` return (``mean_val_acc`` / ``std_val_acc`` /
+    ``mean_val_dice`` / ``std_val_dice`` / ``mean_val_loss`` /
+    ``std_val_loss`` / ``completed_folds`` / ``fold_results``). Returns the
+    run entry dict, or ``None`` when the file is absent or has no usable
+    run entry.
+
+    ``round2_dir`` overrides the ``results/round2`` root (e.g. a /tmp fixture
+    dir) for standalone verification.
+    """
+    base = round2_dir or ROUND2_DIR
+    path = base / f"kfold_{run_name}.json"
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return None
+    runs = data.get("runs")
+    if not isinstance(runs, dict) or not runs:
+        return None
+    for _key, val in runs.items():
+        if isinstance(val, dict) and "mean_val_acc" in val:
+            return val
+    return None
+
+
+def dice_ci_summary(round2_dir: Path | None = None) -> pd.DataFrame:
+    """Load ``results/round2/dice_ci_summary.csv`` (bootstrap Dice CIs).
+
+    Written by ``scripts/bootstrap_dice_ci.py``: one row per run x stratum
+    (``overall`` / ``positive_only`` / ``negative_only`` / ``across_folds``)
+    with ``point_estimate`` / ``ci_low`` / ``ci_high`` / ``ci_width`` as
+    fractions in [0, 1] (95% percentile bootstrap, seed 42). Returns an
+    **empty** DataFrame when the file is absent.
+
+    ``round2_dir`` overrides the ``results/round2`` root (e.g. a /tmp fixture
+    dir) for standalone verification.
+    """
+    base = round2_dir or ROUND2_DIR
+    csv_path = base / "dice_ci_summary.csv"
+    if not csv_path.exists():
+        return pd.DataFrame()
+    df = pd.read_csv(csv_path)
+    for col in ("point_estimate", "ci_low", "ci_high", "ci_width"):
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+    return df
+
+
+def deterministic_best_ckpt(run_label: str, round2_dir: Path | None = None) -> Path:
+    """Deterministic best-checkpoint path ``results/round2/<run_label>/best.pt``.
+
+    F-23 layout: the same ``run_label`` always maps to the same path (no
+    timestamps, no randomization). The path is returned whether or not the
+    file exists yet; callers check ``.exists()`` before loading.
+
+    ``round2_dir`` overrides the ``results/round2`` root (e.g. a /tmp fixture
+    dir) for standalone verification.
+    """
+    base = round2_dir or ROUND2_DIR
+    return base / run_label / "best.pt"
+
+
+def run_name_for_run_num(run_num: int) -> str:
+    """The 26-run-matrix run name (e.g. ``g1_panda_vgg16``) for a 1-based
+    CSV row number, from ``src/aggregate_results.py::EXPECTED_RUNS``."""
+    from src.aggregate_results import EXPECTED_RUNS
+    if run_num < 1 or run_num > len(EXPECTED_RUNS):
+        raise IndexError(f"run_num {run_num} outside 1..{len(EXPECTED_RUNS)}")
+    return EXPECTED_RUNS[run_num - 1][1]
+
+
+def run_label_for_run_num(run_num: int) -> str:
+    """The round-2 per-run label (e.g. ``03_g1_panda_vgg16``) for a 1-based
+    CSV row number.
+
+    Mirrors ``run_all_experiments.sh``: ``run_label = <padded_id>_<run_name>``
+    where ``padded_id`` is the zero-padded 2-digit run number and
+    ``run_name`` is the matrix run name. This is the directory name under
+    ``results/round2/`` that holds the per-run ``epoch_log.jsonl`` /
+    ``per_slice_dice.jsonl`` / ``best.pt`` / ``final.state.pt``.
+    """
+    return f"{run_num:02d}_{run_name_for_run_num(run_num)}"
+
+
+def round2_run_trajectory(run_num: int) -> pd.DataFrame:
+    """Per-epoch validation trajectory for one run from the round-2 per-run
+    epoch log ``results/round2/<run_label>/epoch_log.jsonl`` (F-10).
+
+    This is the round-2 replacement for :func:`run_trajectory` (which slices
+    the legacy shared ``checkpoints/epoch_log.jsonl`` by log-window). It reads
+    the per-run log directly — no windowing, no concurrency ambiguity — and
+    returns the same columns: ``epoch``, ``vl_acc``, ``best_vl_acc``,
+    ``vl_dice`` (all percentages). ``best_vl_acc`` is the running-best
+    validation accuracy (the value the CSV ``Accuracy (%)`` column reports).
+
+    Returns an **empty** DataFrame (with those columns) when the per-run log
+    is absent — callers treat an empty result as "skip this curve", not a
+    failure.
+    """
+    cols = ["epoch", "vl_acc", "best_vl_acc", "vl_dice"]
+    df = per_run_epoch_log(run_label_for_run_num(run_num))
+    if df.empty:
+        return pd.DataFrame(columns=cols)
+    out = pd.DataFrame(
+        {
+            "epoch": [int(r["epoch"]) for r in df.to_dict("records")],
+            "vl_acc": [float(r["vl_acc"]) * 100.0 for r in df.to_dict("records")],
+            "best_vl_acc": [float(r["best_vl_acc"]) * 100.0 for r in df.to_dict("records")],
+            "vl_dice": [float(r["vl_dice"]) * 100.0 for r in df.to_dict("records")],
+        }
+    )
+    return out.sort_values("epoch").reset_index(drop=True)
+
+
+def dice_ci_for_run(run_num: int) -> tuple[float, float, float] | None:
+    """95% bootstrap Dice-CI bounds (percent) for one results-matrix row.
+
+    Joins the row's kfold summary (``kfold_<run_name>.json``) to the
+    ``dice_ci_summary.csv`` row for the same run (matched on
+    ``dataset``/``encoder``; the ``overall`` stratum, or ``across_folds``
+    for k-fold runs). Returns ``(point, lo, hi)`` in percent, or ``None``
+    when the CI table does not cover the run yet.
+    """
+    matrix = results_matrix()
+    if run_num < 1 or run_num > len(matrix):
+        return None
+    row = matrix.iloc[run_num - 1]
+    ds = str(row["Dataset"]).lower()
+    enc = str(row["Encoder"])
+    run_name = run_name_for_run_num(run_num)
+    kf = kfold_summary(run_name)
+    if kf is None:
+        return None
+    if str(kf.get("dataset", "")).lower() != ds or str(kf.get("encoder", "")) != enc:
+        return None
+    ci = dice_ci_summary()
+    if ci.empty:
+        return None
+    sel = ci[
+        (ci["run_label"] == run_name)
+        & (ci["dataset"] == ds)
+        & (ci["encoder"] == enc)
+    ]
+    if sel.empty:
+        return None
+    overall = sel[sel["stratum"] == "overall"]
+    if not overall.empty:
+        r = overall.iloc[0]
+    else:
+        across = sel[sel["stratum"] == "across_folds"]
+        if across.empty:
+            return None
+        r = across.iloc[0]
+    return (float(r["point_estimate"]) * 100.0,
+            float(r["ci_low"]) * 100.0,
+            float(r["ci_high"]) * 100.0)
 
 
 # ---------------------------------------------------------------------------
@@ -494,6 +810,18 @@ def _selftest() -> int:
     can = canonical_gradnorm()
     print(f"[d] canonical_gradnorm: {len(can)} epochs parsed "
           f"(seg/cls weights present: {can['seg_weight'].notna().all() if len(can) else False})")
+
+    # (e) round-2 artifacts
+    n_per_run = 0
+    if ROUND2_DIR.is_dir():
+        n_per_run = sum(1 for d in ROUND2_DIR.iterdir()
+                        if d.is_dir() and (d / "epoch_log.jsonl").is_file())
+    n_kfold = 0
+    if ROUND2_DIR.is_dir():
+        n_kfold = len(list(ROUND2_DIR.glob("kfold_*.json")))
+    ci = dice_ci_summary()
+    print(f"[e] round2: {n_per_run} per-run epoch logs, {n_kfold} kfold summaries, "
+          f"{len(ci)} dice_ci_summary rows")
 
     # (c) run epoch windows
     checks = run_epoch_windows()
