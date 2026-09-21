@@ -148,16 +148,16 @@ def _build_fig():
     for x, y in zip(xs, dice):
         ax_b.plot(x, y, marker=marker, color=panda_color, markersize=6,
                   linestyle="none", zorder=3)
-    # 7pt value labels near each point.
+    # 7pt value labels near each point (placed below points to avoid colliding with claimed hline).
     for x, y in zip(xs, dice):
-        ax_b.annotate(f"{y:.2f}", xy=(x, y), xytext=(0, 8),
+        ax_b.annotate(f"{y:.2f}", xy=(x, y), xytext=(0, -11),
                       textcoords="offset points", fontsize=7,
-                      ha="center", va="bottom", color="black")
-    # Claimed hline (run-03 Paper Dice) + label just below the line.
+                      ha="center", va="top", color="black")
+    # Claimed hline (run-03 Paper Dice) + label just above the line.
     ax_b.axhline(claimed_dice, color="black", linestyle="--", linewidth=1.0,
                  zorder=2)
-    ax_b.text(0.2, claimed_dice - 2.0, f"claimed {claimed_dice:.1f}%",
-              transform=ax_b.transData, ha="left", va="top",
+    ax_b.text(0.2, claimed_dice + 1.5, f"claimed {claimed_dice:.1f}%",
+              transform=ax_b.transData, ha="left", va="bottom",
               fontsize=7, color="black")
 
     # --- Shared categorical x-axis --------------------------------------
@@ -165,12 +165,12 @@ def _build_fig():
     ax_a.set_xticklabels(_LAMBDA_ORDER)
     ax_a.set_xlim(-0.5, len(_LAMBDA_ORDER) - 0.5)
     ax_a.set_xlabel("\u03bb_seg : \u03bb_cls", fontweight="bold")
-    ax_a.set_ylim(0, 100)
+    ax_a.set_ylim(0, 108)
     ax_a.set_ylabel("Validation Accuracy (%)", fontweight="bold")
     ax_a.set_title("(a) Validation Accuracy (%)", fontweight="bold")
     ax_a.grid(axis="y", linestyle="--", alpha=style.GRID_ALPHA)
 
-    ax_b.set_ylim(0, 100)
+    ax_b.set_ylim(0, 108)
     ax_b.set_ylabel("Validation Dice (%)", fontweight="bold")
     ax_b.set_title("(b) Validation Dice (%)", fontweight="bold")
     ax_b.grid(axis="y", linestyle="--", alpha=style.GRID_ALPHA)
