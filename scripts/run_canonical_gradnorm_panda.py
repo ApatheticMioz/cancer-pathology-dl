@@ -25,7 +25,6 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn as nn
-from sklearn.model_selection import GroupKFold
 from torch.utils.data import DataLoader, Subset
 
 # Ensure project root is in sys.path
@@ -33,9 +32,10 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.config import DATASET_META, DATASET_ROOTS, RANDOM_SEED
-from src.data import MultiTaskDataset, build_transforms, load_dataset_bundle
+from src.data import MultiTaskDataset, build_transforms, load_dataset_bundle, make_group_kfold_splits
 from src.metrics import dice_coefficient
 from src.models import MultiTaskUNet
+from src.utils import append_jsonl, now_iso
 
 
 def wilson_score_interval(successes: int, total: int, z: float = 1.96) -> tuple[float, float]:
@@ -47,14 +47,24 @@ def wilson_score_interval(successes: int, total: int, z: float = 1.96) -> tuple[
     spread = (z * ((p * (1.0 - p) / total + (z ** 2) / (4.0 * total ** 2)) ** 0.5)) / denom
     return max(0.0, centre - spread), min(1.0, centre + spread)
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler(PROJECT_ROOT / "logs" / "canonical_gradnorm_run18.log", mode="w"),
-    ],
-)
+# v2 probe artifacts live under results/round2/gradnorm_probe/ so the legacy
+# log (logs/canonical_gradnorm_run18.log) and checkpoint are never clobbered.
+RUN_DIR = PROJECT_ROOT / "results" / "round2" / "gradnorm_probe"
+RUN_LABEL = "gradnorm_probe"
+
+
+def _setup_logging() -> None:
+    RUN_DIR.mkdir(parents=True, exist_ok=True)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        handlers=[
+            logging.StreamHandler(sys.stdout),
+            logging.FileHandler(RUN_DIR / "gradnorm_probe.log", mode="w"),
+        ],
+    )
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -74,6 +84,8 @@ def main():
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(RANDOM_SEED)
 
+    _setup_logging()
+
     device = torch.device(args.device)
     logger.info("=== Canonical GradNorm (Chen et al. 2018) Probe on PANDA ===")
     logger.info("Device: %s (%s)", device, torch.cuda.get_device_name(device) if torch.cuda.is_available() else "CPU")
@@ -90,10 +102,20 @@ def main():
     num_classes = meta["num_classes"]
     seg_classes = meta["seg_classes"]
 
-    # 2. Patient-level split via GroupKFold (Fold 0)
-    gkf = GroupKFold(n_splits=5)
-    train_idx, val_idx = next(gkf.split(range(len(images)), labels, groups))
-    logger.info("Train samples: %d | Val samples: %d | Patient groups: %d", len(train_idx), len(val_idx), len(np.unique(groups)))
+    # 2. Patient-level split via the instrumented splitter (Fold 0, seeded).
+    # Routing through make_group_kfold_splits stamps splitter_branch exactly
+    # like every campaign run (seed-deterministic, zero-leakage validated).
+    splits = make_group_kfold_splits(
+        labels, groups, n_splits=5, seed=RANDOM_SEED,
+        grouping=meta.get("grouping"),
+        provenance_path=root / "preprocessed" / "grouping_provenance.json",
+    )
+    splitter_branch = splits.metadata.get("branch")
+    train_idx, val_idx = splits[0]
+    logger.info(
+        "Train samples: %d | Val samples: %d | Patient groups: %d | splitter_branch: %s (seed=%d)",
+        len(train_idx), len(val_idx), len(np.unique(groups)), splitter_branch, RANDOM_SEED,
+    )
 
     train_tf, val_tf = build_transforms(meta["img_size"])
     train_ds = MultiTaskDataset(images[train_idx], masks[train_idx], labels[train_idx], seg_classes=seg_classes, transform=train_tf)
@@ -239,6 +261,26 @@ def main():
             epoch, args.epochs, train_loss / len(train_loader), train_acc, val_acc, 100.0 * low_ci, 100.0 * high_ci, val_dice, weights[0].item(), weights[1].item()
         )
 
+        # Per-epoch telemetry in the per-run epoch_log.jsonl contract
+        # (run_label/fold/seed/splitter_branch stamped like campaign runs).
+        append_jsonl(RUN_DIR / "epoch_log.jsonl", {
+            "timestamp": now_iso(),
+            "dataset": "panda",
+            "encoder": "vgg16",
+            "epoch": epoch,
+            "batch_size": args.batch_size,
+            "tr_loss": round(train_loss / max(len(train_loader), 1), 6),
+            "tr_acc": round(train_acc, 6),
+            "vl_acc": round(val_acc, 6),
+            "vl_dice": round(val_dice, 6),
+            "w_seg": round(float(weights[0].item()), 6),
+            "w_cls": round(float(weights[1].item()), 6),
+            "run_label": RUN_LABEL,
+            "fold": 0,
+            "seed": int(RANDOM_SEED),
+            "splitter_branch": splitter_branch,
+        })
+
         if score > best_val_score:
             best_val_score = score
             best_acc = val_acc
@@ -252,7 +294,7 @@ def main():
                     "val_dice": val_dice,
                     "weights": weights.cpu().tolist(),
                 },
-                PROJECT_ROOT / "checkpoints" / "canonical_gradnorm_run18_best.pth",
+                RUN_DIR / "best.pth",
             )
         else:
             patience_counter += 1
