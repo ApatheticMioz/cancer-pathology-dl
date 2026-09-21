@@ -286,9 +286,12 @@ def build_cmd(job: Job, calibrate: bool = False) -> list[str]:
     cmd += ["--num-workers", str(job.workers)]
     if calibrate:
         cmd += ["--epochs", str(CALIBRATE_EPOCHS)]
+        sum_file = f"logs/calibrate_{job.label}.json"
+    else:
+        sum_file = job.summary_file
     # Resume-safe: --resume by default (NEVER --no-resume).
     cmd += ["--resume",
-            "--summary-out", job.summary_file,
+            "--summary-out", sum_file,
             "--run-label", job.label]
     return cmd
 
