@@ -308,10 +308,10 @@ def _panel_audit(ax) -> None:
 
     # Release line (two lines) + repo URL (two lines, small, bottom right).
     # Kept vertically separated from the checklist above and from each other.
-    ax.text(0.06, 0.30, "benchmark + audit\nprotocol released",
+    ax.text(0.06, 0.33, "benchmark + audit\nprotocol released",
             va="center", ha="left", fontsize=_MIN_FONT, color="black")
     ax.text(0.98, 0.02, "github.com/ApatheticMioz/\ncancer-pathology-dl",
-            va="bottom", ha="right", fontsize=_MIN_FONT, color=_NEUTRAL_GRAY)
+            va="bottom", ha="right", fontsize=_MIN_FONT - 0.5, color=_NEUTRAL_GRAY)
 
 
 # ---------------------------------------------------------------------------

@@ -55,6 +55,8 @@ smoke_test.log
 # Audit and runtime JSON
 # ============================================================
 *.jsonl
+!results/round2/canonical_gradnorm_probe/probe_log.jsonl
+!results/round2/dice_ci_summary.csv
 dataset_audit.json
 reproduction_summary.json
 optimized_summary.json

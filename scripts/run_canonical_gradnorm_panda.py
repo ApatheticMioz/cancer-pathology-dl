@@ -47,10 +47,9 @@ def wilson_score_interval(successes: int, total: int, z: float = 1.96) -> tuple[
     spread = (z * ((p * (1.0 - p) / total + (z ** 2) / (4.0 * total ** 2)) ** 0.5)) / denom
     return max(0.0, centre - spread), min(1.0, centre + spread)
 
-# v2 probe artifacts live under results/round2/gradnorm_probe/ so the legacy
-# log (logs/canonical_gradnorm_run18.log) and checkpoint are never clobbered.
-RUN_DIR = PROJECT_ROOT / "results" / "round2" / "gradnorm_probe"
-RUN_LABEL = "gradnorm_probe"
+# v2 probe artifacts live under results/round2/canonical_gradnorm_probe/
+RUN_DIR = PROJECT_ROOT / "results" / "round2" / "canonical_gradnorm_probe"
+RUN_LABEL = "canonical_gradnorm_probe"
 
 
 def _setup_logging() -> None:
@@ -256,13 +255,30 @@ def main():
         score = 0.5 * (val_acc + val_dice)
 
         low_ci, high_ci = wilson_score_interval(val_correct, val_total)
-        logger.info(
-            "Epoch %02d/%02d | Loss: %.4f | Train Acc: %.2f%% | Val Acc: %.2f%% [%.2f, %.2f] | Val Dice: %.2f%% | Weights: [seg=%.3f, cls=%.3f]",
-            epoch, args.epochs, train_loss / len(train_loader), train_acc, val_acc, 100.0 * low_ci, 100.0 * high_ci, val_dice, weights[0].item(), weights[1].item()
+        log_line = (
+            f"Epoch {epoch:02d}/{args.epochs:02d} | Loss: {train_loss / len(train_loader):.4f} | "
+            f"Train Acc: {train_acc:.2f}% | Val Acc: {val_acc:.2f}% [{100.0 * low_ci:.2f}, {100.0 * high_ci:.2f}] | "
+            f"Val Dice: {val_dice:.2f}% | Weights: [seg={weights[0].item():.3f}, cls={weights[1].item():.3f}]"
         )
+        logger.info("%s", log_line)
+        legacy_log = PROJECT_ROOT / "logs" / "canonical_gradnorm_run18.log"
+        with legacy_log.open("a") as f:
+            f.write(f"{now_iso()} [INFO] {log_line}\n")
+
+        # Canonical GradNorm probe schema (loaders.py canonical_gradnorm_probe)
+        append_jsonl(RUN_DIR / "probe_log.jsonl", {
+            "epoch": epoch,
+            "loss": round(train_loss / max(len(train_loader), 1), 6),
+            "train_acc": round(train_acc, 4),
+            "val_acc": round(val_acc, 4),
+            "val_acc_ci_lo": round(100.0 * low_ci, 4),
+            "val_acc_ci_hi": round(100.0 * high_ci, 4),
+            "val_dice": round(val_dice, 4),
+            "seg_weight": round(float(weights[0].item()), 4),
+            "cls_weight": round(float(weights[1].item()), 4),
+        })
 
         # Per-epoch telemetry in the per-run epoch_log.jsonl contract
-        # (run_label/fold/seed/splitter_branch stamped like campaign runs).
         append_jsonl(RUN_DIR / "epoch_log.jsonl", {
             "timestamp": now_iso(),
             "dataset": "panda",

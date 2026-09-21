@@ -96,10 +96,10 @@ def match_record(row: dict, records: list[dict]) -> dict:
     """Match a CSV row to its run record by dataset/encoder/config and rounded accuracy."""
     dataset = str(row["Dataset"]).lower()
     encoder = str(row["Encoder"]).strip().lower()
-    encoder = "mobilenet_v2" if encoder in {"mobilenetv2", "mobilenet_v2"} else encoder
     acc_pct = float(row["Accuracy (%)"])
     use_gn = str(row["Use GradNorm"]).strip().lower() == "true"
-    lr = float(row["LR"])
+    lr_str = str(row.get("LR", "")).strip()
+    lr = float(lr_str) if lr_str else 1e-4
     # CSV columns state whether Macenko/skips were USED; artifact fields state
     # whether they were disabled (no_macenko / skip_connections_ablated).
     macenko_used = str(row["Macenko"]).strip().lower() == "true"

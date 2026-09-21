@@ -114,16 +114,12 @@ CSV_FIELDS = [
 
 
 def discover_summary_files() -> list[Path]:
-    """Find all per-run summary JSON files in checkpoints/.
-
-    Matches:
-      - summary_*.json   (individual run summaries from the concurrent orchestrator)
-    """
+    """Find all per-run summary JSON files in checkpoints/ corresponding to EXPECTED_RUNS."""
     files: list[Path] = []
-
-    files.extend(CHECKPOINT_DIR.glob("summary_*.json"))
-
-    files = sorted(set(files), key=lambda p: p.stat().st_mtime)
+    for run_id, run_name in EXPECTED_RUNS:
+        summary_file = CHECKPOINT_DIR / f"summary_{run_id}_{run_name}.json"
+        if summary_file.is_file():
+            files.append(summary_file)
     return files
 
 
@@ -143,12 +139,13 @@ def find_matching_log(summary_path: Path) -> Path | None:
     run_id = parts[1]
     run_name = parts[2]
 
-    exact = LOGS_DIR / f"run_{run_id}_{run_name}.log"
-    if exact.exists():
-        return exact
+    for exact in (LOGS_DIR / f"{run_id}_{run_name}.log", LOGS_DIR / f"run_{run_id}_{run_name}.log"):
+        if exact.exists():
+            return exact
 
-    for log_file in sorted(LOGS_DIR.glob(f"run_{run_id}_*.log")):
-        return log_file
+    for pattern in (f"{run_id}_*.log", f"run_{run_id}_*.log"):
+        for log_file in sorted(LOGS_DIR.glob(pattern)):
+            return log_file
 
     return None
 
