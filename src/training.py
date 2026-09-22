@@ -256,6 +256,12 @@ def _run_epoch(
     compile_active: bool = False,
     epoch: int = 1,
     run_label: str | None = None,
+    # Fold-level non-finite-grad skip tally, owned by the caller
+    # (train_single_run) as a one-element list so the GRAD_SKIP_MAX_PER_FOLD
+    # cap and the summary stamp count across ALL epochs of the fold, not
+    # per-epoch. Caller may omit it (None) — the cap then degrades to the
+    # per-epoch local count.
+    skip_counter: list | None = None,
     # Canonical GradNorm (Chen et al. 2018) -- only used when
     # ``gradnorm_mode == "canonical"``. ``canonical_weights`` is a raw
     # nn.Parameter([w_seg, w_cls]) updated by a DEDICATED optimizer
@@ -549,7 +555,12 @@ def _run_epoch(
                     for p in clip_params
                 ):
                     nonfinite_grad_skips += 1
-                    if nonfinite_grad_skips > GRAD_SKIP_MAX_PER_FOLD:
+                    if skip_counter is not None:
+                        skip_counter[0] += 1
+                        fold_skips = skip_counter[0]
+                    else:  # defensive: callers without a counter
+                        fold_skips = nonfinite_grad_skips
+                    if fold_skips > GRAD_SKIP_MAX_PER_FOLD:
                         raise NonFiniteMetricsError(
                             phase="train",
                             epoch=epoch,
@@ -572,7 +583,7 @@ def _run_epoch(
                         "clip -> batch skipped, no update applied (skip "
                         "%d/%d; a non-finite loss would still be FATAL)",
                         run_label, epoch, batch_idx,
-                        nonfinite_grad_skips, GRAD_SKIP_MAX_PER_FOLD,
+                        fold_skips, GRAD_SKIP_MAX_PER_FOLD,
                     )
                     # Drop the poisoned grads so nothing leaks into the next
                     # accumulation; no scaler.step/update for this batch (the
@@ -1075,6 +1086,7 @@ def train_single_run(
         start_epoch = 1
         last_completed_epoch = 0
         resume_state = None
+        fold_skip_counter = [0]  # fold-level non-finite-grad skip tally (cap GRAD_SKIP_MAX_PER_FOLD)
         resume_branch = "fresh-start-no-state"
 
         logger.info(
@@ -1113,6 +1125,7 @@ def train_single_run(
                 tr_loss, tr_acc, tr_dice, _ = _run_epoch(
                     model, train_loader, optimizer, seg_criterion, cls_criterion,
                     device, scaler, gradnorm, meta["seg_classes"], train=True,
+                    skip_counter=fold_skip_counter,
                     static_weights=static_weights,
                     lambda_seg=args.lambda_seg,
                     lambda_cls=args.lambda_cls,
@@ -1314,7 +1327,7 @@ def train_single_run(
                 # used by this run (global grad-norm clip + GradNorm weight clamp).
                 "grad_clip_max_norm": GRAD_CLIP_MAX_NORM,
                 "grad_skip_max_per_fold": GRAD_SKIP_MAX_PER_FOLD,
-                "nonfinite_grad_skips": int(nonfinite_grad_skips),
+                "nonfinite_grad_skips": int(fold_skip_counter[0]),
                 "gradnorm_weight_clamp": GRADNORM_WEIGHT_CLAMP,
                 "gradnorm_mode": gradnorm_mode,
             }
@@ -1381,7 +1394,7 @@ def train_single_run(
                     # active when this run hit the non-finite batch.
                     "grad_clip_max_norm": GRAD_CLIP_MAX_NORM,
                     "grad_skip_max_per_fold": GRAD_SKIP_MAX_PER_FOLD,
-                    "nonfinite_grad_skips": int(nonfinite_grad_skips),
+                    "nonfinite_grad_skips": int(fold_skip_counter[0]),
                     "gradnorm_weight_clamp": GRADNORM_WEIGHT_CLAMP,
                 }
                 append_jsonl(_per_run_epoch_log_path(run_label), nan_record)
@@ -1423,7 +1436,7 @@ def train_single_run(
                 # used by this run (global grad-norm clip + GradNorm weight clamp).
                 "grad_clip_max_norm": GRAD_CLIP_MAX_NORM,
                 "grad_skip_max_per_fold": GRAD_SKIP_MAX_PER_FOLD,
-                "nonfinite_grad_skips": int(nonfinite_grad_skips),
+                "nonfinite_grad_skips": int(fold_skip_counter[0]),
                 "gradnorm_weight_clamp": GRADNORM_WEIGHT_CLAMP,
                 "gradnorm_mode": gradnorm_mode,
             }
