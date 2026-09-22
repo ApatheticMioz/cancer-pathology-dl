@@ -281,8 +281,8 @@ launch_job() {
     local pid=$!
     PIDS+=("$pid")
     local dataset encoder
-    dataset=$(printf '%s' "$flags" | awk '/--datasets/ {print $2}')
-    encoder=$(printf '%s' "$flags" | awk '/--encoders/ {print $2}')
+    dataset=$(printf '%s' "$flags" | awk '{for(i=1;i<NF;i++) if($i=="--datasets"){print $(i+1); exit}}')
+    encoder=$(printf '%s' "$flags" | awk '{for(i=1;i<NF;i++) if($i=="--encoders"){print $(i+1); exit}}')
     PID_PRED_VRAM[$pid]=$(vram_predict "$dataset" "$encoder")
     echo " [${run_id}] PID: ${pid} (predicted VRAM ${PID_PRED_VRAM[$pid]} MiB)"
 }
@@ -357,40 +357,38 @@ vram_predict() {
     esac
 }
 
-# Current nvidia-smi usage (MiB) for a launched pid and its children; empty if none.
-vram_used_by_pid() {
-    local pid="$1" child pids out=0 line lpid p
-    pids="$pid"
-    for child in $(pgrep -P "$pid" 2>/dev/null); do
-        pids="$pids $child"
-    done
-    while read -r line; do
-        lpid=$(printf '%s' "$line" | awk -F',' '{print $1}')
-        for p in $pids; do
-            if [ "$lpid" = "$p" ]; then
-                out=$(( out + $(printf '%s' "$line" | awk -F',' '{print $2}') ))
-                break
-            fi
-        done
-    done < <(nvidia-smi --query-compute-apps=pid,used_memory --format=csv,noheader,nounits 2>/dev/null)
-    [ "$out" -gt 0 ] && echo "$out"
-    return 0
+# Predicted VRAM (MiB) for one live job pid; worst-case 8816 when unknown.
+# WSL nvidia-smi reports "[N/A]" per-process memory, so we admit on PREDICTIONS
+# only (r31-measured peaks; conservative by construction).
+vram_pred_of_pid() {
+    local pid="$1" pred
+    case "${PID_PRED_VRAM[$pid]:-}" in
+        ''|*[!0-9]*) echo 8816 ;;
+        *) echo "${PID_PRED_VRAM[$pid]}" | tr -d '[:space:]' ;;
+    esac
 }
 
-# Defer-not-abort: return 0 only if the new job's predicted VRAM fits the budget
-# alongside running jobs (measured nvidia-smi usage where available, else predicted).
+# Defer-not-abort: return 0 only if the new job's predicted VRAM fits the
+# budget alongside LIVE running jobs (zombie-safe; integer-validated sum).
 vram_admission_ok() {
-    local new_pred="$1" total=0 pid used
+    local new_pred="$1" total=0 pid used active=0
+    case "$new_pred" in ''|*[!0-9]*) new_pred=8816 ;; esac
     for pid in "${PIDS[@]}"; do
-        used=$(vram_used_by_pid "$pid")
-        [ -z "$used" ] && used="${PID_PRED_VRAM[$pid]:-5500}"
+        local stat
+        stat=$(ps -o stat= -p "$pid" 2>/dev/null | tr -d '[:space:]')
+        case "$stat" in ''|Z*) continue ;; esac   # gone or zombie: skip
+        active=$(( active + 1 ))
+        used=$(vram_pred_of_pid "$pid")
+        case "$used" in ''|*[!0-9]*) used=8816 ;; esac
         total=$(( total + used ))
     done
+    VRAM_ADMIT_TOTAL="$total"; VRAM_ADMIT_ACTIVE="$active"
     [ $(( total + new_pred )) -le "$VRAM_BUDGET_MIB" ]
 }
 
 wait_for_slot() {
     local new_pred="$1"
+    case "$new_pred" in ''|*[!0-9]*) new_pred=8816 ;; esac
     while true; do
         local active
         active=$(count_active)
@@ -399,9 +397,9 @@ wait_for_slot() {
             break
         fi
         if [ "$active" -lt "$MAX_JOBS" ]; then
-            echo " [VRAM-ADMISSION] $(date '+%Y-%m-%d %H:%M:%S') - deferring next job (predicted ${new_pred} MiB; budget ${VRAM_BUDGET_MIB} MiB); re-checking next cycle"
+            echo " [VRAM-ADMISSION] $(date '+%Y-%m-%d %H:%M:%S') - deferring next job (predicted ${new_pred} MiB; budget ${VRAM_BUDGET_MIB} MiB); live=${VRAM_ADMIT_ACTIVE:-?} total=${VRAM_ADMIT_TOTAL:-?}+${new_pred}; live pids: $(printf '%s ' "${PIDS[@]:-}" 2>/dev/null); re-checking in 20s"
         fi
-        sleep 2
+        sleep 20
     done
 }
 
@@ -453,8 +451,8 @@ fi
 
 for def in "${RESOLVED[@]}"; do
     read -r rid rname rflags <<< "$def"
-    local_dataset=$(printf '%s' "$rflags" | awk '/--datasets/ {print $2}')
-    local_encoder=$(printf '%s' "$rflags" | awk '/--encoders/ {print $2}')
+    local_dataset=$(printf '%s' "$rflags" | awk '{for(i=1;i<NF;i++) if($i=="--datasets"){print $(i+1); exit}}')
+    local_encoder=$(printf '%s' "$rflags" | awk '{for(i=1;i<NF;i++) if($i=="--encoders"){print $(i+1); exit}}')
     wait_for_slot "$(vram_predict "$local_dataset" "$local_encoder")"
     launch_job "$rid" "$rname" "$rflags"
 done
