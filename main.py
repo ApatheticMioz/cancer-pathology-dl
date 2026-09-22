@@ -142,6 +142,18 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=False,
         help="Use fixed lambda weights for loss computation, bypassing GradNorm dynamic updates",
     )
+    p.add_argument(
+        "--gradnorm-mode",
+        type=str,
+        choices=["parameterized", "canonical"],
+        default="parameterized",
+        help="GradNorm formulation. 'parameterized' (default) uses the "
+        "GradNormBalancer log-weights inside the primary Adam optimizer. "
+        "'canonical' (Chen et al. 2018) uses raw task-weight parameters in a "
+        "DEDICATED Adam optimizer (lr=0.025) with strict gradient detachment "
+        "(the model receives no L_grad gradient) and per-step renormalization "
+        "to sum=2.",
+    )
 
     # Smoke test flag
     p.add_argument(
@@ -464,6 +476,10 @@ def run_reproduction(args: argparse.Namespace) -> dict:
                 "lambda_cls": args.lambda_cls,
                 "gradnorm_alpha": args.gradnorm_alpha,
                 "use_gradnorm": args.use_gradnorm,
+                # GradNorm formulation (parameterized vs canonical). Stamped so
+                # canonical runs are distinguishable in the summary and map to
+                # their own deterministic run paths (distinct run_label).
+                "gradnorm_mode": args.gradnorm_mode,
                 # PROTOCOL parameters (paper §4.1): global grad-norm clip and
                 # GradNorm log-weight clamp. Stamped so the exact stabilizer
                 # settings used by this run are auditable.
@@ -543,6 +559,8 @@ def run_reproduction(args: argparse.Namespace) -> dict:
             "lambda_cls": args.lambda_cls,
             "gradnorm_alpha": args.gradnorm_alpha,
             "use_gradnorm": args.use_gradnorm,
+            # GradNorm formulation (parameterized vs canonical).
+            "gradnorm_mode": args.gradnorm_mode,
             # PROTOCOL parameters (paper §4.1): global grad-norm clip and
             # GradNorm log-weight clamp.
             "grad_clip_max_norm": GRAD_CLIP_MAX_NORM,

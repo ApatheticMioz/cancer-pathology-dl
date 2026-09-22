@@ -15,15 +15,15 @@
 #   - Summary:  results/round2/kfold_<orig-label>.json
 #   - Checkpts: checkpoints/ckpt_kfold_<label>_fold<N>of5_best.pth
 #
-# Hardware target: RTX 3090 (24 GB VRAM) + 12-core CPU, 18 GB system RAM.
-# Concurrency: exactly 3 parallel Python processes at all times (MAX_JOBS=3).
+# Hardware target: RTX 3090 (24 GB VRAM) + 12-core CPU, 20 GB system RAM (14 GB free).
+# Concurrency: exactly 2 parallel Python processes at all times (MAX_JOBS=2).
 #
 # Usage:
 #   chmod +x scripts/run_folds.sh
 #   ./scripts/run_folds.sh --dry-run 01 03 05 13 17 18 20 23 24 08 25
 #   ./scripts/run_folds.sh 01 03 05 13 17 18 20 23 24 08 25
 #
-#   <run-id> ... : explicit run-id list (1..26), resolved against the SAME
+#   <run-id> ... : explicit run-id list (1..27), resolved against the SAME
 #                  run definitions as run_all_experiments.sh.
 #   --dry-run    : print the planned invocations only; launch nothing.
 ###############################################################################
@@ -51,6 +51,8 @@ export MKL_NUM_THREADS=2
 export OPENBLAS_NUM_THREADS=2
 export VECLIB_MAXIMUM_THREADS=2
 export NUMEXPR_NUM_THREADS=2
+# Pin the visible GPU (default: device 0) so the campaign never races onto a busy device
+export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
 
 # ---------------------------------------------------------------------------
 # Pre-flight Hardware & VRAM Verification (same threshold as run_all_experiments.sh)
@@ -59,19 +61,20 @@ if command -v nvidia-smi >/dev/null 2>&1; then
     FREE_VRAM=$(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits | head -n 1 | awk '{print $1}')
     TOTAL_VRAM=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -n 1 | awk '{print $1}')
     echo " $(date '+%Y-%m-%d %H:%M:%S') - GPU VRAM check: ${FREE_VRAM} MiB free / ${TOTAL_VRAM} MiB total"
-    if [ -n "$FREE_VRAM" ] && [ "$FREE_VRAM" -lt 12000 ]; then
+    if [ -n "$FREE_VRAM" ] && [ "$FREE_VRAM" -lt 10240 ]; then
         echo -e "${RED}====================================================================${NC}"
-        echo -e "${RED} WARNING: Insufficient free VRAM detected (${FREE_VRAM} MiB < 12000 MiB required).${NC}"
-        echo -e "${RED} Another process (e.g., local LLM / vLLM) may be occupying the GPU.${NC}"
-        echo -e "${RED} Please ensure GPU memory is freed before starting 3-way concurrent training.${NC}"
+        echo -e "${RED} FATAL: Insufficient free VRAM (${FREE_VRAM} MiB < 10240 MiB / 10 GiB required).${NC}"
+        echo -e "${RED} Another process (e.g., local LLM / vLLM) is occupying the GPU.${NC}"
+        echo -e "${RED} Aborting before launch — free GPU memory and re-run.${NC}"
         echo -e "${RED}====================================================================${NC}"
+        exit 1
     fi
 fi
 
 # ---------------------------------------------------------------------------
-# Concurrency control (max 3 parallel Python processes)
+# Concurrency control (max 2 parallel Python processes)
 # ---------------------------------------------------------------------------
-MAX_JOBS=3
+MAX_JOBS=2
 declare -a PIDS=()
 
 # ---------------------------------------------------------------------------
@@ -111,6 +114,15 @@ RUN_DEFS=(
     "24 g5_pannuke_nomacenko --phase v2 --datasets pannuke --encoders mobilenet_v2 --no-macenko --num-workers 2"
     "25 g5_tcga_noskip --phase v2 --datasets tcga --encoders mobilenet_v2 --no-skip-connections --num-workers 2"
     "26 g5_panda_noskip --phase v2 --datasets panda --encoders mobilenet_v2 --no-skip-connections --num-workers 2"
+    # Run 27: canonical GradNorm arm (Chen et al. 2018). --gradnorm-mode
+    # canonical selects the NATIVE canonical implementation in src/training.py
+    # (raw task-weight parameters in a DEDICATED Adam optimizer, strict
+    # gradient detachment, per-step renormalization to sum=2) — mirroring the
+    # standalone probe scripts/run_canonical_gradnorm_panda.py L151-224.
+    # --enable-gradnorm turns GradNorm on; --gradnorm-alpha 1.5 is the probe's
+    # alpha. Full epochs (main.py default), 5 folds (driver-appended
+    # --k-folds 5). No --compile (GradNorm active).
+    "27 canonical_gradnorm --phase v1 --datasets panda --encoders vgg16 --no-macenko --enable-gradnorm --gradnorm-alpha 1.5 --gradnorm-mode canonical --num-workers 2"
 )
 
 # ---------------------------------------------------------------------------
@@ -131,7 +143,7 @@ done
 
 if [ "${#RUN_IDS[@]}" -eq 0 ]; then
     echo -e "${RED}ERROR: no run-id(s) supplied.${NC}"
-    echo "Usage: $0 [--dry-run] <run-id>...   (run-id in 01..26)"
+    echo "Usage: $0 [--dry-run] <run-id>...   (run-id in 01..27)"
     echo "Example: $0 --dry-run 01 03 05 13 17 18 20 23 24 08 25"
     exit 1
 fi
@@ -283,10 +295,37 @@ count_active() {
     echo "$active"
 }
 
+# ---------------------------------------------------------------------------
+# RAM watchdog (ported from scripts/wave_scheduler.py, defer-not-kill semantics)
+# WSL has 20 GB total / ~14 GB free: per-job budget = soft cap / MAX_JOBS.
+# A job breaching its budget is aborted ALONE; the campaign continues.
+# ---------------------------------------------------------------------------
+GLOBAL_RAM_SOFT_CAP_GB=17   # 20 GB WSL RAM - headroom (matches wave_scheduler.py)
+RAM_BUDGET_KB=$(( GLOBAL_RAM_SOFT_CAP_GB * 1024 * 1024 / MAX_JOBS ))
+
+ram_watchdog() {
+    local total_kb=0 pid rss
+    for pid in "${PIDS[@]}"; do
+        rss=$(ps -o rss= -p "$pid" 2>/dev/null | tr -d ' ') || rss=""
+        if [ -z "$rss" ]; then
+            continue
+        fi
+        total_kb=$(( total_kb + rss ))
+        if [ "$rss" -gt "$RAM_BUDGET_KB" ]; then
+            echo " [RAM-WATCHDOG] $(date '+%Y-%m-%d %H:%M:%S') - pid=${pid} RSS $(( rss / 1024 )) MB > budget $(( RAM_BUDGET_KB / 1024 )) MB; aborting this job only (campaign continues)"
+            kill "$pid" 2>/dev/null || true
+        fi
+    done
+    if [ "$total_kb" -gt $(( GLOBAL_RAM_SOFT_CAP_GB * 1024 * 1024 )) ]; then
+        echo " [RAM-WATCHDOG] WARNING: global RAM soft cap breached ($(( total_kb / 1024 / 1024 )) GB > ${GLOBAL_RAM_SOFT_CAP_GB} GB)"
+    fi
+}
+
 wait_for_slot() {
     while true; do
         local active
         active=$(count_active)
+        ram_watchdog
         if [ "$active" -lt "$MAX_JOBS" ]; then
             break
         fi
@@ -295,8 +334,12 @@ wait_for_slot() {
 }
 
 wait_all() {
-    for pid in "${PIDS[@]}"; do
-        wait "$pid" 2>/dev/null || true
+    # wait -n (bash >= 4.3) reaps one job at a time so the RAM watchdog
+    # stays live for the whole campaign, not just the launch phase.
+    while [ "${#PIDS[@]}" -gt 0 ]; do
+        wait -n "${PIDS[@]}" 2>/dev/null || true
+        ram_watchdog
+        count_active >/dev/null
     done
     PIDS=()
 }
@@ -316,7 +359,7 @@ declare -a RESOLVED=()
 for rid in "${RUN_IDS[@]}"; do
     local_padded=$(printf '%02d' $((10#${rid})))
     def=$(lookup_def "$local_padded") || {
-        echo -e "${RED}ERROR: unknown run-id '${rid}' (expected 01..26).${NC}"
+        echo -e "${RED}ERROR: unknown run-id '${rid}' (expected 01..27).${NC}"
         exit 1
     }
     RESOLVED+=("$def")
@@ -344,6 +387,11 @@ done
 
 echo " $(date '+%Y-%m-%d %H:%M:%S') - All ${#RESOLVED[@]} 5-fold jobs launched. Waiting for completion ..."
 wait_all
+
+# Post-campaign aggregation: populate fold/fold_sd columns in dice_ci_summary.csv
+echo " $(date '+%Y-%m-%d %H:%M:%S') - Post-campaign: python scripts/bootstrap_dice_ci.py --fold-aware"
+python scripts/bootstrap_dice_ci.py --fold-aware || \
+    echo " WARNING: bootstrap_dice_ci.py --fold-aware failed (campaign results are intact)"
 
 echo "============================================================"
 echo " $(date '+%Y-%m-%d %H:%M:%S') - 5-FOLD CAMPAIGN COMPLETE"

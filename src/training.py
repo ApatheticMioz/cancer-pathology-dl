@@ -255,6 +255,18 @@ def _run_epoch(
     compile_active: bool = False,
     epoch: int = 1,
     run_label: str | None = None,
+    # Canonical GradNorm (Chen et al. 2018) -- only used when
+    # ``gradnorm_mode == "canonical"``. ``canonical_weights`` is a raw
+    # nn.Parameter([w_seg, w_cls]) updated by a DEDICATED optimizer
+    # (``canonical_optimizer``); the model never receives L_grad gradients.
+    # ``canonical_alpha`` is the GradNorm asymmetry exponent.
+    # ``canonical_state`` is a mutable dict (owned by the caller) holding
+    # ``initial_losses``; it is set once on the first batch and persists
+    # across epochs, mirroring the reference probe.
+    canonical_weights: nn.Parameter | None = None,
+    canonical_optimizer: optim.Optimizer | None = None,
+    canonical_alpha: float = 1.5,
+    canonical_state: dict | None = None,
 ):
     """Run one training or validation epoch.
 
@@ -352,6 +364,12 @@ def _run_epoch(
                 elif gradnorm is not None:
                     w = gradnorm.weights()
                     loss = w[0].detach() * seg_loss + w[1].detach() * cls_loss
+                elif canonical_weights is not None:
+                    # Canonical GradNorm: the combined loss uses DETACHED raw
+                    # task weights so the model receives NO L_grad gradient
+                    # (only the dedicated optimizer_weights updates the weights).
+                    w = canonical_weights.detach()
+                    loss = w[0] * seg_loss + w[1] * cls_loss
                 else:
                     loss = seg_loss + cls_loss
 
@@ -394,6 +412,18 @@ def _run_epoch(
                 if gradnorm is not None and not static_weights and not bool(gradnorm.has_initial_losses.item()):
                     gradnorm.set_initial_losses(seg_loss.detach(), cls_loss.detach())
 
+                # Canonical GradNorm: record the first-batch per-task losses
+                # (used for the relative-rate / target-norm computation).
+                if (
+                    canonical_weights is not None
+                    and not static_weights
+                    and canonical_state is not None
+                    and canonical_state["initial_losses"] is None
+                ):
+                    canonical_state["initial_losses"] = torch.stack(
+                        [seg_loss.detach(), cls_loss.detach()]
+                    )
+
                 gradnorm_loss = None
                 if gradnorm is not None and not static_weights:
                     seg_grads = torch.autograd.grad(
@@ -424,6 +454,52 @@ def _run_epoch(
                         torch.abs(weights * norms.detach() - target)
                     )
 
+                # Canonical GradNorm (Chen et al. 2018): compute L_grad from the
+                # SAME unscaled per-task norms (autograd.grad on the unscaled
+                # losses, AMP-safe) and step the DEDICATED optimizer_weights.
+                # The model optimizer is untouched here, so the model receives
+                # no L_grad gradient (strict detachment).
+                if canonical_weights is not None and not static_weights:
+                    seg_grads = torch.autograd.grad(
+                        seg_loss, shared_params, retain_graph=True, allow_unused=True
+                    )
+                    cls_grads = torch.autograd.grad(
+                        cls_loss, shared_params, retain_graph=True, allow_unused=True
+                    )
+
+                    def _canonical_grad_norm(grads):
+                        values = [g.norm() for g in grads if g is not None]
+                        if not values:
+                            return torch.tensor(0.0, device=device)
+                        return torch.norm(torch.stack(values))
+
+                    seg_norm = _canonical_grad_norm(list(seg_grads))
+                    cls_norm = _canonical_grad_norm(list(cls_grads))
+                    norms = torch.stack([seg_norm, cls_norm]).detach()
+
+                    with torch.no_grad():
+                        losses = torch.stack([seg_loss.detach(), cls_loss.detach()])
+                        inv_rates = losses / (canonical_state["initial_losses"] + 1e-8)
+                        inv_rates = inv_rates / inv_rates.mean().clamp(min=1e-8)
+                        target = norms.mean() * (inv_rates ** canonical_alpha)
+
+                    grad_loss = torch.sum(
+                        torch.abs(canonical_weights * norms - target)
+                    )
+                    canonical_optimizer.zero_grad(set_to_none=True)
+                    grad_loss.backward()
+                    canonical_optimizer.step()
+                    # Renormalize weights so sum(w) = 2.0 (GRADNORM_WEIGHT_CLAMP
+                    # bounds each weight to [1e-4, clamp], mirroring the
+                    # parameterized path's clamp semantics).
+                    with torch.no_grad():
+                        canonical_weights.data = canonical_weights.data.clamp(
+                            min=1e-4, max=GRADNORM_WEIGHT_CLAMP
+                        )
+                        canonical_weights.data = (
+                            canonical_weights.data * (2.0 / canonical_weights.data.sum().clamp(min=1e-4))
+                        )
+
                 optimizer.zero_grad(set_to_none=True)
                 scaler.scale(loss).backward(retain_graph=gradnorm is not None and not static_weights)
                 if gradnorm_loss is not None:
@@ -440,11 +516,44 @@ def _run_epoch(
                 # a single 1e5+ norm cannot push the shared encoder into a
                 # near-overflow regime; it does NOT suppress a genuine NaN (a
                 # non-finite forward loss is still FATAL above).
+                #
+                # AMP ordering: scale -> backward -> UNSCALE -> clip -> step.
+                # ``clip_grad_norm_`` must run on the TRUE (unscaled) grads;
+                # clipping the 65536x-scaled grads would make the effective
+                # clip max_norm/65536 per step. Guard for the no-AMP path
+                # (scaler is None / disabled) where grads are already unscaled.
+                if scaler is not None:
+                    scaler.unscale_(optimizer)
                 last_grad_norm = float(
                     torch.nn.utils.clip_grad_norm_(
                         clip_params, max_norm=GRAD_CLIP_MAX_NORM
                     ).item()
                 )
+                # Zero-silent-fallback: a non-finite grad that SURVIVES the
+                # clip is FATAL (same convention as the non-finite-loss check
+                # above) — loud abort with epoch/batch, never a silent
+                # zero-step that would mask the overflow.
+                if any(
+                    p.grad is not None and not torch.isfinite(p.grad)
+                    for p in clip_params
+                ):
+                    raise NonFiniteMetricsError(
+                        phase="train",
+                        epoch=epoch,
+                        diagnosis=_build_nan_diagnosis(
+                            phase="train",
+                            epoch=epoch,
+                            batch_idx=batch_idx,
+                            raw_batch_loss=loss,
+                            lr=lr,
+                            scaler=scaler,
+                            grad_norm=last_grad_norm,
+                            images=images,
+                            masks=masks,
+                            batch_size=int(images.size(0)),
+                            compile_active=compile_active,
+                        ),
+                    )
                 if last_grad_norm > GRAD_CLIP_MAX_NORM:
                     logger.warning(
                         "[%s] epoch %d batch %d: grad-norm %.1f exceeded clip "
@@ -609,6 +718,10 @@ def _build_run_fingerprint(
         "k_folds": int(k_folds) if k_folds is not None else None,
         "fold_idx": int(fold_idx) if fold_idx is not None else None,
         "run_label": run_label,
+        # GradNorm formulation (parameterized vs canonical). Stamped so a
+        # canonical run and a parameterized run with the same label are
+        # distinguished on resume (distinct deterministic run paths).
+        "gradnorm_mode": getattr(args, "gradnorm_mode", "parameterized"),
     }
 
 
@@ -850,12 +963,31 @@ def train_single_run(
         cls_criterion = nn.CrossEntropyLoss(weight=cls_w)
 
         use_gradnorm = getattr(args, "use_gradnorm", False)
+        gradnorm_mode = getattr(args, "gradnorm_mode", "parameterized")
         gradnorm = None
+        canonical_weights = None
+        canonical_optimizer = None
+        canonical_state = None
         if use_gradnorm:
-            gradnorm = GradNormBalancer(
-                args.lambda_seg, args.lambda_cls, getattr(args, "gradnorm_alpha", 1.5),
-                weight_clamp=GRADNORM_WEIGHT_CLAMP,
-            ).to(device)
+            if gradnorm_mode == "canonical":
+                # Canonical GradNorm (Chen et al. 2018): raw task-weight
+                # parameters in a DEDICATED optimizer (mirrors
+                # scripts/run_canonical_gradnorm_panda.py L151-224). Initialized
+                # at the static 5:1 ratio normalized to sum=2: [5/3, 1/3].
+                # The model optimizer below does NOT include these weights, so
+                # the model receives no L_grad gradient.
+                canonical_weights = nn.Parameter(
+                    torch.tensor([5.0 / 3.0, 1.0 / 3.0], dtype=torch.float32, device=device)
+                )
+                canonical_optimizer = optim.Adam([canonical_weights], lr=0.025)
+                canonical_state = {"initial_losses": None}
+            else:
+                # Parameterized GradNorm (default): log-weights in the primary
+                # Adam optimizer (unchanged behavior).
+                gradnorm = GradNormBalancer(
+                    args.lambda_seg, args.lambda_cls, getattr(args, "gradnorm_alpha", 1.5),
+                    weight_clamp=GRADNORM_WEIGHT_CLAMP,
+                ).to(device)
 
         optimizer = optim.Adam(
             list(model.parameters()) + (list(gradnorm.parameters()) if gradnorm is not None else []),
@@ -924,6 +1056,10 @@ def train_single_run(
                     compile_active=compile_active,
                     epoch=epoch,
                     run_label=run_label,
+                    canonical_weights=canonical_weights,
+                    canonical_optimizer=canonical_optimizer,
+                    canonical_alpha=getattr(args, "gradnorm_alpha", 1.5),
+                    canonical_state=canonical_state,
                 )
                 vl_loss, vl_acc, vl_dice, _ = _run_epoch(
                     model, val_loader, optimizer, seg_criterion, cls_criterion,
@@ -936,6 +1072,7 @@ def train_single_run(
                     compile_active=compile_active,
                     epoch=epoch,
                     run_label=run_label,
+                    canonical_weights=canonical_weights,
                 )
                 ep_s = time.time() - t0
 
@@ -1028,6 +1165,7 @@ def train_single_run(
                         compile_active=compile_active,
                         epoch=epoch,
                         run_label=run_label,
+                        canonical_weights=canonical_weights,
                     )
                     # (3) Final best-checkpoint per-slice Dice dump.
                     if final_per_sample is not None and run_label is not None:
@@ -1061,6 +1199,7 @@ def train_single_run(
                         compile_active=compile_active,
                         epoch=epoch,
                         run_label=run_label,
+                        canonical_weights=canonical_weights,
                     )
                     if final_per_sample is not None and run_label is not None:
                         _dump_per_slice_dice(
@@ -1110,6 +1249,7 @@ def train_single_run(
                 # used by this run (global grad-norm clip + GradNorm weight clamp).
                 "grad_clip_max_norm": GRAD_CLIP_MAX_NORM,
                 "gradnorm_weight_clamp": GRADNORM_WEIGHT_CLAMP,
+                "gradnorm_mode": gradnorm_mode,
             }
 
         except NonFiniteMetricsError as ex:
@@ -1214,6 +1354,7 @@ def train_single_run(
                 # used by this run (global grad-norm clip + GradNorm weight clamp).
                 "grad_clip_max_norm": GRAD_CLIP_MAX_NORM,
                 "gradnorm_weight_clamp": GRADNORM_WEIGHT_CLAMP,
+                "gradnorm_mode": gradnorm_mode,
             }
 
         except RuntimeError as ex:
@@ -1253,7 +1394,8 @@ def train_single_run(
 
             raise
         finally:
-            for obj in (model, optimizer, scaler, seg_criterion, cls_criterion, train_loader, val_loader, train_ds, val_ds):
+            for obj in (model, optimizer, scaler, seg_criterion, cls_criterion, train_loader, val_loader, train_ds, val_ds,
+                        canonical_weights, canonical_optimizer):
                 if obj is not None:
                     del obj
             gc.collect()
