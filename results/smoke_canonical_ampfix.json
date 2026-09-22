@@ -1,0 +1,102 @@
+{
+  "timestamp": "2026-09-22T12:31:39",
+  "status": "completed",
+  "ended_early": null,
+  "phase": "v1",
+  "device": "cuda",
+  "hardware": {
+    "cpu_logical": 8,
+    "cpu_affinity": 8,
+    "ram_total_gb": 19.53,
+    "ram_available_gb": 12.92,
+    "gpu": {
+      "name": "NVIDIA GeForce RTX 3090",
+      "total_mem_gb": 24.0,
+      "free_mem_gb": 22.34,
+      "capability": "8.6"
+    }
+  },
+  "duration_sec": 116.38251805305481,
+  "duration_hms": "0:01:56",
+  "args": {
+    "datasets": [
+      "panda"
+    ],
+    "encoders": [
+      "vgg16"
+    ],
+    "phase": "v1",
+    "k_folds": null,
+    "fold": null,
+    "epochs": 2,
+    "patience": 10,
+    "batch_size": 32,
+    "lr": 0.001,
+    "lambda_seg": 5.0,
+    "lambda_cls": 1.0,
+    "gradnorm_alpha": 1.5,
+    "use_gradnorm": true,
+    "gradnorm_mode": "canonical",
+    "grad_clip_max_norm": 1.0,
+    "gradnorm_weight_clamp": 10.0,
+    "num_workers": 2,
+    "cache_size": -1,
+    "compile": false,
+    "no_skip_connections": false,
+    "no_macenko": true,
+    "seed": 42
+  },
+  "runs": {
+    "panda_vgg16": {
+      "status": "completed",
+      "dataset": "panda",
+      "encoder": "vgg16",
+      "samples": 10516,
+      "train_samples": 8412,
+      "val_samples": 2104,
+      "batch_size": 32,
+      "loader_workers": 2,
+      "loader_prefetch_factor": 2,
+      "loader_persistent_workers": false,
+      "loader_cache_size": 0,
+      "available_ram_gb": 12.81,
+      "cpu_budget": 8,
+      "best_val_loss": 1.749070111549262,
+      "best_val_acc": 0.12737642585551331,
+      "best_val_dice": 0.8534827473187687,
+      "final_val_acc": 0.12737642585551331,
+      "final_val_dice": 0.8534827473187687,
+      "fold_idx": null,
+      "k_folds": null,
+      "checkpoint": "/home/apath/Work/temp/final/results/round2/smoke_canonical_ampfix/best.pt",
+      "state_path": "/home/apath/Work/temp/final/results/round2/smoke_canonical_ampfix/final.state.pt",
+      "resume_branch": "fresh-start-no-state",
+      "resumed_from_epoch": 0,
+      "duration_sec": 116.20702838897705,
+      "duration_hms": "0:01:56",
+      "attempt": 1,
+      "compile_enabled": false,
+      "compile_backend": null,
+      "compile_mode": "max-autotune",
+      "skip_connections_ablated": false,
+      "smoke_test": false,
+      "grad_clip_max_norm": 1.0,
+      "gradnorm_weight_clamp": 10.0,
+      "gradnorm_mode": "canonical",
+      "paper_acc": 0.87,
+      "paper_dice": 0.98,
+      "acc_delta": -0.7426235741444867,
+      "dice_delta": -0.12651725268123126
+    }
+  },
+  "table": [
+    {
+      "dataset": "panda",
+      "encoder": "vgg16",
+      "acc": "12.74",
+      "dice": "85.35",
+      "paper_acc": 87.0,
+      "paper_dice": 98.0
+    }
+  ]
+}
