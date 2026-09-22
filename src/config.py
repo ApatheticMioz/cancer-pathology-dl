@@ -121,6 +121,14 @@ DEFAULT_DATASETS = ["tcga", "panda", "siim", "pannuke"]
 # referenced by the paper's §4.1 protocol sentence. It is a stabilizer, NOT a
 # NaN suppressor: a non-finite metric is still FATAL (zero-silent-fallback).
 GRAD_CLIP_MAX_NORM = 1.0
+# Loud bounded skip for non-finite gradients after the clip: each skipped
+# batch is counted, logged, excluded from epoch metrics, and stamped into the
+# fold summary; breaching this cap is FATAL (same abort as the old unconditional
+# gate). Backing: Micikevicius et al. 2018 (mixed-precision dynamic loss scaling
+# skips the update on overflow; NVIDIA guidance: infrequent skips leave
+# convergence unaffected) and the PyTorch GradScaler default (step skipped when
+# inf/NaN grads are found). Non-finite LOSSES remain unconditionally FATAL.
+GRAD_SKIP_MAX_PER_FOLD = 25
 
 # GradNormBalancer log-weight clamp (applied in normalize_ before exp()).
 # Bounds the task-weight imbalance so no single task's gradient can dominate

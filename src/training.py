@@ -27,6 +27,7 @@ from src.config import (
     CHECKPOINT_DIR,
     DATASET_ROOTS,
     GRAD_CLIP_MAX_NORM,
+    GRAD_SKIP_MAX_PER_FOLD,
     GRADNORM_WEIGHT_CLAMP,
     REPRO_ALLOW_BIG_CACHE,
     REPRO_ALLOW_UNC_WORKERS,
@@ -300,6 +301,7 @@ def _run_epoch(
     clip_engaged = 0
     clip_max_norm = 0.0
     clip_sum_norm = 0.0
+    nonfinite_grad_skips = 0
     last_grad_norm: float | None = None
     per_sample_dice: list[float] = []
     per_sample_empty_pred: list[bool] = []
@@ -532,31 +534,51 @@ def _run_epoch(
                         clip_params, max_norm=GRAD_CLIP_MAX_NORM
                     ).item()
                 )
-                # Zero-silent-fallback: a non-finite grad that SURVIVES the
-                # clip is FATAL (same convention as the non-finite-loss check
-                # above) — loud abort with epoch/batch, never a silent
-                # zero-step that would mask the overflow.
+                # Zero-silent-fallback, bounded-skip variant: occasional
+                # non-finite GRADIENTS are expected under mixed precision —
+                # Micikevicius et al. 2018 skip the update on overflow, and the
+                # PyTorch GradScaler default skips the step when inf/NaN grads
+                # are found. Such a batch is skipped LOUDLY (counted, logged,
+                # excluded from epoch metrics, stamped into the summary) and is
+                # FATAL only past GRAD_SKIP_MAX_PER_FOLD — a genuine divergence
+                # blows the cap within a few batches and aborts exactly as the
+                # old unconditional gate did. Non-finite LOSSES remain
+                # unconditionally FATAL (check above).
                 if any(
                     p.grad is not None and not torch.isfinite(p.grad).all()
                     for p in clip_params
                 ):
-                    raise NonFiniteMetricsError(
-                        phase="train",
-                        epoch=epoch,
-                        diagnosis=_build_nan_diagnosis(
+                    nonfinite_grad_skips += 1
+                    if nonfinite_grad_skips > GRAD_SKIP_MAX_PER_FOLD:
+                        raise NonFiniteMetricsError(
                             phase="train",
                             epoch=epoch,
-                            batch_idx=batch_idx,
-                            raw_batch_loss=loss,
-                            lr=lr,
-                            scaler=scaler,
-                            grad_norm=last_grad_norm,
-                            images=images,
-                            masks=masks,
-                            batch_size=int(images.size(0)),
-                            compile_active=compile_active,
-                        ),
+                            diagnosis=_build_nan_diagnosis(
+                                phase="train",
+                                epoch=epoch,
+                                batch_idx=batch_idx,
+                                raw_batch_loss=loss,
+                                lr=lr,
+                                scaler=scaler,
+                                grad_norm=last_grad_norm,
+                                images=images,
+                                masks=masks,
+                                batch_size=int(images.size(0)),
+                                compile_active=compile_active,
+                            ),
+                        )
+                    logger.warning(
+                        "[%s] epoch %d batch %d: non-finite gradient(s) after "
+                        "clip -> batch skipped, no update applied (skip "
+                        "%d/%d; a non-finite loss would still be FATAL)",
+                        run_label, epoch, batch_idx,
+                        nonfinite_grad_skips, GRAD_SKIP_MAX_PER_FOLD,
                     )
+                    # Drop the poisoned grads so nothing leaks into the next
+                    # accumulation; no scaler.step/update for this batch (the
+                    # clip cap is the divergence backstop, not scale backing).
+                    optimizer.zero_grad(set_to_none=True)
+                    continue
                 # Throttled clip telemetry (the PROTOCOL note above promises a
                 # throttle): accumulate instead of a per-batch firehose; the
                 # per-epoch aggregate is emitted after the batch loop and only
@@ -618,9 +640,10 @@ def _run_epoch(
 
     if train:
         logger.info(
-            "[%s] epoch %d: clip engaged %d/%d batches; true grad-norm "
-            "max=%.1f mean=%.1f (max_norm=%.3f)",
-            run_label, epoch, clip_engaged, steps, clip_max_norm,
+            "[%s] epoch %d: clip engaged %d/%d batches; non-finite-grad "
+            "skips %d; true grad-norm max=%.1f mean=%.1f (max_norm=%.3f)",
+            run_label, epoch, clip_engaged, steps, nonfinite_grad_skips,
+            clip_max_norm,
             (clip_sum_norm / steps) if steps else 0.0,
             GRAD_CLIP_MAX_NORM,
         )
@@ -1290,6 +1313,8 @@ def train_single_run(
                 # PROTOCOL parameters (paper §4.1): the exact stabilizer settings
                 # used by this run (global grad-norm clip + GradNorm weight clamp).
                 "grad_clip_max_norm": GRAD_CLIP_MAX_NORM,
+                "grad_skip_max_per_fold": GRAD_SKIP_MAX_PER_FOLD,
+                "nonfinite_grad_skips": int(nonfinite_grad_skips),
                 "gradnorm_weight_clamp": GRADNORM_WEIGHT_CLAMP,
                 "gradnorm_mode": gradnorm_mode,
             }
@@ -1355,6 +1380,8 @@ def train_single_run(
                     # PROTOCOL parameters (paper §4.1): the stabilizer settings
                     # active when this run hit the non-finite batch.
                     "grad_clip_max_norm": GRAD_CLIP_MAX_NORM,
+                    "grad_skip_max_per_fold": GRAD_SKIP_MAX_PER_FOLD,
+                    "nonfinite_grad_skips": int(nonfinite_grad_skips),
                     "gradnorm_weight_clamp": GRADNORM_WEIGHT_CLAMP,
                 }
                 append_jsonl(_per_run_epoch_log_path(run_label), nan_record)
@@ -1395,6 +1422,8 @@ def train_single_run(
                 # PROTOCOL parameters (paper §4.1): the exact stabilizer settings
                 # used by this run (global grad-norm clip + GradNorm weight clamp).
                 "grad_clip_max_norm": GRAD_CLIP_MAX_NORM,
+                "grad_skip_max_per_fold": GRAD_SKIP_MAX_PER_FOLD,
+                "nonfinite_grad_skips": int(nonfinite_grad_skips),
                 "gradnorm_weight_clamp": GRADNORM_WEIGHT_CLAMP,
                 "gradnorm_mode": gradnorm_mode,
             }
