@@ -586,9 +586,15 @@ def _run_epoch(
                         fold_skips, GRAD_SKIP_MAX_PER_FOLD,
                     )
                     # Drop the poisoned grads so nothing leaks into the next
-                    # accumulation; no scaler.step/update for this batch (the
-                    # clip cap is the divergence backstop, not scale backing).
+                    # accumulation, then hand the overflow to the GradScaler's
+                    # own path: scaler.update() reads the inf found_inf that
+                    # unscale_ recorded, shrinks the loss scale (dynamic loss
+                    # scaling), and RESETS the per-optimizer unscale/step state
+                    # machine. Without it the state stays UNSCALED and the next
+                    # batch's scaler.unscale_() raises "already been called
+                    # since the last update()" (killed run 11 attempt 1).
                     optimizer.zero_grad(set_to_none=True)
+                    scaler.update()
                     continue
                 # Throttled clip telemetry (the PROTOCOL note above promises a
                 # throttle): accumulate instead of a per-batch firehose; the
