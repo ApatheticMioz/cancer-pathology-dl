@@ -483,22 +483,22 @@ def _run_epoch(
                         inv_rates = inv_rates / inv_rates.mean().clamp(min=1e-8)
                         target = norms.mean() * (inv_rates ** canonical_alpha)
 
+                    # NOTE: grad_loss is BUILT here (it references the LIVE
+                    # canonical_weights) but its backward() + the dedicated
+                    # optimizer_weights.step() + clamp/renorm are DEFERRED to
+                    # after the model's backward+step (see below). The combined
+                    # loss above uses w = canonical_weights.detach(), which
+                    # shares the SAME storage/version-counter as
+                    # canonical_weights; stepping the weights here (in-place)
+                    # would bump that version counter before the model
+                    # backward consumes the graph -> "modified by an inplace
+                    # operation" RuntimeError. Deferring matches the reference
+                    # ordering (scripts/run_canonical_gradnorm_panda.py
+                    # L202-224): model backward+step FIRST, then weights.
                     grad_loss = torch.sum(
                         torch.abs(canonical_weights * norms - target)
                     )
                     canonical_optimizer.zero_grad(set_to_none=True)
-                    grad_loss.backward()
-                    canonical_optimizer.step()
-                    # Renormalize weights so sum(w) = 2.0 (GRADNORM_WEIGHT_CLAMP
-                    # bounds each weight to [1e-4, clamp], mirroring the
-                    # parameterized path's clamp semantics).
-                    with torch.no_grad():
-                        canonical_weights.data = canonical_weights.data.clamp(
-                            min=1e-4, max=GRADNORM_WEIGHT_CLAMP
-                        )
-                        canonical_weights.data = (
-                            canonical_weights.data * (2.0 / canonical_weights.data.sum().clamp(min=1e-4))
-                        )
 
                 optimizer.zero_grad(set_to_none=True)
                 scaler.scale(loss).backward(retain_graph=gradnorm is not None and not static_weights)
@@ -534,7 +534,7 @@ def _run_epoch(
                 # above) — loud abort with epoch/batch, never a silent
                 # zero-step that would mask the overflow.
                 if any(
-                    p.grad is not None and not torch.isfinite(p.grad)
+                    p.grad is not None and not torch.isfinite(p.grad).all()
                     for p in clip_params
                 ):
                     raise NonFiniteMetricsError(
@@ -566,6 +566,29 @@ def _run_epoch(
                 scaler.update()
                 if gradnorm is not None and not static_weights:
                     gradnorm.normalize_()
+
+                # Canonical GradNorm (Chen et al. 2018): DEDICATED
+                # optimizer_weights step, DEFERRED to after the model's
+                # backward+step (see the deferred grad_loss construction
+                # above). The model backward has now CONSUMED the combined-loss
+                # graph, so the in-place weight update (Adam step + clamp +
+                # sum-2 renorm) can no longer bump the shared version counter
+                # under a pending graph. The model never receives L_grad
+                # (strict detachment); only optimizer_weights updates the
+                # weights.
+                if canonical_weights is not None and not static_weights:
+                    grad_loss.backward()
+                    canonical_optimizer.step()
+                    # Renormalize weights so sum(w) = 2.0 (GRADNORM_WEIGHT_CLAMP
+                    # bounds each weight to [1e-4, clamp], mirroring the
+                    # parameterized path's clamp semantics).
+                    with torch.no_grad():
+                        canonical_weights.data = canonical_weights.data.clamp(
+                            min=1e-4, max=GRADNORM_WEIGHT_CLAMP
+                        )
+                        canonical_weights.data = (
+                            canonical_weights.data * (2.0 / canonical_weights.data.sum().clamp(min=1e-4))
+                        )
 
             total_loss += float(loss.item()) if torch.isfinite(loss) else 0.0
             preds = cls_out.argmax(dim=1)
