@@ -16,7 +16,8 @@
 #   - Checkpts: checkpoints/ckpt_kfold_<label>_fold<N>of5_best.pth
 #
 # Hardware target: RTX 3090 (24 GB VRAM) + 12-core CPU, 20 GB system RAM (14 GB free).
-# Concurrency: exactly 2 parallel Python processes at all times (MAX_JOBS=2).
+# Concurrency: up to 3 parallel Python processes (MAX_JOBS=3), gated by a
+# VRAM-aware defer-not-abort admission (see vram_admission_ok below).
 #
 # Usage:
 #   chmod +x scripts/run_folds.sh
@@ -72,10 +73,11 @@ if command -v nvidia-smi >/dev/null 2>&1; then
 fi
 
 # ---------------------------------------------------------------------------
-# Concurrency control (max 2 parallel Python processes)
+# Concurrency control (max 3 parallel Python processes, VRAM-admission-gated)
 # ---------------------------------------------------------------------------
-MAX_JOBS=2
+MAX_JOBS=3
 declare -a PIDS=()
+declare -A PID_PRED_VRAM=()   # pid -> predicted VRAM (MiB), for admission
 
 # ---------------------------------------------------------------------------
 # Run definitions (GROUNDED in run_all_experiments.sh / aggregate_results.py)
@@ -278,7 +280,11 @@ launch_job() {
         --summary-out "${summary_file}" --run-label "${run_label}" >> /dev/null 2>&1 &
     local pid=$!
     PIDS+=("$pid")
-    echo " [${run_id}] PID: ${pid}"
+    local dataset encoder
+    dataset=$(printf '%s' "$flags" | awk '/--datasets/ {print $2}')
+    encoder=$(printf '%s' "$flags" | awk '/--encoders/ {print $2}')
+    PID_PRED_VRAM[$pid]=$(vram_predict "$dataset" "$encoder")
+    echo " [${run_id}] PID: ${pid} (predicted VRAM ${PID_PRED_VRAM[$pid]} MiB)"
 }
 
 # Reap finished PIDs and return count of still-running jobs
@@ -321,13 +327,79 @@ ram_watchdog() {
     fi
 }
 
+# ---------------------------------------------------------------------------
+# VRAM-aware admission (ported from scripts/wave_scheduler.py: predict_vram
+# L169-175, query_vram L209-226, defer-not-abort admission in run_wave L490-512)
+# Per-job peak VRAM measured in r31 (MiB); mobilenet_v2 ≈ 60% of the vgg16 peak.
+# ---------------------------------------------------------------------------
+VRAM_BUDGET_MIB=21000   # 24576 MiB card - ~1.5 GB headroom over desktop baseline
+
+vram_predict() {
+    local dataset="$1" encoder="$2"
+    case "$encoder" in
+        vgg16)
+            case "$dataset" in
+                tcga)    echo 8816 ;;
+                pannuke) echo 8429 ;;
+                siim)    echo 8425 ;;
+                panda)   echo 3205 ;;
+                *)       echo 5500 ;;
+            esac ;;
+        mobilenet_v2)
+            case "$dataset" in
+                tcga)    echo 5290 ;;   # 60% of 8816
+                pannuke) echo 5057 ;;   # 60% of 8429
+                siim)    echo 5055 ;;   # 60% of 8425
+                panda)   echo 1923 ;;   # 60% of 3205
+                *)       echo 3300 ;;
+            esac ;;
+        *) echo 5500 ;;
+    esac
+}
+
+# Current nvidia-smi usage (MiB) for a launched pid and its children; empty if none.
+vram_used_by_pid() {
+    local pid="$1" child pids out=0 line lpid p
+    pids="$pid"
+    for child in $(pgrep -P "$pid" 2>/dev/null); do
+        pids="$pids $child"
+    done
+    while read -r line; do
+        lpid=$(printf '%s' "$line" | awk -F',' '{print $1}')
+        for p in $pids; do
+            if [ "$lpid" = "$p" ]; then
+                out=$(( out + $(printf '%s' "$line" | awk -F',' '{print $2}') ))
+                break
+            fi
+        done
+    done < <(nvidia-smi --query-compute-apps=pid,used_memory --format=csv,noheader,nounits 2>/dev/null)
+    [ "$out" -gt 0 ] && echo "$out"
+    return 0
+}
+
+# Defer-not-abort: return 0 only if the new job's predicted VRAM fits the budget
+# alongside running jobs (measured nvidia-smi usage where available, else predicted).
+vram_admission_ok() {
+    local new_pred="$1" total=0 pid used
+    for pid in "${PIDS[@]}"; do
+        used=$(vram_used_by_pid "$pid")
+        [ -z "$used" ] && used="${PID_PRED_VRAM[$pid]:-5500}"
+        total=$(( total + used ))
+    done
+    [ $(( total + new_pred )) -le "$VRAM_BUDGET_MIB" ]
+}
+
 wait_for_slot() {
+    local new_pred="$1"
     while true; do
         local active
         active=$(count_active)
         ram_watchdog
-        if [ "$active" -lt "$MAX_JOBS" ]; then
+        if [ "$active" -lt "$MAX_JOBS" ] && vram_admission_ok "$new_pred"; then
             break
+        fi
+        if [ "$active" -lt "$MAX_JOBS" ]; then
+            echo " [VRAM-ADMISSION] $(date '+%Y-%m-%d %H:%M:%S') - deferring next job (predicted ${new_pred} MiB; budget ${VRAM_BUDGET_MIB} MiB); re-checking next cycle"
         fi
         sleep 2
     done
@@ -381,7 +453,9 @@ fi
 
 for def in "${RESOLVED[@]}"; do
     read -r rid rname rflags <<< "$def"
-    wait_for_slot
+    local_dataset=$(printf '%s' "$rflags" | awk '/--datasets/ {print $2}')
+    local_encoder=$(printf '%s' "$rflags" | awk '/--encoders/ {print $2}')
+    wait_for_slot "$(vram_predict "$local_dataset" "$local_encoder")"
     launch_job "$rid" "$rname" "$rflags"
 done
 
