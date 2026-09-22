@@ -297,6 +297,9 @@ def _run_epoch(
     correct = 0
     dice_vals: list[float] = []
     steps = 0
+    clip_engaged = 0
+    clip_max_norm = 0.0
+    clip_sum_norm = 0.0
     last_grad_norm: float | None = None
     per_sample_dice: list[float] = []
     per_sample_empty_pred: list[bool] = []
@@ -554,14 +557,14 @@ def _run_epoch(
                             compile_active=compile_active,
                         ),
                     )
+                # Throttled clip telemetry (the PROTOCOL note above promises a
+                # throttle): accumulate instead of a per-batch firehose; the
+                # per-epoch aggregate is emitted after the batch loop and only
+                # a far-above-threshold max stays loud.
                 if last_grad_norm > GRAD_CLIP_MAX_NORM:
-                    logger.warning(
-                        "[%s] epoch %d batch %d: grad-norm %.1f exceeded clip "
-                        "max_norm=%.3f -> clipped (stabilizer engaged; a "
-                        "non-finite loss would still be FATAL)",
-                        run_label, epoch, batch_idx, last_grad_norm,
-                        GRAD_CLIP_MAX_NORM,
-                    )
+                    clip_engaged += 1
+                clip_max_norm = max(clip_max_norm, last_grad_norm)
+                clip_sum_norm += last_grad_norm
                 scaler.step(optimizer)
                 scaler.update()
                 if gradnorm is not None and not static_weights:
@@ -612,6 +615,22 @@ def _run_epoch(
                 per_sample_empty_gt.extend(bool(x) for x in (gt_sums == 0).tolist())
                 per_sample_labels.extend(int(x) for x in labels.detach().cpu().tolist())
                 sample_offset += int(labels.size(0))
+
+    if train:
+        logger.info(
+            "[%s] epoch %d: clip engaged %d/%d batches; true grad-norm "
+            "max=%.1f mean=%.1f (max_norm=%.3f)",
+            run_label, epoch, clip_engaged, steps, clip_max_norm,
+            (clip_sum_norm / steps) if steps else 0.0,
+            GRAD_CLIP_MAX_NORM,
+        )
+        if clip_max_norm > 100.0:
+            logger.warning(
+                "[%s] epoch %d: max grad-norm %.1f far exceeds clip "
+                "max_norm=%.3f (possible instability; per-step updates "
+                "were still bounded)",
+                run_label, epoch, clip_max_norm, GRAD_CLIP_MAX_NORM,
+            )
 
     if steps == 0 or total == 0:
         # No batches were consumed (e.g. empty loader). This is a data/loader
