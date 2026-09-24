@@ -8,6 +8,7 @@ Provides:
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import torch
@@ -45,9 +46,16 @@ def save_training_state(
     seed, epochs, batch_size, k_folds, fold_idx, run_label) stamped into the
     state file so a resumed run can verify it is loading the state of the
     *same* run before trusting it (F-23).
+
+    The write is ATOMIC: the state is serialized to ``state_path + ".tmp"``
+    and then moved into place with ``os.replace``. A power cut mid-write
+    therefore leaves either the previous complete state or the new complete
+    state on disk — never a torn/truncated file that a resumed run would have
+    to reject (and lose an epoch over).
     """
     state_path.parent.mkdir(parents=True, exist_ok=True)
     model_state = model._orig_mod.state_dict() if hasattr(model, "_orig_mod") else model.state_dict()
+    tmp_path = state_path.with_suffix(state_path.suffix + ".tmp")
     torch.save(
         {
             "epoch": int(epoch),
@@ -63,8 +71,9 @@ def save_training_state(
             "gradnorm_initial_losses": gradnorm.initial_losses.detach().cpu() if gradnorm is not None else None,
             "fingerprint": fingerprint,
         },
-        state_path,
+        tmp_path,
     )
+    os.replace(tmp_path, state_path)
 
 
 def load_training_state(model, optimizer, gradnorm, state_path: Path, device: str) -> dict | None:

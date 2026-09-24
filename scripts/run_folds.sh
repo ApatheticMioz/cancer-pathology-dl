@@ -13,7 +13,21 @@
 # Per-run outputs (collision-safe, mirroring run_all_experiments.sh):
 #   - Log:      logs/kfold_<label>.log
 #   - Summary:  results/round2/kfold_<orig-label>.json
-#   - Checkpts: checkpoints/ckpt_kfold_<label>_fold<N>of5_best.pth
+#   - Checkpts: results/round2/kfold_<label>_fold<N>of5/best.pt
+#               results/round2/kfold_<label>_fold<N>of5/final.state.pt
+#               (deterministic per-fold paths; final.state.pt is the resume
+#               state, written atomically. The old checkpoints/ckpt_kfold_*_
+#               best.pth naming is gone.)
+#
+# Resume (power-cut recovery):
+#   FOLD_RESUME=1 ./scripts/run_folds.sh <run-id>...
+#     -> appends --resume: each fold resumes from its last completed epoch
+#        (final.state.pt) instead of retraining from scratch.
+#   FOLD_RESUME unset/0 (DEFAULT) -> appends --no-resume: clean-room fresh
+#        start, prior state ignored (the original campaign behavior).
+#   A resumed fold is FATAL if its state's fingerprint (code/config/torch
+#   version) does not match the current run; set RESUME_ALLOW_LEGACY=1 to
+#   bridge pre-hardening states (loud WARNING, no identity check).
 #
 # Hardware target: RTX 3090 (24 GB VRAM) + 12-core CPU, 20 GB system RAM (14 GB free).
 # Concurrency: up to 3 parallel Python processes (MAX_JOBS=3), gated by a
@@ -23,6 +37,7 @@
 #   chmod +x scripts/run_folds.sh
 #   ./scripts/run_folds.sh --dry-run 01 03 05 13 17 18 20 23 24 08 25
 #   ./scripts/run_folds.sh 01 03 05 13 17 18 20 23 24 08 25
+#   FOLD_RESUME=1 ./scripts/run_folds.sh 01 03 05   # resume after a power cut
 #
 #   <run-id> ... : explicit run-id list (1..27), resolved against the SAME
 #                  run definitions as run_all_experiments.sh.
@@ -181,8 +196,15 @@ build_cmd() {
     local run_label="kfold_${run_name}"
     local summary_file="results/round2/kfold_${run_name}.json"
 
+    # FOLD_RESUME=1 -> --resume (power-cut recovery); default -> --no-resume
+    # (clean-room fresh start, the original campaign behavior).
+    local resume_flag="--no-resume"
+    if [ "${FOLD_RESUME:-0}" = "1" ]; then
+        resume_flag="--resume"
+    fi
+
     # shellcheck disable=SC2206
-    local cmd=(python main.py ${flags} --k-folds 5 --no-resume --summary-out "${summary_file}" --run-label "${run_label}")
+    local cmd=(python main.py ${flags} --k-folds 5 ${resume_flag} --summary-out "${summary_file}" --run-label "${run_label}")
     printf '%s\n' "${cmd[*]}"
 }
 
@@ -269,14 +291,22 @@ launch_job() {
     local log_file="logs/kfold_${run_name}.log"
     local summary_file="results/round2/kfold_${run_name}.json"
 
+    # FOLD_RESUME=1 -> --resume (power-cut recovery); default -> --no-resume
+    # (clean-room fresh start, the original campaign behavior).
+    local resume_flag="--no-resume"
+    if [ "${FOLD_RESUME:-0}" = "1" ]; then
+        resume_flag="--resume"
+    fi
+
     mkdir -p logs results/round2
 
     echo " [${run_id}] $(date '+%Y-%m-%d %H:%M:%S') - START (5-fold): ${run_name}"
     echo "        Log:      ${log_file}"
     echo "        Summary: ${summary_file}"
+    echo "        Resume:   ${resume_flag}"
 
     run_with_safe_healing "$run_id" "$run_name" "$log_file" \
-        python main.py ${flags} --k-folds 5 --no-resume \
+        python main.py ${flags} --k-folds 5 ${resume_flag} \
         --summary-out "${summary_file}" --run-label "${run_label}" >> /dev/null 2>&1 &
     local pid=$!
     PIDS+=("$pid")

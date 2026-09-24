@@ -9,6 +9,7 @@ Provides:
 from __future__ import annotations
 
 import gc
+import hashlib
 import json
 import logging
 import math
@@ -787,6 +788,44 @@ def _deterministic_run_paths(run_label: str) -> tuple[Path, Path]:
     return run_dir / "best.pt", run_dir / "final.state.pt"
 
 
+def _source_fingerprint() -> str:
+    """Stable sha256 over the *code* that produced a run.
+
+    Hashes the sorted (path, content) of ``main.py`` plus every ``src/*.py``
+    module. A resumed run recomputes this from the code on disk; if the code
+    changed since the state was minted, the fingerprint will not match and the
+    resume is FATAL (a resumed fold can never silently mix code versions).
+    """
+    base = Path(__file__).resolve().parent.parent
+    files = [base / "main.py"]
+    files.extend(sorted((base / "src").glob("*.py")))
+    h = hashlib.sha256()
+    for p in sorted(files, key=lambda x: str(x)):
+        try:
+            content = p.read_bytes()
+        except OSError:
+            content = b""
+        h.update(str(p).encode("utf-8"))
+        h.update(b"\x00")
+        h.update(content)
+        h.update(b"\x00")
+    return h.hexdigest()
+
+
+def _args_fingerprint(args) -> str:
+    """Stable sha256 of the canonical JSON of the run's CLI args.
+
+    Serializes ``vars(args)`` with sorted keys and a JSON-safe default so the
+    hash is independent of dict ordering and of non-JSON types (e.g. Path).
+    The resume *control* flag (``resume``) is excluded: it is the switch that
+    decides whether to resume, not part of the run's identity, and it differs
+    between a fresh launch and a relaunch of the same run.
+    """
+    items = {k: v for k, v in vars(args).items() if k != "resume"}
+    canonical = json.dumps(items, sort_keys=True, default=str)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 def _build_run_fingerprint(
     dataset: str,
     encoder: str,
@@ -800,8 +839,14 @@ def _build_run_fingerprint(
 
     A resumed run rebuilds this from its own CLI args and compares it against
     the fingerprint stored in the state file. A mismatch means the state was
-    minted by a *different* run (different dataset/encoder/seed/split) and
-    must be rejected loudly rather than silently loaded.
+    minted by a *different* run (different dataset/encoder/seed/split) or by a
+    *different code/config* and must be rejected loudly rather than silently
+    loaded.
+
+    Stable pins (power-cut / code-drift safety):
+      - ``source_sha256``: hash of main.py + src/*.py (code version).
+      - ``args_sha256``: hash of the canonical CLI args (config).
+      - ``torch_version``: the torch build that produced the state.
     """
     return {
         "dataset": dataset,
@@ -816,6 +861,12 @@ def _build_run_fingerprint(
         # canonical run and a parameterized run with the same label are
         # distinguished on resume (distinct deterministic run paths).
         "gradnorm_mode": getattr(args, "gradnorm_mode", "parameterized"),
+        # Stable identity pins (F-23 hardening): code version, config, and
+        # torch build. A resumed fold that would mix a different code/config
+        # or torch version is FATAL instead of silently accepted.
+        "source_sha256": _source_fingerprint(),
+        "args_sha256": _args_fingerprint(args),
+        "torch_version": torch.__version__,
     }
 
 
@@ -838,6 +889,17 @@ def _resolve_resume(
     Fail-fast: if a state file is present but is corrupt/unloadable, or its
     fingerprint does not match the current run, this raises ``RuntimeError``
     (FATAL) instead of silently starting fresh.
+
+    Fingerprint hardening: a state file that carries NO fingerprint is FATAL
+    (a pre-hardening state cannot be proven to belong to this run) UNLESS the
+    environment variable ``RESUME_ALLOW_LEGACY=1`` is set, in which case a loud
+    WARNING is logged and the state is accepted (a bridge for pre-hardening
+    states, e.g. the g2_tcga_vgg16 folds 1-4). A fingerprint minted before the
+    stable code/config/torch pins existed (missing ``source_sha256`` /
+    ``args_sha256`` / ``torch_version``) is likewise LEGACY: FATAL by default,
+    accepted only under ``RESUME_ALLOW_LEGACY=1`` after its base pins all
+    verify. A fingerprint carrying the hard pins must match on EVERY pinned
+    field exactly.
     """
     # --no-resume: deliberate fresh start, never touch prior state.
     if not resume_enabled:
@@ -870,15 +932,72 @@ def _resolve_resume(
         )
 
     stored_fp = state.get("fingerprint")
-    if stored_fp is not None:
-        for key in ("dataset", "encoder", "seed", "k_folds", "fold_idx", "run_label"):
+    if stored_fp is None:
+        # A state file with no fingerprint cannot be proven to belong to this
+        # run. FATAL by default; the RESUME_ALLOW_LEGACY=1 env var is a loud,
+        # logged bridge for pre-hardening states (e.g. g2_tcga_vgg16 folds 1-4)
+        # that were minted before fingerprinting existed.
+        if os.environ.get("RESUME_ALLOW_LEGACY", "").strip() == "1":
+            logger.warning(
+                "[%s] RESUME BRANCH: state at %s has NO fingerprint (pre-hardening "
+                "state). RESUME_ALLOW_LEGACY=1 is set, so accepting it WITHOUT "
+                "identity verification. This is a bridge for legacy states only; "
+                "the resumed fold's code/config/torch version is NOT verified.",
+                run_label, state_path,
+            )
+        else:
+            raise RuntimeError(
+                f"FATAL: training state at {state_path} has no fingerprint; "
+                f"refusing to resume a state that cannot be proven to belong to "
+                f"this run. Set RESUME_ALLOW_LEGACY=1 to accept a pre-hardening "
+                f"state (loud WARNING, no identity check)."
+            )
+    else:
+        # Hard pins (source_sha256/args_sha256/torch_version) must match
+        # exactly. A stored fingerprint that PREDATES a hard pin (old-format:
+        # missing it) is LEGACY — FATAL by default; under RESUME_ALLOW_LEGACY=1
+        # it is accepted after its base pins (the full pre-hardening pin set)
+        # still verify, with a loud warning that code/config/torch identity is
+        # unproven. A missing pin is never a silent pass.
+        hard_pins = ("source_sha256", "args_sha256", "torch_version")
+        base_pins = (
+            "dataset", "encoder", "seed", "epochs", "batch_size", "k_folds",
+            "fold_idx", "run_label", "gradnorm_mode",
+        )
+        missing_hard = [k for k in hard_pins if not stored_fp.get(k)]
+        if missing_hard:
+            if os.environ.get("RESUME_ALLOW_LEGACY", "").strip() != "1":
+                raise RuntimeError(
+                    f"FATAL: training state at {state_path} has a pre-hardening "
+                    f"fingerprint (missing pins: {', '.join(missing_hard)}); "
+                    f"its code/config/torch identity cannot be proven. Refusing "
+                    f"to resume; set RESUME_ALLOW_LEGACY=1 to accept a legacy "
+                    f"state (base pins still verified, loud WARNING)."
+                )
+            logger.warning(
+                "[%s] RESUME BRANCH: state at %s carries a pre-hardening "
+                "fingerprint (missing pins: %s). RESUME_ALLOW_LEGACY=1 is set: "
+                "accepting after base-pin verification; code/config/torch "
+                "identity is NOT proven.",
+                run_label, state_path, ", ".join(missing_hard),
+            )
+        for key in base_pins:
             if stored_fp.get(key) != fingerprint.get(key):
                 raise RuntimeError(
                     f"FATAL: training state at {state_path} was minted by a "
-                    f"different run (fingerprint mismatch on '{key}': "
-                    f"stored={stored_fp.get(key)!r} vs current={fingerprint.get(key)!r}). "
-                    f"Refusing to resume."
+                    f"different run or config (fingerprint mismatch on "
+                    f"'{key}': stored={stored_fp.get(key)!r} vs "
+                    f"current={fingerprint.get(key)!r}). Refusing to resume."
                 )
+        if not missing_hard:
+            for key in hard_pins:
+                if stored_fp.get(key) != fingerprint.get(key):
+                    raise RuntimeError(
+                        f"FATAL: training state at {state_path} was minted by a "
+                        f"different code/config/torch version (fingerprint "
+                        f"mismatch on '{key}': stored={stored_fp.get(key)!r} vs "
+                        f"current={fingerprint.get(key)!r}). Refusing to resume."
+                    )
 
     start_epoch = int(state.get("epoch", 0)) + 1
     logger.info(
@@ -1131,6 +1250,31 @@ def train_single_run(
             patience_ctr = int(resume_state.get("patience_ctr", 0))
             logger.info("Resuming from epoch %d using %s", start_epoch, state_path.name)
 
+        # ``epoch`` is the loop variable used by the final-eval block below.
+        # Initialize it to the last completed epoch so the final eval is well
+        # defined even when the training loop is skipped entirely (a resumed
+        # fold that already early-stopped).
+        epoch = start_epoch - 1
+
+        # Resume idempotency: if the resumed fold had ALREADY exhausted its
+        # patience (early-stopped) before the power cut, do NOT train one extra
+        # epoch (the old non-idempotent behavior). Skip the training loop
+        # entirely and go straight to the final best.pt evaluation, so a
+        # relaunched run reproduces the same evidence.
+        skip_training = (
+            resume_state is not None
+            and not smoke_test
+            and patience_ctr >= args.patience
+        )
+        if skip_training:
+            resume_branch = "resumed-already-early-stopped"
+            logger.info(
+                "[%s] RESUME BRANCH: resumed fold already early-stopped "
+                "(patience_ctr=%d >= patience=%d); skipping the training loop "
+                "and going straight to final evaluation (idempotent resume).",
+                run_label, patience_ctr, args.patience,
+            )
+
         logger.info("Ep | TrLoss TrAcc TrDice | VlLoss VlAcc VlDice | sec")
 
         effective_epochs = 1 if smoke_test else args.epochs
@@ -1138,7 +1282,14 @@ def train_single_run(
             logger.info("SMOKE TEST MODE: epochs forced to 1, max 2 batches per epoch, checkpoint saving disabled")
 
         try:
-            for epoch in range(start_epoch, effective_epochs + 1):
+            # When the resumed fold already early-stopped, use an empty range
+            # so the loop body never executes (idempotent resume). Otherwise
+            # train from start_epoch through the configured epoch count.
+            if skip_training:
+                loop_range = range(0)
+            else:
+                loop_range = range(start_epoch, effective_epochs + 1)
+            for epoch in loop_range:
                 t0 = time.time()
                 tr_loss, tr_acc, tr_dice, _ = _run_epoch(
                     model, train_loader, optimizer, seg_criterion, cls_criterion,
