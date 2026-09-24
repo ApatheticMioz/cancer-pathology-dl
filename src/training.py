@@ -112,6 +112,7 @@ def _build_nan_diagnosis(
     masks,
     batch_size: int,
     compile_active: bool,
+    output_probe=None,
 ) -> dict:
     """Build a structured, JSON-serializable diagnosis of a non-finite metric.
 
@@ -151,7 +152,7 @@ def _build_nan_diagnosis(
     mask_min, mask_max, mask_nan = _tensor_stats(masks)
 
     amp_dtype = "bfloat16"  # matches torch.autocast(dtype=torch.bfloat16) in _run_epoch
-    amp_enabled = (scaler is not None) and bool(getattr(scaler, "enabled", False))
+    amp_enabled = (scaler is not None) and bool(getattr(scaler, "_enabled", False))
     scaler_scale = None
     scaler_growth_factor = None
     scaler_growth_cnt = None
@@ -187,6 +188,12 @@ def _build_nan_diagnosis(
         "mask_any_nan": mask_nan,
         "batch_size": int(batch_size),
         "compile_active": bool(compile_active),
+        # Non-finite element counts per model output head at the fatal batch
+        # (lazy probe, computed only on the raise path). The loss criteria are
+        # numerically stable, so a NaN/Inf loss with clean inputs can only
+        # originate from non-finite forward outputs; this attributes the
+        # divergence to seg_out vs cls_out.
+        "output_probe": output_probe,
         "torch_version": torch.__version__,
         "cuda_version": torch.version.cuda,
     }
@@ -388,6 +395,10 @@ def _run_epoch(
             # soft skip). Capture the FIRST non-finite batch with full diagnosis
             # plus the partial per-sample data that evaluated before it.
             if not torch.isfinite(loss):
+                output_probe = {
+                    "seg_out_nonfinite": int((~torch.isfinite(seg_out)).sum().item()),
+                    "cls_out_nonfinite": int((~torch.isfinite(cls_out)).sum().item()),
+                }
                 partial_per_sample = None
                 if collect_per_sample and not train and per_sample_dice:
                     partial_per_sample = {
@@ -414,6 +425,7 @@ def _run_epoch(
                         masks=masks,
                         batch_size=int(images.size(0)),
                         compile_active=compile_active,
+                        output_probe=output_probe,
                     ),
                     per_sample_info=partial_per_sample,
                 )
@@ -685,8 +697,8 @@ def _run_epoch(
                 "raw_batch_loss": None,
                 "lr": lr,
                 "amp_dtype": "bfloat16",
-                "amp_enabled": bool(getattr(scaler, "enabled", False)) if scaler is not None else False,
-                "scaler_enabled": bool(getattr(scaler, "enabled", False)) if scaler is not None else False,
+                "amp_enabled": bool(getattr(scaler, "_enabled", False)) if scaler is not None else False,
+                "scaler_enabled": bool(getattr(scaler, "_enabled", False)) if scaler is not None else False,
                 "scaler_scale": None,
                 "scaler_growth_factor": None,
                 "scaler_growth_cnt": None,
@@ -723,8 +735,8 @@ def _run_epoch(
                 "raw_batch_loss": None,
                 "lr": lr,
                 "amp_dtype": "bfloat16",
-                "amp_enabled": bool(getattr(scaler, "enabled", False)) if scaler is not None else False,
-                "scaler_enabled": bool(getattr(scaler, "enabled", False)) if scaler is not None else False,
+                "amp_enabled": bool(getattr(scaler, "_enabled", False)) if scaler is not None else False,
+                "scaler_enabled": bool(getattr(scaler, "_enabled", False)) if scaler is not None else False,
                 "scaler_scale": float(scaler._scale.item()) if scaler is not None else None,
                 "scaler_growth_factor": getattr(scaler, "_growth_factor", None) if scaler is not None else None,
                 "scaler_growth_cnt": getattr(scaler, "_growth_cnt", None) if scaler is not None else None,
