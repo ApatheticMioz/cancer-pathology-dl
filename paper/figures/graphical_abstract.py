@@ -25,16 +25,21 @@ Three-panel left→right story (minimal text, standalone, no captions):
 
 Data contract (I4 — no hard-coded result values)
 ------------------------------------------------
-Every number is read from the ground-truth CSVs via the existing loaders:
+Every number is read from the fold-campaign ground truth
+(``results/round2/kfold_*.json``) via
+:func:`paper.figures.loaders.kfold_campaign`, with the published *claimed*
+ranges still read from the results matrix
+(:func:`paper.figures.loaders.results_matrix`,
+``paper/paper_results_matrix_with_ci.csv``):
 
-* per-dataset measured/claimed accuracy ranges →
-  :func:`paper.figures.loaders.results_matrix`
-  (``paper/paper_results_matrix_with_ci.csv``);
-* the SIIM empty-over-empty Dice floor → the SIIM ``Macro Dice`` column of
-  the same matrix (all four SIIM runs are all-empty, so this is the floor);
-* the task-interference arrow → CSV rows 20 and 18 (the static 5:1 baseline
-  and the isolated GradNorm arm on PANDA×VGG16), both read from the
-  ``Accuracy (%)`` column.
+* per-dataset *measured* accuracy ranges → the min/max of the fold-mean
+  accuracies of that dataset's 26-run-matrix configs; the *claimed* ranges
+  are the published ``Paper Acc (%)`` values from the matrix (unchanged);
+* the SIIM empty-over-empty Dice floor → the mean of the four SIIM
+  configs' (g1/g2 × vgg16/mobilenet_v2) fold-mean Dice;
+* the task-interference arrow → the fold-mean accuracies of
+  ``g4_panda_lambda_5_1`` (static 5:1 baseline) and
+  ``g4_panda_isolate_gn`` (isolated GradNorm arm) on PANDA×VGG16.
 
 The only non-data constant is the repository URL (a provenance string, not a
 result value).
@@ -50,7 +55,8 @@ bbox, breaking the aspect contract).
 
 ``verify()`` asserts: the PDF page aspect is within 5 % of 2.5:1 (and the
 cm size is within 13×5.2 to 13.4×5.4 cm); the three panel titles do not
-overlap; the PANDA measured range printed in panel (a) matches the CSV;
+overlap; the PANDA measured range printed in panel (a) matches the
+fold-campaign summaries;
 every Text artist's window extent is inside the figure bbox; and no two
 Text artists in the same axes overlap (1 px tolerance).
 """
@@ -68,7 +74,7 @@ import pandas as pd
 from matplotlib.patches import FancyBboxPatch, Rectangle
 
 from . import style
-from .loaders import REPO_ROOT, results_matrix
+from .loaders import REPO_ROOT, dice_ci_summary, kfold_campaign, results_matrix
 
 # Apply the locked style contract once for this module.
 style.apply()
@@ -101,12 +107,27 @@ _MIN_FONT = 7.5
 # Data access (I4 — every value from the CSV, never hard-coded)
 # ---------------------------------------------------------------------------
 
-def _dataset_acc_ranges(matrix: pd.DataFrame) -> list[dict]:
+def _matrix_run_names() -> set:
+    """The 26-run-matrix run names (``g1_...`` … ``g5_...``).
+
+    The fold campaign also carries a ``canonical_gradnorm`` probe summary;
+    that is *not* part of the 26-run matrix and must be excluded from the
+    per-dataset measured ranges (otherwise it would drag the PANDA low end
+    down to the probe's 22.7 %).
+    """
+    from src.aggregate_results import EXPECTED_RUNS
+    return {run_name for _run_id, run_name in EXPECTED_RUNS}
+
+
+def _dataset_acc_ranges(matrix: pd.DataFrame, campaign: pd.DataFrame) -> list[dict]:
     """Per-dataset measured + claimed accuracy ranges, in display order.
 
-    Returns a list of dicts with keys ``name``, ``color``, ``meas_lo``,
-    ``meas_hi``, ``claimed_lo`` / ``claimed_hi`` (None when no published
-    target, i.e. PanNuke).
+    The *measured* range is the min/max of the fold-mean accuracies of that
+    dataset's 26-run-matrix configs (from the fold-campaign summaries); the
+    *claimed* range is the published ``Paper Acc (%)`` from the results
+    matrix (unchanged). Returns a list of dicts with keys ``name``,
+    ``color``, ``meas_lo``, ``meas_hi``, ``claimed_lo`` / ``claimed_hi``
+    (None when no published target, i.e. PanNuke).
     """
     order = [
         ("TCGA", "TCGA-LGG", style.DATASET_COLORS["TCGA"]),
@@ -114,11 +135,16 @@ def _dataset_acc_ranges(matrix: pd.DataFrame) -> list[dict]:
         ("SIIM", "SIIM-ACR", style.DATASET_COLORS["SIIM"]),
         ("PANNUKE", "PanNuke", style.DATASET_COLORS["PANNUKE"]),
     ]
+    matrix_runs = _matrix_run_names()
     out = []
     for key, name, color in order:
-        g = matrix[matrix["Dataset"] == key]
-        meas = g["Accuracy (%)"]
-        claimed = g["Paper Acc (%)"]
+        # Measured: fold-mean accuracies of the dataset's matrix configs.
+        meas = campaign[
+            (campaign["dataset"] == key.lower())
+            & (campaign["run_name"].isin(matrix_runs))
+        ]["mean_val_acc_pct"]
+        # Claimed: published Paper Acc from the results matrix (unchanged).
+        claimed = matrix[matrix["Dataset"] == key]["Paper Acc (%)"]
         has_claimed = bool(claimed.notna().any())
         out.append({
             "name": name,
@@ -131,37 +157,39 @@ def _dataset_acc_ranges(matrix: pd.DataFrame) -> list[dict]:
     return out
 
 
-def _siim_empty_floor(matrix: pd.DataFrame) -> float:
-    """The SIIM empty-over-empty Dice floor (all four SIIM runs are all-empty,
-    so the mean of their Macro Dice is the floor)."""
-    return float(matrix[matrix["Dataset"] == "SIIM"]["Macro Dice (%)"].mean())
+def _siim_empty_floor() -> float:
+    """The SIIM empty-over-empty Dice floor.
+
+    Pooled across-folds floor, median across configs: the paper's floor
+    estimator is the pooled across-folds per-case Dice, read from the
+    ``across_folds`` stratum of ``dice_ci_summary.csv`` for the four kfold
+    SIIM configs (g1/g2 × vgg16/mobilenet_v2). Run 12's fold 4 carries a
+    residual (its across_folds 77.04), so the chip shows the
+    floor-converged median across the four configs.
+    """
+    ci = dice_ci_summary()
+    runs = [
+        "kfold_g1_siim_vgg16",
+        "kfold_g1_siim_mobilenet_v2",
+        "kfold_g2_siim_vgg16",
+        "kfold_g2_siim_mobilenet_v2",
+    ]
+    sel = ci[(ci["run_label"].isin(runs)) & (ci["stratum"] == "across_folds")]
+    return float(sel["point_estimate"].median()) * 100.0
 
 
-def _task_interference(matrix: pd.DataFrame) -> tuple[float, float]:
+def _task_interference(campaign: pd.DataFrame) -> tuple[float, float]:
     """(static 5:1 baseline acc, isolated GradNorm acc) on PANDA×VGG16.
 
-    The CSV is in run order: row 20 (idx 19) is the static 5:1 baseline
-    (Run 20) and row 18 (idx 17) is the isolated GradNorm arm (Run 18).
-    Both are disambiguated by their Run Label + feature set so the values
+    Read from the fold-campaign summaries: ``g4_panda_lambda_5_1`` is the
+    static 5:1 baseline and ``g4_panda_isolate_gn`` is the isolated
+    GradNorm arm. Both are disambiguated by their run name so the values
     cannot silently desync from the data.
     """
-    static = matrix[
-        (matrix["Run Label"] == "PANDA-vgg16-no-macenko")
-        & (matrix["Use GradNorm"] == False)  # noqa: E712
-        & (matrix["LR"] == 0.001)
-        & (matrix["Lambda Ratio (Seg:Cls)"] == "5:1")
-    ]
-    # Two rows share that label (Run 03 Group-1 baseline and Run 20 Group-4
-    # isolation); the CSV is in run order, so the *last* such row is Run 20.
-    static_acc = float(static["Accuracy (%)"].iloc[-1])
-
-    grad = matrix[
-        (matrix["Run Label"] == "PANDA-vgg16-no-macenko-alpha=1.5")
-        & (matrix["Use GradNorm"] == True)  # noqa: E712
-        & (matrix["LR"] == 0.001)
-        & (matrix["Lambda Ratio (Seg:Cls)"] == "5:1")
-    ]
-    grad_acc = float(grad["Accuracy (%)"].iloc[0])
+    static = campaign[campaign["run_name"] == "g4_panda_lambda_5_1"]
+    static_acc = float(static["mean_val_acc_pct"].iloc[0])
+    grad = campaign[campaign["run_name"] == "g4_panda_isolate_gn"]
+    grad_acc = float(grad["mean_val_acc_pct"].iloc[0])
     return static_acc, grad_acc
 
 
@@ -270,9 +298,9 @@ def _chip_task_interference(ax, static_acc: float, grad_acc: float) -> None:
     # Single-line label.
     ax.text(0.18, 0.62, "task interference (GradNorm)",
             va="center", ha="left", fontsize=_MIN_FONT, color="black")
-    # Single-line value.
+    # Single-line value (both accuracies read from the fold-campaign summaries).
     ax.text(0.18, 0.32,
-            "PANDA: 38.18% → 28.21% Acc",
+            f"PANDA: {static_acc:.2f}% → {grad_acc:.2f}% Acc",
             va="center", ha="left", fontsize=_MIN_FONT, color="black")
 
 
@@ -328,9 +356,10 @@ def _build_fig() -> tuple:
     ``ax_b1..3`` are the three nested "Why" sub-axes.
     """
     matrix = results_matrix()
-    ranges = _dataset_acc_ranges(matrix)
-    floor = _siim_empty_floor(matrix)
-    static_acc, grad_acc = _task_interference(matrix)
+    campaign = kfold_campaign()
+    ranges = _dataset_acc_ranges(matrix, campaign)
+    floor = _siim_empty_floor()
+    static_acc, grad_acc = _task_interference(campaign)
 
     w_in = _BANNER_CM[0] / _CM_PER_IN
     h_in = _BANNER_CM[1] / _CM_PER_IN
@@ -442,7 +471,8 @@ def verify() -> dict:
       * the PDF page aspect is within 5 % of 2.5:1 (2.375–2.625) and the cm
         size is within 13×5.2 to 13.4×5.4 cm;
       * the three panel titles do not overlap;
-      * the PANDA measured range printed in panel (a) matches the CSV;
+      * the PANDA measured range printed in panel (a) matches the fold-campaign
+        summaries (min/max of the PANDA configs' fold-mean accuracies);
       * every Text artist's window extent is inside the figure bbox;
       * no two Text artists in the same axes overlap (1 px tolerance).
     Returns a summary dict.
@@ -484,12 +514,19 @@ def verify() -> dict:
                 overlaps.append((i, j))
     assert not overlaps, f"panel titles overlap: {overlaps}"
 
-    # --- (3) PANDA range matches the CSV --------------------------------
-    matrix = results_matrix()
-    panda = matrix[matrix["Dataset"] == "PANDA"]["Accuracy (%)"]
+    # --- (3) PANDA range matches the fold-campaign summaries --------------
+    # The printed measured range is the min/max of the PANDA configs'
+    # fold-mean accuracies (26-run matrix only, excluding the canonical
+    # GradNorm probe), so the expected value is derived the same way.
+    campaign = kfold_campaign()
+    matrix_runs = _matrix_run_names()
+    panda = campaign[
+        (campaign["dataset"] == "panda")
+        & (campaign["run_name"].isin(matrix_runs))
+    ]["mean_val_acc_pct"]
     expected = f"{float(panda.min()):.2f}–{float(panda.max()):.2f}"
     assert panda_range == expected, (
-        f"printed PANDA range {panda_range!r} != CSV {expected!r}"
+        f"printed PANDA range {panda_range!r} != kfold {expected!r}"
     )
 
     # --- (4) all Text extents inside the figure bbox ---------------------

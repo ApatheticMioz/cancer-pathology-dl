@@ -52,6 +52,12 @@ Round-2 artifact contract (results/round2/)
     by ``main.py --summary-out`` for ``train_kfold_cv`` runs; the ``runs``
     dict carries the ``train_kfold_cv`` return: mean/std val acc/dice/loss,
     completed_folds, fold_results).
+``kfold_campaign()``
+    Every ``results/round2/kfold_*.json`` summary as a per-config table
+    (``run_name`` / ``dataset`` / ``encoder`` / ``mean_val_acc_pct`` /
+    ``mean_val_dice_pct``) — the fold-campaign ground truth the graphical
+    abstract's measured ranges, SIIM Dice floor, and task-interference
+    values are read from.
 ``dice_ci_summary()``
     The bootstrap Dice-CI table ``results/round2/dice_ci_summary.csv``
     (written by ``scripts/bootstrap_dice_ci.py``; 95% percentile bootstrap,
@@ -663,6 +669,37 @@ def kfold_summary(run_name: str, round2_dir: Path | None = None) -> dict | None:
         if isinstance(val, dict) and "mean_val_acc" in val:
             return val
     return None
+
+
+def kfold_campaign(round2_dir: Path | None = None) -> pd.DataFrame:
+    """Read every ``results/round2/kfold_*.json`` into a per-config table.
+
+    The fold campaign re-runs the 26-run matrix (plus the canonical-GradNorm
+    probe) under 5-fold CV; each summary carries the across-folds mean
+    validation accuracy / Dice. This returns one row per summary file with
+    columns ``run_name`` (the bare name, i.e. ``kfold_<run_name>.json``),
+    ``dataset`` (lowercase), ``encoder``, ``mean_val_acc_pct`` and
+    ``mean_val_dice_pct`` (percentages). Files that are absent or have no
+    usable run entry are skipped.
+
+    ``round2_dir`` overrides the ``results/round2`` root (e.g. a /tmp fixture
+    dir) for standalone verification.
+    """
+    base = round2_dir or ROUND2_DIR
+    rows = []
+    for path in sorted(base.glob("kfold_*.json")):
+        run_name = path.stem[len("kfold_"):]
+        kf = kfold_summary(run_name, base)
+        if kf is None:
+            continue
+        rows.append({
+            "run_name": run_name,
+            "dataset": str(kf.get("dataset", "")).lower(),
+            "encoder": str(kf.get("encoder", "")),
+            "mean_val_acc_pct": float(kf["mean_val_acc"]) * 100.0,
+            "mean_val_dice_pct": float(kf["mean_val_dice"]) * 100.0,
+        })
+    return pd.DataFrame(rows)
 
 
 def dice_ci_summary(round2_dir: Path | None = None) -> pd.DataFrame:
