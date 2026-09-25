@@ -12,9 +12,9 @@
 #
 # Per-run outputs (collision-safe, mirroring run_all_experiments.sh):
 #   - Log:      logs/kfold_<label>.log
-#   - Summary:  results/round2/kfold_<orig-label>.json
-#   - Checkpts: results/round2/kfold_<label>_fold<N>of5/best.pt
-#               results/round2/kfold_<label>_fold<N>of5/final.state.pt
+#   - Summary:  results/kfold_campaign/kfold_<orig-label>.json
+#   - Checkpts: results/kfold_campaign/kfold_<label>_fold<N>of5/best.pt
+#               results/kfold_campaign/kfold_<label>_fold<N>of5/final.state.pt
 #               (deterministic per-fold paths; final.state.pt is the resume
 #               state, written atomically. The old checkpoints/ckpt_kfold_*_
 #               best.pth naming is gone.)
@@ -194,7 +194,7 @@ build_cmd() {
     local padded_id
     padded_id=$(printf '%02d' $((10#${run_id})))
     local run_label="kfold_${run_name}"
-    local summary_file="results/round2/kfold_${run_name}.json"
+    local summary_file="results/kfold_campaign/kfold_${run_name}.json"
 
     # FOLD_RESUME=1 -> --resume (power-cut recovery); default -> --no-resume
     # (clean-room fresh start, the original campaign behavior).
@@ -289,7 +289,7 @@ launch_job() {
     padded_id=$(printf '%02d' $((10#${run_id})))
     local run_label="kfold_${run_name}"
     local log_file="logs/kfold_${run_name}.log"
-    local summary_file="results/round2/kfold_${run_name}.json"
+    local summary_file="results/kfold_campaign/kfold_${run_name}.json"
 
     # FOLD_RESUME=1 -> --resume (power-cut recovery); default -> --no-resume
     # (clean-room fresh start, the original campaign behavior).
@@ -298,7 +298,7 @@ launch_job() {
         resume_flag="--resume"
     fi
 
-    mkdir -p logs results/round2
+    mkdir -p logs results/kfold_campaign
 
     echo " [${run_id}] $(date '+%Y-%m-%d %H:%M:%S') - START (5-fold): ${run_name}"
     echo "        Log:      ${log_file}"
@@ -499,5 +499,5 @@ echo "============================================================"
 echo " $(date '+%Y-%m-%d %H:%M:%S') - 5-FOLD CAMPAIGN COMPLETE"
 echo "============================================================"
 echo " Logs:      logs/kfold_*.log"
-echo " Summaries: results/round2/kfold_*.json"
+echo " Summaries: results/kfold_campaign/kfold_*.json"
 echo " Checkpts:  checkpoints/ckpt_kfold_*_fold*of5_best.pth"

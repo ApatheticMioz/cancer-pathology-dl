@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""R3-1 artifact gate: standalone checker for ``results/round2/<run_label>/``.
+"""R3-1 artifact gate: standalone checker for ``results/kfold_campaign/<run_label>/``.
 
 Validates the deterministic artifact contract produced by
 ``main.py --run-label <label>`` (see src/training.py F-10 / F-23):
@@ -23,7 +23,7 @@ Validates the deterministic artifact contract produced by
                               ``--expect-resumed-from-epoch`` /
                               ``--expect-resume-branch`` equality asserts.
 
-Standalone-checkable: ``--results-dir`` overrides the ``results/round2``
+Standalone-checkable: ``--results-dir`` overrides the ``results/kfold_campaign``
 root so the checker can be pointed at a /tmp fixture directory.
 
 Exit status: 0 = all artifacts valid; 1 = FATAL (missing / corrupt /
@@ -39,7 +39,7 @@ from pathlib import Path
 import torch
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-DEFAULT_RESULTS_DIR = BASE_DIR / "results" / "round2"
+DEFAULT_RESULTS_DIR = BASE_DIR / "results" / "kfold_campaign"
 
 # ---------------------------------------------------------------------------
 # Field contracts
@@ -209,14 +209,14 @@ def check_summary(summary_path: Path,
 # ---------------------------------------------------------------------------
 def main() -> int:
     p = argparse.ArgumentParser(description="R3-1 artifact gate (standalone)")
-    p.add_argument("--run-label", required=True, help="run label under results/round2/")
+    p.add_argument("--run-label", required=True, help="run label under results/kfold_campaign/")
     p.add_argument("--summary", default=None, help="optional summary JSON to validate")
     p.add_argument("--expect-resumed-from-epoch", type=int, default=None,
                    help="assert every entry's resumed_from_epoch equals this value")
     p.add_argument("--expect-resume-branch", default=None,
                    help="assert every entry's resume_branch equals this value")
     p.add_argument("--results-dir", default=None,
-                   help="override results/round2 root (e.g. a /tmp fixture dir)")
+                   help="override results/kfold_campaign root (e.g. a /tmp fixture dir)")
     args = p.parse_args()
 
     base = Path(args.results_dir) if args.results_dir else DEFAULT_RESULTS_DIR

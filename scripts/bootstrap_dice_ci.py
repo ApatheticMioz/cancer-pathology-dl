@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Round-2 Dice confidence intervals from per-case dumps.
 
-Reads ``results/round2/<run_label>/per_slice_dice.jsonl`` records with the
+Reads ``results/kfold_campaign/<run_label>/per_slice_dice.jsonl`` records with the
 schema ``{run_label, dataset, encoder, fold, seed, case_id, dice,
 empty_pred, empty_gt, label_int}`` and computes, per run:
 
@@ -19,7 +19,7 @@ empty_pred, empty_gt, label_int}`` and computes, per run:
   * three strata per run: ``overall``, ``positive_only`` (``empty_gt=False``)
     and ``negative_only`` (``empty_gt=True``), each with its own ``n``.
 
-Output: ``<round2>/dice_ci_summary.csv`` (one row per run x stratum) plus a
+Output: ``<campaign>/dice_ci_summary.csv`` (one row per run x stratum) plus a
 stdout table.
 
 ``--fold-aware``: when a run has fold dump directories named
@@ -33,7 +33,7 @@ never blur.
 
 Usage:
     python3 scripts/bootstrap_dice_ci.py [--fold-aware]
-        [--round2-dir results/round2] [--out <csv>]
+        [--campaign-dir results/kfold_campaign] [--out <csv>]
         [--n-resamples 10000] [--seed 42]
 """
 from __future__ import annotations
@@ -47,7 +47,7 @@ import re
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_ROUND2 = PROJECT_ROOT / "results" / "round2"
+DEFAULT_CAMPAIGN = PROJECT_ROOT / "results" / "kfold_campaign"
 
 FOLD_RE = re.compile(r"^(?P<base>.+)_fold(?P<n>\d+)of(?P<k>\d+)$")
 
@@ -131,10 +131,10 @@ def batch_mean_from_summary(run_dir: Path) -> float | None:
     return None
 
 
-def discover_runs(round2_dir: Path) -> dict[str, Path]:
+def discover_runs(campaign_dir: Path) -> dict[str, Path]:
     """Map run_label -> dump dir for every dir holding a per_slice_dice.jsonl."""
     runs: dict[str, Path] = {}
-    for d in sorted(p for p in round2_dir.iterdir() if p.is_dir()):
+    for d in sorted(p for p in campaign_dir.iterdir() if p.is_dir()):
         if (d / "per_slice_dice.jsonl").is_file():
             runs[d.name] = d
     return runs
@@ -273,10 +273,10 @@ def across_folds_row(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--round2-dir", type=Path, default=DEFAULT_ROUND2,
+    parser.add_argument("--campaign-dir", type=Path, default=DEFAULT_CAMPAIGN,
                         help="directory containing <run_label>/per_slice_dice.jsonl dumps")
     parser.add_argument("--out", type=Path, default=None,
-                        help="output CSV (default: <round2-dir>/dice_ci_summary.csv)")
+                        help="output CSV (default: <campaign-dir>/dice_ci_summary.csv)")
     parser.add_argument("--fold-aware", action="store_true",
                         help="group <base>_fold<N>of5 dumps and emit per-fold rows "
                              "plus a mean +/- SD across-folds row")
@@ -284,11 +284,11 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
-    out_path = args.out or (args.round2_dir / "dice_ci_summary.csv")
+    out_path = args.out or (args.campaign_dir / "dice_ci_summary.csv")
 
-    runs = discover_runs(args.round2_dir)
+    runs = discover_runs(args.campaign_dir)
     if not runs:
-        raise SystemExit(f"no per_slice_dice.jsonl dumps found under {args.round2_dir}")
+        raise SystemExit(f"no per_slice_dice.jsonl dumps found under {args.campaign_dir}")
 
     all_rows: list[dict] = []
     for label, run_dir in runs.items():

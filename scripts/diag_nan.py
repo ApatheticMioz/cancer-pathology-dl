@@ -335,7 +335,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--run-label", default=None,
                    help="output label (default: diag_<dataset>_<encoder>)")
     p.add_argument("--out-dir", default=None,
-                   help="output dir (default: results/round2/<run-label>/diag)")
+                   help="output dir (default: results/kfold_campaign/<run-label>/diag)")
 
     amp_g = p.add_mutually_exclusive_group()
     amp_g.add_argument("--amp", dest="amp", action="store_true", default=None,
@@ -382,7 +382,7 @@ def main() -> int:
 
     run_label = args.run_label or f"diag_{args.dataset}_{args.encoder}"
     out_dir = Path(args.out_dir) if args.out_dir else (
-        BASE_DIR / "results" / "round2" / run_label / "diag")
+        BASE_DIR / "results" / "kfold_campaign" / run_label / "diag")
     out_path = out_dir / "per_batch.jsonl"
 
     logger.info("Device: %s | amp=%s compile=%s gradnorm=%s lr=%g bs=%d "

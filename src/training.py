@@ -201,8 +201,8 @@ def _build_nan_diagnosis(
 
 
 def _per_run_epoch_log_path(run_label: str) -> Path:
-    """Per-run epoch log under results/round2/<run_label>/epoch_log.jsonl."""
-    return RESULTS_DIR / "round2" / run_label / "epoch_log.jsonl"
+    """Per-run epoch log under results/kfold_campaign/<run_label>/epoch_log.jsonl."""
+    return RESULTS_DIR / "kfold_campaign" / run_label / "epoch_log.jsonl"
 
 
 def _dump_per_slice_dice(
@@ -213,12 +213,12 @@ def _dump_per_slice_dice(
     seed: int,
     per_sample_info: dict,
 ) -> Path:
-    """Write per-slice Dice records to results/round2/<run_label>/per_slice_dice.jsonl.
+    """Write per-slice Dice records to results/kfold_campaign/<run_label>/per_slice_dice.jsonl.
 
     Each record: {run_label, dataset, encoder, fold, seed, case_id, dice,
     empty_pred, empty_gt, label_int}. ``fold`` is -1 when no fold is active.
     """
-    out_path = RESULTS_DIR / "round2" / run_label / "per_slice_dice.jsonl"
+    out_path = RESULTS_DIR / "kfold_campaign" / run_label / "per_slice_dice.jsonl"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     case_ids = per_sample_info.get("case_ids") or []
     dice = per_sample_info.get("dice") or []
@@ -781,10 +781,10 @@ def _deterministic_run_paths(run_label: str) -> tuple[Path, Path]:
     No timestamps, no randomization: the same ``run_label`` always maps to the
     same two paths, so a resumed run can find and load prior artifacts.
 
-        results/round2/<run_label>/best.pt
-        results/round2/<run_label>/final.state.pt
+        results/kfold_campaign/<run_label>/best.pt
+        results/kfold_campaign/<run_label>/final.state.pt
     """
-    run_dir = RESULTS_DIR / "round2" / run_label
+    run_dir = RESULTS_DIR / "kfold_campaign" / run_label
     return run_dir / "best.pt", run_dir / "final.state.pt"
 
 
@@ -1384,7 +1384,7 @@ def train_single_run(
                 }
                 # Legacy shared epoch log (paper/figures/loaders.py depends on it).
                 append_jsonl(epoch_log_file, epoch_record)
-                # Per-run epoch log under results/round2/<run_label>/ (F-10).
+                # Per-run epoch log under results/kfold_campaign/<run_label>/ (F-10).
                 if run_label is not None:
                     append_jsonl(_per_run_epoch_log_path(run_label), epoch_record)
 

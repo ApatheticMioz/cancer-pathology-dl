@@ -178,8 +178,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=None,
         help="Run label for checkpoint naming (e.g. '01_g1_tcga_vgg16'). "
         "If omitted, auto-generated as '<dataset>_<encoder>'. "
-        "Artifacts are deterministic: results/round2/<run-label>/best.pt and "
-        "results/round2/<run-label>/final.state.pt (no timestamps; the same "
+        "Artifacts are deterministic: results/kfold_campaign/<run-label>/best.pt and "
+        "results/kfold_campaign/<run-label>/final.state.pt (no timestamps; the same "
         "run-label always maps to the same paths, enabling resume).",
     )
 
@@ -409,7 +409,7 @@ def run_reproduction(args: argparse.Namespace) -> dict:
         # is known. We only log the intent here; no stale path check.
         if args.resume:
             logger.info(
-                "[%d/%d] %s: --resume on; will load results/round2/<run_label>/final.state.pt "
+                "[%d/%d] %s: --resume on; will load results/kfold_campaign/<run_label>/final.state.pt "
                 "if present (FATAL on corrupt/mismatch), else fresh start",
                 i, len(runs), run_key,
             )

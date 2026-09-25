@@ -1,7 +1,7 @@
 """Round-2 bootstrap Dice-CI whiskers for the Dice figure panels.
 
 Self-contained (does NOT depend on the round-2 helpers in
-:mod:`paper.figures.loaders`): reads ``results/round2/dice_ci_summary.csv``
+:mod:`paper.figures.loaders`): reads ``results/kfold_campaign/dice_ci_summary.csv``
 (written by ``scripts/bootstrap_dice_ci.py``) and exposes the 95%
 percentile-bootstrap Dice-CI whisker for a run's ``overall`` stratum, in
 *percent* (the unit the Dice panels plot).
@@ -35,8 +35,8 @@ import pandas as pd
 # ---------------------------------------------------------------------------
 
 REPO_ROOT: Path = Path(__file__).resolve().parents[2]
-ROUND2_DIR: Path = REPO_ROOT / "results" / "round2"
-DICE_CI_SUMMARY_CSV: Path = ROUND2_DIR / "dice_ci_summary.csv"
+CAMPAIGN_DIR: Path = REPO_ROOT / "results" / "kfold_campaign"
+DICE_CI_SUMMARY_CSV: Path = CAMPAIGN_DIR / "dice_ci_summary.csv"
 BOOTSTRAP_SCRIPT: Path = REPO_ROOT / "scripts" / "bootstrap_dice_ci.py"
 
 #: Column order of the bootstrap Dice-CI table (scripts/bootstrap_dice_ci.py).
@@ -92,14 +92,14 @@ def bootstrap_ci(values, n_resamples: int = BOOTSTRAP_N_RESAMPLES,
 # Table loading + whisker lookup
 # ---------------------------------------------------------------------------
 
-def load_ci_table(round2_dir: Path | None = None) -> pd.DataFrame:
-    """Load ``<round2>/dice_ci_summary.csv`` with numeric CI columns.
+def load_ci_table(campaign_dir: Path | None = None) -> pd.DataFrame:
+    """Load ``<campaign>/dice_ci_summary.csv`` with numeric CI columns.
 
     Returns an empty DataFrame (with :data:`CI_COLUMNS`) when the file is
-    absent. ``round2_dir`` overrides the ``results/round2`` root (e.g. a
+    absent. ``campaign_dir`` overrides the ``results/kfold_campaign`` root (e.g. a
     /tmp fixture dir) for standalone verification.
     """
-    base = round2_dir or ROUND2_DIR
+    base = campaign_dir or CAMPAIGN_DIR
     path = base / "dice_ci_summary.csv"
     if not path.is_file():
         return pd.DataFrame(columns=CI_COLUMNS)
@@ -127,13 +127,13 @@ def _candidate_labels(run_num: int) -> list[str]:
     return [f"{run_num:02d}_{name}", name, f"kfold_{name}"]
 
 
-def whiskers_for_label(run_label: str, round2_dir: Path | None = None) -> tuple[float, float]:
+def whiskers_for_label(run_label: str, campaign_dir: Path | None = None) -> tuple[float, float]:
     """95% bootstrap Dice-CI whisker ``(lo, hi)`` in *percent* for a run.
 
     Sourced from the ``overall`` stratum row of the CI table. Returns
     ``(nan, nan)`` when the run has no overall row.
     """
-    df = load_ci_table(round2_dir)
+    df = load_ci_table(campaign_dir)
     if df.empty:
         return (float("nan"), float("nan"))
     sel = df[(df["run_label"] == run_label) & (df["stratum"] == "overall")]
@@ -143,13 +143,13 @@ def whiskers_for_label(run_label: str, round2_dir: Path | None = None) -> tuple[
     return (float(r["ci_low"]) * 100.0, float(r["ci_high"]) * 100.0)
 
 
-def whiskers_for_run(run_num: int, round2_dir: Path | None = None) -> tuple[float, float]:
+def whiskers_for_run(run_num: int, campaign_dir: Path | None = None) -> tuple[float, float]:
     """95% bootstrap Dice-CI whisker (percent) for a 1-based matrix run number.
 
     Tries the padded / bare / kfold label forms (see :func:`_candidate_labels`).
     Returns ``(nan, nan)`` when none of them has an overall row.
     """
-    df = load_ci_table(round2_dir)
+    df = load_ci_table(campaign_dir)
     if df.empty:
         return (float("nan"), float("nan"))
     for label in _candidate_labels(run_num):
@@ -164,10 +164,10 @@ def whiskers_for_run(run_num: int, round2_dir: Path | None = None) -> tuple[floa
 # Unit check of the CI-whisker math
 # ---------------------------------------------------------------------------
 
-def verify_ci_math(round2_dir: Path | None = None, tol: float = 1e-5) -> dict:
+def verify_ci_math(campaign_dir: Path | None = None, tol: float = 1e-5) -> dict:
     """Unit-check the CI-whisker math against the ground-truth algorithm.
 
-    For every run dir under ``round2_dir`` that has a
+    For every run dir under ``campaign_dir`` that has a
     ``per_slice_dice.jsonl``, recompute the 95% percentile-bootstrap CI of
     the per-case Dice mean using the *exact* ground-truth algorithm from
     ``scripts/bootstrap_dice_ci.py`` and assert it matches the ``ci_low`` /
@@ -179,7 +179,7 @@ def verify_ci_math(round2_dir: Path | None = None, tol: float = 1e-5) -> dict:
     csv_lo, csv_hi, match}}``. Raises ``AssertionError`` if any run's
     recomputed CI disagrees with the CSV beyond ``tol``.
     """
-    base = round2_dir or ROUND2_DIR
+    base = campaign_dir or CAMPAIGN_DIR
     bmod = _load_bootstrap_module()
     table = load_ci_table(base)
     out: dict[str, dict] = {}

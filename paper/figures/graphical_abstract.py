@@ -26,7 +26,7 @@ Three-panel left→right story (minimal text, standalone, no captions):
 Data contract (I4 — no hard-coded result values)
 ------------------------------------------------
 Every number is read from the fold-campaign ground truth
-(``results/round2/kfold_*.json``) via
+(``results/kfold_campaign/kfold_*.json``) via
 :func:`paper.figures.loaders.kfold_campaign`, with the published *claimed*
 ranges still read from the results matrix
 (:func:`paper.figures.loaders.results_matrix`,

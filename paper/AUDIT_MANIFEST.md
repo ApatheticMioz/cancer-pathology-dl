@@ -9,8 +9,8 @@ before each merge to `main` and before the submission tag.
 ## Invariants (carried from REVISION_MASTER_PLAN.md)
 
 - (I1) Every number in tex/figures/captions traceable to a repo artifact (CSV/JSON/log). Automated diff gate.
-- (I2) Both Accuracy CIs and per-case Dice bootstrap CIs exist in results/round2/dice_ci_summary.csv from 135-fold per_slice_dice.jsonl dumps.
-- (I3) 5-fold cross-validation framing (135 fold-cells) across all 27 configurations; fold_sd and fold ranges reported throughout.
+- (I2) Both Accuracy CIs (fold-level bootstrap) and per-case Dice bootstrap CIs exist in results/kfold_campaign/dice_ci_summary.csv from the campaign's per_slice_dice.jsonl dumps.
+- (I3) 5-fold cross-validation framing (135 fold-cells) across all 27 configurations; per-fold variance lives in the kfold JSONs (std_val_acc/std_val_dice, fold_results); the paper reports fold-level bootstrap CIs and per-fold ranges where load-bearing.
 - (I4) Figures: zero hardcoded result values; all read from CSV/JSON at build time.
 - (I5) Humanization removes filler/drama only; scientific claims byte-stable.
 
@@ -18,8 +18,8 @@ before each merge to `main` and before the submission tag.
 
 | ID | Phase | Finding | Status |
 |---|---|---|---|
-| F-1 | plan | Dice CIs unavailable (no per-slice Dice stored anywhere). | RESOLVED: 27-configuration × 5-fold campaign (135 folds) logged per_slice_dice.jsonl across all folds; 95% bootstrap Dice CIs computed and tabulated in results/round2/dice_ci_summary.csv. |
-| F-2 | plan | No multi-seed / per-fold variance data (seed=42, k_folds=None everywhere). | RESOLVED: 5-fold group-aware cross-validation (k_folds=5) executed across all 27 configurations (135 fold-cells); fold_sd (ddof=1) and fold ranges tabulated in Table 1 and dice_ci_summary.csv. |
+| F-1 | plan | Dice CIs unavailable (no per-slice Dice stored anywhere). | RESOLVED: 27-configuration × 5-fold campaign (135 folds) logged per_slice_dice.jsonl across all folds; 95% bootstrap Dice CIs computed and tabulated in results/kfold_campaign/dice_ci_summary.csv. |
+| F-2 | plan | No multi-seed / per-fold variance data (seed=42, k_folds=None everywhere). | RESOLVED: 5-fold group-aware cross-validation (k_folds=5) executed across all 27 configurations (135 fold-cells); per-fold std_val_acc/std_val_dice and fold_results logged in the kfold JSONs; fold-level bootstrap acc CIs and across-folds Dice CIs tabulated in dice_ci_summary.csv and reported in the paper. |
 | F-3 | plan | `paper/generate_figures.py` hardcodes result values (PANDA 34.70→40.21, PanNuke 96.68→99.36, floor points). | RESOLVED: bcb5f0a (figures ported onto `paper/figures/` style/loaders package; all values read CSV/JSON at build time, zero hardcoded results; collision fixes verified 4f1d7e1) |
 | F-4 | plan | Venue port: llncs→elsarticle; splncs04→num-style bib; build-script 10-page gate obsolete. | RESOLVED: e19b372 (14pp, body byte-stable, 0 llncs-isms; *.spl gitignore housekeeping deferred) |
 | F-5 | plan | Text: L249 (288w, 6 uniform sentences), L238 (93w opener), L252 (3×43-47-68w) — rhythm uniformity; graphics to absorb. | RESOLVED: 9a36f75 + e3942c2 + b62c1b4 (evidence absorbed into Figures 4/5/6) and dee7780 (numeric prose deleted from text, carried by captions); remaining prose rhythm rewritten ae25901 |

@@ -26,7 +26,7 @@ CHECKPOINT_DIR = BASE_DIR / "checkpoints"
 LOGS_DIR = BASE_DIR / "logs"
 PAPER_DIR = BASE_DIR / "paper"
 RESULTS_DIR = BASE_DIR / "results"
-ROUND2_DIR = RESULTS_DIR / "round2"
+CAMPAIGN_DIR = RESULTS_DIR / "kfold_campaign"
 CSV_OUTPUT = PAPER_DIR / "paper_results_matrix.csv"
 LATEX_OUTPUT = PAPER_DIR / "paper_results_latex_table.txt"
 # New CI-augmented matrix (kfold mean±SD + Wilson Acc CIs + bootstrap Dice CIs).
@@ -434,23 +434,23 @@ def _wilson_mod():
     return _WILSON_MOD
 
 
-def _resolve_round2_dir() -> Path:
-    """Round-2 results dir, overridable via AGG_ROUND2_DIR (for /tmp fixtures)."""
+def _resolve_campaign_dir() -> Path:
+    """Round-2 results dir, overridable via AGG_CAMPAIGN_DIR (for /tmp fixtures)."""
     import os
-    env = os.environ.get("AGG_ROUND2_DIR")
+    env = os.environ.get("AGG_CAMPAIGN_DIR")
     if env:
         return Path(env)
-    return ROUND2_DIR
+    return CAMPAIGN_DIR
 
 
-def discover_kfold_summaries(round2_dir: Path | None = None) -> dict[str, Path]:
-    """Map kfold run_name -> summary path for <round2>/kfold_<run_name>.json.
+def discover_kfold_summaries(campaign_dir: Path | None = None) -> dict[str, Path]:
+    """Map kfold run_name -> summary path for <campaign>/kfold_<run_name>.json.
 
     run_folds.sh writes one consolidated summary per 5-fold run to
-    ``results/round2/kfold_<orig-label>.json`` (orig-label = the run name from
+    ``results/kfold_campaign/kfold_<orig-label>.json`` (orig-label = the run name from
     the 26-run matrix, e.g. ``g1_tcga_vgg16``).
     """
-    base = round2_dir or ROUND2_DIR
+    base = campaign_dir or CAMPAIGN_DIR
     out: dict[str, Path] = {}
     if not base.is_dir():
         return out
@@ -499,14 +499,14 @@ def parse_kfold_summary(path: Path) -> dict | None:
     }
 
 
-def _read_splitter_branch(base_label: str, round2_dir: Path | None = None) -> str:
+def _read_splitter_branch(base_label: str, campaign_dir: Path | None = None) -> str:
     """Read ``splitter_branch`` from the first epoch-log record of a run's dumps.
 
-    The branch is recorded per epoch in ``<round2>/<run_label>/epoch_log.jsonl``
+    The branch is recorded per epoch in ``<campaign>/<run_label>/epoch_log.jsonl``
     (see src/training.py::train_single_run).  For kfold runs the per-fold dumps
     live under ``<base>_fold<N>of<K>/``.
     """
-    base = round2_dir or ROUND2_DIR
+    base = campaign_dir or CAMPAIGN_DIR
     if not base.is_dir():
         return ""
     candidates: list[Path] = []
@@ -534,12 +534,12 @@ def _read_splitter_branch(base_label: str, round2_dir: Path | None = None) -> st
     return ""
 
 
-def _find_dump_dirs(*base_labels: str, round2_dir: Path | None = None) -> list[Path]:
+def _find_dump_dirs(*base_labels: str, campaign_dir: Path | None = None) -> list[Path]:
     """Find per_slice_dice.jsonl dump dirs for any of the candidate base labels.
 
     Matches the base dir itself plus ``<base>_fold<N>of<K>`` fold dirs.
     """
-    base = round2_dir or ROUND2_DIR
+    base = campaign_dir or CAMPAIGN_DIR
     if not base.is_dir():
         return []
     dirs: list[Path] = []
@@ -553,14 +553,14 @@ def _find_dump_dirs(*base_labels: str, round2_dir: Path | None = None) -> list[P
     return dirs
 
 
-def compute_dice_ci(*base_labels: str, round2_dir: Path | None = None) -> dict:
+def compute_dice_ci(*base_labels: str, campaign_dir: Path | None = None) -> dict:
     """Pool per-case dice across a run's dump dirs; bootstrap CI per stratum.
 
     Returns ``{stratum: {point, lo, hi, n}}`` for overall / positive_only /
     negative_only.  Dice CIs are strictly percentile-bootstrap (never Wilson).
     """
     bmod = _bootstrap_mod()
-    dump_dirs = _find_dump_dirs(*base_labels, round2_dir=round2_dir)
+    dump_dirs = _find_dump_dirs(*base_labels, campaign_dir=campaign_dir)
     if not dump_dirs:
         return {}
     records: list[dict] = []
@@ -592,7 +592,7 @@ def compute_wilson_ci(acc_frac: float, n: int) -> tuple[float, float]:
 def augment_records_with_ci(
     records: list[dict],
     kfold_map: dict[str, dict],
-    round2_dir: Path | None = None,
+    campaign_dir: Path | None = None,
 ) -> list[dict]:
     """Attach kfold mean±SD, Wilson Acc CIs, bootstrap Dice CIs, splitter branch.
 
@@ -631,7 +631,7 @@ def augment_records_with_ci(
             rec["Acc 95% CI Lower"] = round(100.0 * lo, 2)
             rec["Acc 95% CI Upper"] = round(100.0 * hi, 2)
             rec["Acc 95% CI"] = f"[{100.0 * lo:.2f} - {100.0 * hi:.2f}]"
-            rec["Splitter Branch"] = _read_splitter_branch(f"kfold_{run_name}", round2_dir)
+            rec["Splitter Branch"] = _read_splitter_branch(f"kfold_{run_name}", campaign_dir)
         else:
             # Single-split: Wilson Acc CI from the point-estimate accuracy.
             acc_pct = rec.get("Accuracy (%)")
@@ -641,10 +641,10 @@ def augment_records_with_ci(
                 rec["Acc 95% CI Lower"] = round(100.0 * lo, 2)
                 rec["Acc 95% CI Upper"] = round(100.0 * hi, 2)
                 rec["Acc 95% CI"] = f"[{100.0 * lo:.2f} - {100.0 * hi:.2f}]"
-            rec["Splitter Branch"] = _read_splitter_branch(run_name, round2_dir)
+            rec["Splitter Branch"] = _read_splitter_branch(run_name, campaign_dir)
 
         # Bootstrap Dice CIs (strictly separate from the Wilson Acc CIs above).
-        dice = compute_dice_ci(f"kfold_{run_name}", run_name, round2_dir=round2_dir)
+        dice = compute_dice_ci(f"kfold_{run_name}", run_name, campaign_dir=campaign_dir)
         if dice:
             ov = dice.get("overall")
             if ov:
@@ -920,8 +920,8 @@ def main() -> int:
     print(f"  PHASE 5: CI augmentation (kfold CV + Wilson Acc + bootstrap Dice)")
     print(f"{'=' * 60}")
 
-    round2_dir = _resolve_round2_dir()
-    kfold_paths = discover_kfold_summaries(round2_dir)
+    campaign_dir = _resolve_campaign_dir()
+    kfold_paths = discover_kfold_summaries(campaign_dir)
     kfold_map: dict[str, dict] = {}
     for run_name, p in kfold_paths.items():
         parsed = parse_kfold_summary(p)
@@ -934,7 +934,7 @@ def main() -> int:
     if not kfold_map:
         print("  [INFO] No kfold summaries found; Wilson Acc CIs from single-split point estimates.")
 
-    augmented = augment_records_with_ci(unique_records, kfold_map, round2_dir=round2_dir)
+    augmented = augment_records_with_ci(unique_records, kfold_map, campaign_dir=campaign_dir)
     export_csv_with_ci(augmented, CSV_WITH_CI_OUTPUT)
 
     print("\n" + "=" * 60)

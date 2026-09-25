@@ -55,8 +55,8 @@ smoke_test.log
 # Audit and runtime JSON
 # ============================================================
 *.jsonl
-!results/round2/canonical_gradnorm_probe/probe_log.jsonl
-!results/round2/dice_ci_summary.csv
+!results/kfold_campaign/canonical_gradnorm_probe/probe_log.jsonl
+!results/kfold_campaign/dice_ci_summary.csv
 dataset_audit.json
 reproduction_summary.json
 optimized_summary.json
@@ -209,8 +209,8 @@ GEMINI.md
 # patterns above.
 # ============================================================
 !results/
-!results/round2/
-!results/round2/*/
-!results/round2/*.jsonl
-!results/round2/*/epoch_log.jsonl
-!results/round2/*/per_slice_dice.jsonl
+!results/kfold_campaign/
+!results/kfold_campaign/*/
+!results/kfold_campaign/*.jsonl
+!results/kfold_campaign/*/epoch_log.jsonl
+!results/kfold_campaign/*/per_slice_dice.jsonl

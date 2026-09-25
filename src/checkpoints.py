@@ -39,7 +39,7 @@ def save_training_state(
     """Save full training state for resuming.
 
     ``state_path`` is the explicit, deterministic state-file path (F-23:
-    ``results/round2/<run_label>/final.state.pt``) — no longer derived from
+    ``results/kfold_campaign/<run_label>/final.state.pt``) — no longer derived from
     the checkpoint name, so the state file is always found on resume.
 
     ``fingerprint`` is a config/dataset identity dict (dataset, encoder,

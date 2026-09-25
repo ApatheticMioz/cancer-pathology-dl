@@ -34,45 +34,45 @@ Loaders
     ``logs/canonical_gradnorm_run18.log``: per-epoch train/val accuracy,
     validation CI bounds, validation Dice, and the adaptive seg/cls weights.
 
-Round-2 artifact contract (results/round2/)
+Round-2 artifact contract (results/kfold_campaign/)
 -------------------------------------------
 ``per_run_epoch_log(run_label)``
-    The per-run epoch log ``results/round2/<run_label>/epoch_log.jsonl``
+    The per-run epoch log ``results/kfold_campaign/<run_label>/epoch_log.jsonl``
     (written by ``src/training.py::train_single_run``; F-10). Records carry
     ``run_label / fold / seed / splitter_branch / epoch / tr_loss / tr_acc /
     tr_dice / vl_loss / vl_acc / vl_dice / best_vl_loss / best_vl_acc /
     best_vl_dice / epoch_sec / is_best / smoke_test``. This is the round-2
     replacement for the legacy shared ``checkpoints/epoch_log.jsonl``.
 ``per_slice_dice(run_label)``
-    The per-slice Dice dump ``results/round2/<run_label>/per_slice_dice.jsonl``
+    The per-slice Dice dump ``results/kfold_campaign/<run_label>/per_slice_dice.jsonl``
     (10-field contract: run_label, dataset, encoder, fold, seed, case_id,
     dice, empty_pred, empty_gt, label_int).
 ``kfold_summary(run_name)``
-    The k-fold CV summary ``results/round2/kfold_<run_name>.json`` (written
+    The k-fold CV summary ``results/kfold_campaign/kfold_<run_name>.json`` (written
     by ``main.py --summary-out`` for ``train_kfold_cv`` runs; the ``runs``
     dict carries the ``train_kfold_cv`` return: mean/std val acc/dice/loss,
     completed_folds, fold_results).
 ``kfold_campaign()``
-    Every ``results/round2/kfold_*.json`` summary as a per-config table
+    Every ``results/kfold_campaign/kfold_*.json`` summary as a per-config table
     (``run_name`` / ``dataset`` / ``encoder`` / ``mean_val_acc_pct`` /
     ``mean_val_dice_pct``) — the fold-campaign ground truth the graphical
     abstract's measured ranges, SIIM Dice floor, and task-interference
     values are read from.
 ``dice_ci_summary()``
-    The bootstrap Dice-CI table ``results/round2/dice_ci_summary.csv``
+    The bootstrap Dice-CI table ``results/kfold_campaign/dice_ci_summary.csv``
     (written by ``scripts/bootstrap_dice_ci.py``; 95% percentile bootstrap,
     seed 42, 10,000 resamples). One row per run x stratum (overall /
     positive_only / negative_only / across_folds).
 ``canonical_gradnorm_probe()``
     The NEW seeded canonical GradNorm probe log
-    ``results/round2/canonical_gradnorm_probe/probe_log.jsonl`` (seed 42,
+    ``results/kfold_campaign/canonical_gradnorm_probe/probe_log.jsonl`` (seed 42,
     deterministic): per-epoch ``epoch / loss / train_acc / val_acc /
     val_acc_ci_lo / val_acc_ci_hi / val_dice / seg_weight / cls_weight``.
     :func:`canonical_gradnorm` prefers this JSONL and falls back to the
     legacy text log when the JSONL is absent.
 ``deterministic_best_ckpt(run_label)``
     The deterministic best-checkpoint path
-    ``results/round2/<run_label>/best.pt`` (F-23 layout; the same
+    ``results/kfold_campaign/<run_label>/best.pt`` (F-23 layout; the same
     ``run_label`` always maps to the same path).
 ``run_name_for_run_num(run_num)``
     The 26-run-matrix run name (e.g. ``g1_panda_vgg16``) for a 1-based CSV
@@ -120,18 +120,18 @@ LOGS_DIR = REPO_ROOT / "logs"
 CANONICAL_GRADNORM_LOG = REPO_ROOT / "logs" / "canonical_gradnorm_run18.log"
 
 # ---------------------------------------------------------------------------
-# Round-2 artifact contract (results/round2/)
+# Round-2 artifact contract (results/kfold_campaign/)
 # ---------------------------------------------------------------------------
 
 #: Round-2 results root: per-run dirs ``<run_label>/`` plus kfold summaries
 #: and the bootstrap Dice-CI table.
-ROUND2_DIR: Path = REPO_ROOT / "results" / "round2"
+CAMPAIGN_DIR: Path = REPO_ROOT / "results" / "kfold_campaign"
 
 #: Bootstrap Dice-CI table (scripts/bootstrap_dice_ci.py output).
-DICE_CI_SUMMARY_CSV: Path = ROUND2_DIR / "dice_ci_summary.csv"
+DICE_CI_SUMMARY_CSV: Path = CAMPAIGN_DIR / "dice_ci_summary.csv"
 
 #: New seeded canonical GradNorm probe log (seed 42, deterministic).
-CANONICAL_PROBE_DIR: Path = ROUND2_DIR / "canonical_gradnorm_probe"
+CANONICAL_PROBE_DIR: Path = CAMPAIGN_DIR / "canonical_gradnorm_probe"
 CANONICAL_PROBE_LOG: Path = CANONICAL_PROBE_DIR / "probe_log.jsonl"
 
 #: Tolerance (in percentage points) for the epoch-log vs CSV assertion.
@@ -526,7 +526,7 @@ _CANON_COLUMNS = [
 def canonical_gradnorm_probe() -> pd.DataFrame:
     """Parse the NEW seeded canonical GradNorm probe log (round-2 contract).
 
-    Source: ``results/round2/canonical_gradnorm_probe/probe_log.jsonl`` — one
+    Source: ``results/kfold_campaign/canonical_gradnorm_probe/probe_log.jsonl`` — one
     JSON object per epoch with fields ``epoch / loss / train_acc / val_acc /
     val_acc_ci_lo / val_acc_ci_hi / val_dice / seg_weight / cls_weight``
     (seed 42, deterministic). Returns an **empty** DataFrame (with the
@@ -593,11 +593,11 @@ def canonical_gradnorm() -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
-# (e) Round-2 per-run artifacts (results/round2/)
+# (e) Round-2 per-run artifacts (results/kfold_campaign/)
 # ---------------------------------------------------------------------------
 
-def per_run_epoch_log(run_label: str, round2_dir: Path | None = None) -> pd.DataFrame:
-    """Load ``results/round2/<run_label>/epoch_log.jsonl`` (F-10 per-run log).
+def per_run_epoch_log(run_label: str, campaign_dir: Path | None = None) -> pd.DataFrame:
+    """Load ``results/kfold_campaign/<run_label>/epoch_log.jsonl`` (F-10 per-run log).
 
     Returns a :class:`pandas.DataFrame` with the record fields (``epoch``,
     ``tr_loss``, ``tr_acc``, ``tr_dice``, ``vl_loss``, ``vl_acc``,
@@ -605,10 +605,10 @@ def per_run_epoch_log(run_label: str, round2_dir: Path | None = None) -> pd.Data
     ``run_label``, ``fold``, ``seed``, ``splitter_branch``, ...) sorted by
     ``epoch``. Returns an **empty** DataFrame when the file is absent.
 
-    ``round2_dir`` overrides the ``results/round2`` root (e.g. a /tmp fixture
+    ``campaign_dir`` overrides the ``results/kfold_campaign`` root (e.g. a /tmp fixture
     dir) for standalone verification.
     """
-    base = round2_dir or ROUND2_DIR
+    base = campaign_dir or CAMPAIGN_DIR
     path = base / run_label / "epoch_log.jsonl"
     if not path.exists():
         return pd.DataFrame()
@@ -619,17 +619,17 @@ def per_run_epoch_log(run_label: str, round2_dir: Path | None = None) -> pd.Data
     return pd.DataFrame(records).sort_values("epoch").reset_index(drop=True)
 
 
-def per_slice_dice(run_label: str, round2_dir: Path | None = None) -> pd.DataFrame:
-    """Load ``results/round2/<run_label>/per_slice_dice.jsonl`` (10-field contract).
+def per_slice_dice(run_label: str, campaign_dir: Path | None = None) -> pd.DataFrame:
+    """Load ``results/kfold_campaign/<run_label>/per_slice_dice.jsonl`` (10-field contract).
 
     Fields: ``run_label, dataset, encoder, fold, seed, case_id, dice,
     empty_pred, empty_gt, label_int``. Returns an **empty** DataFrame when
     the file is absent.
 
-    ``round2_dir`` overrides the ``results/round2`` root (e.g. a /tmp fixture
+    ``campaign_dir`` overrides the ``results/kfold_campaign`` root (e.g. a /tmp fixture
     dir) for standalone verification.
     """
-    base = round2_dir or ROUND2_DIR
+    base = campaign_dir or CAMPAIGN_DIR
     path = base / run_label / "per_slice_dice.jsonl"
     if not path.exists():
         return pd.DataFrame()
@@ -640,8 +640,8 @@ def per_slice_dice(run_label: str, round2_dir: Path | None = None) -> pd.DataFra
     return pd.DataFrame(records)
 
 
-def kfold_summary(run_name: str, round2_dir: Path | None = None) -> dict | None:
-    """Load ``results/round2/kfold_<run_name>.json`` (k-fold CV summary).
+def kfold_summary(run_name: str, campaign_dir: Path | None = None) -> dict | None:
+    """Load ``results/kfold_campaign/kfold_<run_name>.json`` (k-fold CV summary).
 
     The file is written by ``main.py --summary-out`` for
     ``train_kfold_cv`` runs; its ``runs`` dict carries the
@@ -651,10 +651,10 @@ def kfold_summary(run_name: str, round2_dir: Path | None = None) -> dict | None:
     run entry dict, or ``None`` when the file is absent or has no usable
     run entry.
 
-    ``round2_dir`` overrides the ``results/round2`` root (e.g. a /tmp fixture
+    ``campaign_dir`` overrides the ``results/kfold_campaign`` root (e.g. a /tmp fixture
     dir) for standalone verification.
     """
-    base = round2_dir or ROUND2_DIR
+    base = campaign_dir or CAMPAIGN_DIR
     path = base / f"kfold_{run_name}.json"
     if not path.exists():
         return None
@@ -671,8 +671,8 @@ def kfold_summary(run_name: str, round2_dir: Path | None = None) -> dict | None:
     return None
 
 
-def kfold_campaign(round2_dir: Path | None = None) -> pd.DataFrame:
-    """Read every ``results/round2/kfold_*.json`` into a per-config table.
+def kfold_campaign(campaign_dir: Path | None = None) -> pd.DataFrame:
+    """Read every ``results/kfold_campaign/kfold_*.json`` into a per-config table.
 
     The fold campaign re-runs the 26-run matrix (plus the canonical-GradNorm
     probe) under 5-fold CV; each summary carries the across-folds mean
@@ -682,10 +682,10 @@ def kfold_campaign(round2_dir: Path | None = None) -> pd.DataFrame:
     ``mean_val_dice_pct`` (percentages). Files that are absent or have no
     usable run entry are skipped.
 
-    ``round2_dir`` overrides the ``results/round2`` root (e.g. a /tmp fixture
+    ``campaign_dir`` overrides the ``results/kfold_campaign`` root (e.g. a /tmp fixture
     dir) for standalone verification.
     """
-    base = round2_dir or ROUND2_DIR
+    base = campaign_dir or CAMPAIGN_DIR
     rows = []
     for path in sorted(base.glob("kfold_*.json")):
         run_name = path.stem[len("kfold_"):]
@@ -702,8 +702,8 @@ def kfold_campaign(round2_dir: Path | None = None) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def dice_ci_summary(round2_dir: Path | None = None) -> pd.DataFrame:
-    """Load ``results/round2/dice_ci_summary.csv`` (bootstrap Dice CIs).
+def dice_ci_summary(campaign_dir: Path | None = None) -> pd.DataFrame:
+    """Load ``results/kfold_campaign/dice_ci_summary.csv`` (bootstrap Dice CIs).
 
     Written by ``scripts/bootstrap_dice_ci.py``: one row per run x stratum
     (``overall`` / ``positive_only`` / ``negative_only`` / ``across_folds``)
@@ -711,10 +711,10 @@ def dice_ci_summary(round2_dir: Path | None = None) -> pd.DataFrame:
     fractions in [0, 1] (95% percentile bootstrap, seed 42). Returns an
     **empty** DataFrame when the file is absent.
 
-    ``round2_dir`` overrides the ``results/round2`` root (e.g. a /tmp fixture
+    ``campaign_dir`` overrides the ``results/kfold_campaign`` root (e.g. a /tmp fixture
     dir) for standalone verification.
     """
-    base = round2_dir or ROUND2_DIR
+    base = campaign_dir or CAMPAIGN_DIR
     csv_path = base / "dice_ci_summary.csv"
     if not csv_path.exists():
         return pd.DataFrame()
@@ -725,17 +725,17 @@ def dice_ci_summary(round2_dir: Path | None = None) -> pd.DataFrame:
     return df
 
 
-def deterministic_best_ckpt(run_label: str, round2_dir: Path | None = None) -> Path:
-    """Deterministic best-checkpoint path ``results/round2/<run_label>/best.pt``.
+def deterministic_best_ckpt(run_label: str, campaign_dir: Path | None = None) -> Path:
+    """Deterministic best-checkpoint path ``results/kfold_campaign/<run_label>/best.pt``.
 
     F-23 layout: the same ``run_label`` always maps to the same path (no
     timestamps, no randomization). The path is returned whether or not the
     file exists yet; callers check ``.exists()`` before loading.
 
-    ``round2_dir`` overrides the ``results/round2`` root (e.g. a /tmp fixture
+    ``campaign_dir`` overrides the ``results/kfold_campaign`` root (e.g. a /tmp fixture
     dir) for standalone verification.
     """
-    base = round2_dir or ROUND2_DIR
+    base = campaign_dir or CAMPAIGN_DIR
     return base / run_label / "best.pt"
 
 
@@ -755,7 +755,7 @@ def run_label_for_run_num(run_num: int) -> str:
     Mirrors ``run_all_experiments.sh``: ``run_label = <padded_id>_<run_name>``
     where ``padded_id`` is the zero-padded 2-digit run number and
     ``run_name`` is the matrix run name. This is the directory name under
-    ``results/round2/`` that holds the per-run ``epoch_log.jsonl`` /
+    ``results/kfold_campaign/`` that holds the per-run ``epoch_log.jsonl`` /
     ``per_slice_dice.jsonl`` / ``best.pt`` / ``final.state.pt``.
     """
     return f"{run_num:02d}_{run_name_for_run_num(run_num)}"
@@ -763,7 +763,7 @@ def run_label_for_run_num(run_num: int) -> str:
 
 def round2_run_trajectory(run_num: int) -> pd.DataFrame:
     """Per-epoch validation trajectory for one run from the round-2 per-run
-    epoch log ``results/round2/<run_label>/epoch_log.jsonl`` (F-10).
+    epoch log ``results/kfold_campaign/<run_label>/epoch_log.jsonl`` (F-10).
 
     This is the round-2 replacement for :func:`run_trajectory` (which slices
     the legacy shared ``checkpoints/epoch_log.jsonl`` by log-window). It reads
@@ -799,7 +799,7 @@ def round2_run_trajectory(run_num: int) -> pd.DataFrame:
 _Z95 = 1.96
 
 
-def kfold_across_folds(run_name: str, round2_dir: Path | None = None) -> dict | None:
+def kfold_across_folds(run_name: str, campaign_dir: Path | None = None) -> dict | None:
     """The ``across_folds`` row of ``dice_ci_summary.csv`` for one k-fold run.
 
     ``run_name`` is the bare run name (e.g. ``g1_tcga_vgg16``); the CSV
@@ -810,7 +810,7 @@ def kfold_across_folds(run_name: str, round2_dir: Path | None = None) -> dict | 
     ``ci_low`` / ``ci_high`` are the 95% bootstrap CI bounds; ``fold_sd`` is
     the standard deviation of the per-fold Dice.
     """
-    ci = dice_ci_summary(round2_dir)
+    ci = dice_ci_summary(campaign_dir)
     if ci.empty:
         return None
     label = f"kfold_{run_name}"
@@ -826,7 +826,7 @@ def kfold_across_folds(run_name: str, round2_dir: Path | None = None) -> dict | 
     }
 
 
-def kfold_acc_stats(run_name: str, round2_dir: Path | None = None) -> dict | None:
+def kfold_acc_stats(run_name: str, campaign_dir: Path | None = None) -> dict | None:
     """The k-fold CV accuracy point estimate + fold SD for one run.
 
     Reads ``kfold_<run_name>.json`` (``mean_val_acc`` / ``std_val_acc``) and
@@ -835,7 +835,7 @@ def kfold_acc_stats(run_name: str, round2_dir: Path | None = None) -> dict | Non
     validation accuracy (the point estimate the fold campaign reports);
     ``sd`` is the across-folds standard deviation.
     """
-    kf = kfold_summary(run_name, round2_dir)
+    kf = kfold_summary(run_name, campaign_dir)
     if kf is None:
         return None
     if "mean_val_acc" not in kf or "std_val_acc" not in kf:
@@ -846,7 +846,7 @@ def kfold_acc_stats(run_name: str, round2_dir: Path | None = None) -> dict | Non
     }
 
 
-def kfold_acc_ci(run_name: str, round2_dir: Path | None = None) -> tuple[float, float, float] | None:
+def kfold_acc_ci(run_name: str, campaign_dir: Path | None = None) -> tuple[float, float, float] | None:
     """95% across-folds CI for the k-fold CV accuracy (percent).
 
     The fold campaign reports the per-fold validation accuracies
@@ -859,7 +859,7 @@ def kfold_acc_ci(run_name: str, round2_dir: Path | None = None) -> tuple[float, 
     Returns ``(point, lo, hi)`` in percent, or ``None`` when the run has no
     k-fold summary with at least two per-fold accuracies.
     """
-    kf = kfold_summary(run_name, round2_dir)
+    kf = kfold_summary(run_name, campaign_dir)
     if kf is None:
         return None
     fold_results = kf.get("fold_results")
@@ -880,13 +880,13 @@ def kfold_acc_ci(run_name: str, round2_dir: Path | None = None) -> tuple[float, 
     return (mean, float(lo), float(hi))
 
 
-def kfold_dice_ci(run_name: str, round2_dir: Path | None = None) -> tuple[float, float, float] | None:
+def kfold_dice_ci(run_name: str, campaign_dir: Path | None = None) -> tuple[float, float, float] | None:
     """95% bootstrap across-folds CI for the k-fold CV Dice (percent).
 
     Reads the ``across_folds`` row of ``dice_ci_summary.csv`` and returns
     ``(point, lo, hi)`` in percent, or ``None`` when the run is not covered.
     """
-    row = kfold_across_folds(run_name, round2_dir)
+    row = kfold_across_folds(run_name, campaign_dir)
     if row is None:
         return None
     return (row["point_estimate"] * 100.0,
@@ -894,7 +894,7 @@ def kfold_dice_ci(run_name: str, round2_dir: Path | None = None) -> tuple[float,
             row["ci_high"] * 100.0)
 
 
-def kfold_run_stats(run_num: int, round2_dir: Path | None = None) -> dict | None:
+def kfold_run_stats(run_num: int, campaign_dir: Path | None = None) -> dict | None:
     """Fold-campaign statistics for one results-matrix row (1-based ``run_num``).
 
     Joins the k-fold CV summary (``kfold_<run_name>.json``) to the bootstrap
@@ -915,7 +915,7 @@ def kfold_run_stats(run_num: int, round2_dir: Path | None = None) -> dict | None
     of the fold campaign).
     """
     run_name = run_name_for_run_num(run_num)
-    kf = kfold_summary(run_name, round2_dir)
+    kf = kfold_summary(run_name, campaign_dir)
     if kf is None:
         return None
     k = int(kf.get("completed_folds") or 5)
@@ -928,7 +928,7 @@ def kfold_run_stats(run_num: int, round2_dir: Path | None = None) -> dict | None
     acc_ci_lo = (mean - half) * 100.0
     acc_ci_hi = (mean + half) * 100.0
 
-    af = kfold_across_folds(run_name, round2_dir)
+    af = kfold_across_folds(run_name, campaign_dir)
     if af is None:
         return None
     return {
@@ -1019,14 +1019,14 @@ def _selftest() -> int:
 
     # (e) round-2 artifacts
     n_per_run = 0
-    if ROUND2_DIR.is_dir():
-        n_per_run = sum(1 for d in ROUND2_DIR.iterdir()
+    if CAMPAIGN_DIR.is_dir():
+        n_per_run = sum(1 for d in CAMPAIGN_DIR.iterdir()
                         if d.is_dir() and (d / "epoch_log.jsonl").is_file())
     n_kfold = 0
-    if ROUND2_DIR.is_dir():
-        n_kfold = len(list(ROUND2_DIR.glob("kfold_*.json")))
+    if CAMPAIGN_DIR.is_dir():
+        n_kfold = len(list(CAMPAIGN_DIR.glob("kfold_*.json")))
     ci = dice_ci_summary()
-    print(f"[e] round2: {n_per_run} per-run epoch logs, {n_kfold} kfold summaries, "
+    print(f"[e] campaign: {n_per_run} per-run epoch logs, {n_kfold} kfold summaries, "
           f"{len(ci)} dice_ci_summary rows")
 
     # (c) run epoch windows

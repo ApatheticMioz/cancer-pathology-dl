@@ -12,7 +12,7 @@
 #       run_all_experiments.sh flags (--phase v2, --num-workers 2). The
 #       HEAVIEST campaign encoder (vgg16) is used for every dataset so the
 #       VRAM probe reflects the worst case MAX_JOBS must be derived from.
-#   (c) Artifact gate: scripts/assert_artifacts.py on results/round2/<label>/
+#   (c) Artifact gate: scripts/assert_artifacts.py on results/kfold_campaign/<label>/
 #       (epoch_log.jsonl fields, 10-field per_slice_dice.jsonl, best.pt,
 #       final.state.pt, summary resume_branch/resumed_from_epoch).
 #   (d) Cross-process resume check: 1-epoch run, then rerun with the same
@@ -230,7 +230,7 @@ fi
 echo ""
 echo ">> (e) VRAM / epoch-time sampling -> MAX_JOBS + campaign estimate"
 if [ "$DRY_RUN" -eq 1 ]; then
-    echo "[DRY-RUN] python: sample peak VRAM from $LOG_DIR/vram_*.log + epoch_sec from results/round2/r31_*/epoch_log.jsonl; print recommended MAX_JOBS and 26+130-run estimate"
+    echo "[DRY-RUN] python: sample peak VRAM from $LOG_DIR/vram_*.log + epoch_sec from results/kfold_campaign/r31_*/epoch_log.jsonl; print recommended MAX_JOBS and 26+130-run estimate"
 else
     python - <<'PY'
 import json
@@ -261,7 +261,7 @@ worst_vram = max(peak_vram.values()) if peak_vram else 0
 # --- mean epoch time per dataset from per-run epoch logs ---
 epoch_sec = {}
 for ds in datasets:
-    p = Path("results/round2") / f"r31_{ds}_vgg16" / "epoch_log.jsonl"
+    p = Path("results/kfold_campaign") / f"r31_{ds}_vgg16" / "epoch_log.jsonl"
     vals = []
     if p.exists():
         for line in p.read_text().splitlines():

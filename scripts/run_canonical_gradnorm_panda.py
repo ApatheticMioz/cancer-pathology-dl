@@ -47,8 +47,8 @@ def wilson_score_interval(successes: int, total: int, z: float = 1.96) -> tuple[
     spread = (z * ((p * (1.0 - p) / total + (z ** 2) / (4.0 * total ** 2)) ** 0.5)) / denom
     return max(0.0, centre - spread), min(1.0, centre + spread)
 
-# v2 probe artifacts live under results/round2/canonical_gradnorm_probe/
-RUN_DIR = PROJECT_ROOT / "results" / "round2" / "canonical_gradnorm_probe"
+# v2 probe artifacts live under results/kfold_campaign/canonical_gradnorm_probe/
+RUN_DIR = PROJECT_ROOT / "results" / "kfold_campaign" / "canonical_gradnorm_probe"
 RUN_LABEL = "canonical_gradnorm_probe"
 
 

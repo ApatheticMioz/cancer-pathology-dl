@@ -3,7 +3,7 @@
 Two side-by-side panels (one axis each, NO twinx), ~7in wide:
 
 * (a) Validation accuracy vs epoch — **fold-1 training trajectories from the
-  fold campaign** (``results/round2/kfold_<cfg>_fold1of5/epoch_log.jsonl``,
+  fold campaign** (``results/kfold_campaign/kfold_<cfg>_fold1of5/epoch_log.jsonl``,
   per-epoch ``best_vl_acc``):
 
   * 03 — PANDA·VGG16 baseline (``g1_panda_vgg16``) — solid;
@@ -20,7 +20,7 @@ Two side-by-side panels (one axis each, NO twinx), ~7in wide:
   [14.66, 30.73] (from :func:`paper.figures.loaders.kfold_acc_ci`).
 
 * (b) GradNorm task-weight dynamics from the **seeded** canonical probe log
-  (``results/round2/canonical_gradnorm_probe/probe_log.jsonl``, seed 42):
+  (``results/kfold_campaign/canonical_gradnorm_probe/probe_log.jsonl``, seed 42):
   the segmentation and classification task weights per epoch,
   direct-labeled. The panel title discloses the seeded-probe provenance.
 
@@ -83,7 +83,7 @@ _CLS_COLOR = "#D55E00"
 def _fold1_trajectory(run_name: str) -> pd.DataFrame:
     """Per-epoch fold-1 trajectory for one fold-campaign run.
 
-    Reads ``results/round2/kfold_<run_name>_fold1of5/epoch_log.jsonl`` and
+    Reads ``results/kfold_campaign/kfold_<run_name>_fold1of5/epoch_log.jsonl`` and
     returns a DataFrame with columns ``epoch`` and ``best_vl_acc``
     (percent), sorted by epoch. Returns an **empty** DataFrame when the
     fold-1 log is absent.
