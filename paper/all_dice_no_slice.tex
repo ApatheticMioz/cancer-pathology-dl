@@ -256,7 +256,7 @@ PanNuke & 5 & 78.70--99.24 & 68.44--77.61 & --- & --- & --- \\
 
 \begin{figure}[!tbp]
 \centering
-\includegraphics[width=\textwidth]{fig3_results_dotplot.pdf}
+\includegraphics[width=\textwidth,height=0.68\textheight,keepaspectratio]{fig3_results_dotplot.pdf}
 \caption{27-configuration $\times$ 5-fold claimed-vs-measured dot plot. Left panel: fold-mean validation accuracy (\%) with 95\% bootstrap-CI whiskers (measured, filled markers) and the published claimed accuracy (black open diamond); the tie line between them is the gap that constitutes the paper's central argument. Right panel: all-slices empty-credit per-case Dice (\%) with the same layout, whiskers showing our 95\% across-folds bootstrap CIs (the published Dice claims carry no confidence intervals, so only the diamonds mark them). The PANDA rows (Runs 03--04, 09--10, 17--22, 23, 26) show the largest gaps: measured accuracy spans $28.21\%$--$44.87\%$ vs.\ claimed $87$--$88\%$, and the all-slices empty-credit Dice spans $98.54\%$--$98.60\%$ (per-epoch validation macro-Dice-over-present-classes $82.77\%$--$84.39\%$) vs.\ claimed $98$--$99\%$. All four SIIM rows (Runs 05, 06, 11, 12) measure the all-empty floor ($77.72\%$ pooled across folds for three configurations, $77.04\%$ for the fourth; per-fold pooled $74.33\%$--$77.75\%$). PanNuke rows (Runs 13--16, 24) have no published targets and are shown without claimed diamonds.}
 \label{fig:results_dotplot}
 \end{figure}
