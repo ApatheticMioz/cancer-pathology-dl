@@ -9,7 +9,7 @@
 
 ## Executive Summary
 
-This repository is a rigorous **reproduction, diagnostic, and refutation study** evaluating the multi-task learning claims of Rhanoui et al. (*Onco*, 2025: *"Multi-Task Deep Learning for Simultaneous Classification and Segmentation of Cancer Pathologies in Diverse Medical Imaging Modalities"*, DOI: 10.3390/onco5010034).
+This repository is a rigorous **reproduction, diagnostic, and refutation study** evaluating the multi-task learning claims of Rhanoui et al. (*Onco*, 2025: *"Multi-Task Deep Learning for Simultaneous Classification and Segmentation of Cancer Pathologies in Diverse Medical Imaging Modalities"*, DOI: 10.3390/onco5030034).
 
 While the experimental codebase has completed a 26-run benchmark matrix across PANDA, PanNuke, SIIM, and TCGA datasets, this audit identified **critical discrepancies between the draft manuscript ([`paper/main.tex`](file:///home/apath/Work/temp/final/paper/main.tex)) and the actual underlying code/data** that must be resolved for submission to a top-tier medical AI venue (e.g., MICCAI / IEEE TMI / Lancet Digital Health).
 

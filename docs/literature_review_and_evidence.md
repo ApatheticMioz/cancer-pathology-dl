@@ -4,7 +4,7 @@
 **Consortium**: Computational Pathology & Medical Imaging Benchmark Consortium  
 **Date**: August 2026  
 **Status**: Comprehensive Literature Review & Methodological Grounding  
-**Audited Target**: Rhanoui et al. (2025), *"Multi-Task Deep Learning for Simultaneous Classification and Segmentation of Cancer Pathologies in Diverse Medical Imaging Modalities"*, *Onco*, 5(1), 34. [DOI: 10.3390/onco5010034](https://doi.org/10.3390/onco5010034)
+**Audited Target**: Rhanoui et al. (2025), *"Multi-Task Deep Learning for Simultaneous Classification and Segmentation of Cancer Pathologies in Diverse Medical Imaging Modalities"*, *Onco*, 5(3), 34. [DOI: 10.3390/onco5030034](https://doi.org/10.3390/onco5030034)
 
 ---
 
@@ -284,7 +284,7 @@ To compute non-parametric 95% confidence intervals without violating independenc
   pages     = {34},
   year      = {2025},
   publisher = {MDPI},
-  doi       = {10.3390/onco5010034}
+  doi       = {10.3390/onco5030034}
 }
 
 @article{degrave2021ai,
