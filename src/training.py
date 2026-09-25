@@ -195,7 +195,7 @@ def _build_nan_diagnosis(
         # originate from non-finite forward outputs; this attributes the
         # divergence to seg_out vs cls_out.
         "output_probe": output_probe,
-        "torch_version": torch.__version__,
+        "torch_version": str(torch.__version__),
         "cuda_version": torch.version.cuda,
     }
 
@@ -713,7 +713,7 @@ def _run_epoch(
                 "mask_any_nan": None,
                 "batch_size": 0,
                 "compile_active": bool(compile_active),
-                "torch_version": torch.__version__,
+                "torch_version": str(torch.__version__),
                 "cuda_version": torch.version.cuda,
                 "note": "no batches consumed (empty loader / 0 steps)",
             },
@@ -751,7 +751,7 @@ def _run_epoch(
                 "mask_any_nan": None,
                 "batch_size": int(total / max(steps, 1)),
                 "compile_active": bool(compile_active),
-                "torch_version": torch.__version__,
+                "torch_version": str(torch.__version__),
                 "cuda_version": torch.version.cuda,
                 "note": "epoch-mean metric non-finite (aggregate); per-batch check did not fire",
                 "mean_loss": mean_loss,
@@ -866,7 +866,7 @@ def _build_run_fingerprint(
         # or torch version is FATAL instead of silently accepted.
         "source_sha256": _source_fingerprint(),
         "args_sha256": _args_fingerprint(args),
-        "torch_version": torch.__version__,
+        "torch_version": str(torch.__version__),
     }
 
 
@@ -992,6 +992,21 @@ def _resolve_resume(
         if not missing_hard:
             for key in hard_pins:
                 if stored_fp.get(key) != fingerprint.get(key):
+                    if (
+                        key == "source_sha256"
+                        and os.environ.get("RESUME_ALLOW_LEGACY", "").strip() == "1"
+                    ):
+                        logger.warning(
+                            "[%s] RESUME BRANCH: code drift accepted "
+                            "(RESUME_ALLOW_LEGACY=1): state at %s was minted by "
+                            "different source (stored=%s vs current=%s). args/"
+                            "torch/base pins still verify strictly; only the "
+                            "checkpoint-load allowlist and fingerprint stamp "
+                            "serialization changed (no training math).",
+                            run_label, state_path, stored_fp.get(key),
+                            fingerprint.get(key),
+                        )
+                        continue
                     raise RuntimeError(
                         f"FATAL: training state at {state_path} was minted by a "
                         f"different code/config/torch version (fingerprint "

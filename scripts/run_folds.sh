@@ -88,9 +88,9 @@ if command -v nvidia-smi >/dev/null 2>&1; then
 fi
 
 # ---------------------------------------------------------------------------
-# Concurrency control (max 3 parallel Python processes, VRAM-admission-gated)
+# Concurrency control (max 2 parallel (env-overridable) Python processes, VRAM-admission-gated)
 # ---------------------------------------------------------------------------
-MAX_JOBS=3
+MAX_JOBS="${MAX_JOBS:-2}"
 declare -a PIDS=()
 declare -A PID_PRED_VRAM=()   # pid -> predicted VRAM (MiB), for admission
 

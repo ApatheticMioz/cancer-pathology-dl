@@ -80,7 +80,14 @@ def load_training_state(model, optimizer, gradnorm, state_path: Path, device: st
     """Resume training state from an explicit state-file path. Returns state dict or None."""
     if not state_path.exists():
         return None
-    state = torch.load(state_path, map_location=device)
+    # torch>=2.6 defaults torch.load to weights_only=True, which refuses the
+    # torch.torch_version.TorchVersion object that older states embed (the
+    # fingerprint's torch_version was stamped as torch.__version__, a
+    # TorchVersion instance, not a plain str). Scoped allowlist — everything
+    # else stays restricted, and a genuinely corrupt file still raises into
+    # the FATAL wrapper at the _resolve_resume call site.
+    with torch.serialization.safe_globals([torch.torch_version.TorchVersion]):
+        state = torch.load(state_path, map_location=device)
     model_state = state.get("model_state")
     if model_state is None:
         return None
