@@ -105,7 +105,16 @@ def _resolve_checkpoint(run: dict) -> Path:
     summary = json.loads(Path(matches[0]).read_text())
     for _key, run_info in summary.get("runs", {}).items():
         if "checkpoint" in run_info:
-            return Path(run_info["checkpoint"])
+            ckpt = Path(run_info["checkpoint"])
+            if not ckpt.exists():
+                # Summary JSONs are historical artifacts stamped before the
+                # results/round2 -> results/kfold_campaign rename; migrate the
+                # stale path segment and fail fast if it is still missing.
+                ckpt = Path(*(
+                    "kfold_campaign" if part == "round2" else part
+                    for part in ckpt.parts
+                ))
+            return ckpt
     raise KeyError(f"No 'checkpoint' field in {matches[0]}")
 
 
