@@ -14,11 +14,13 @@ What changed versus the original:
 * All styling comes from :mod:`paper.figures.style` (``apply()`` once at
   import; the heatmap uses the locked ``HEATMAP_CMAP`` = ``cividis``; the
   dataset colors come from the locked ``DATASET_COLORS``).
-* The panel-(d) bar values are **read from the results matrix**
-  (:func:`paper.figures.loaders.results_matrix`) by *Run Label*, not
-  hard-coded. The two datasets are PANDA (Run 10 vs Run 23) and PanNuke
-  (Run 16 vs Run 24); each bar carries its 95% Wilson-CI whisker from the
-  parsed CI columns.
+* The panel-(d) bar values are **read from the fold-campaign k-fold
+  summaries** (:func:`paper.figures.loaders.kfold_summary`), not
+  hard-coded and not from the stale single-split results matrix. The two
+  datasets are PANDA (``g2_panda_mobilenet_v2`` ON vs
+  ``g5_panda_nomacenko`` OFF) and PanNuke (``g3_pannuke_mobilenet_v2_final``
+  ON vs ``g5_pannuke_nomacenko`` OFF); each bar carries a fold-SD whisker
+  from the summary's ``std_val_acc``.
 * The image panels keep their pinned local ``data/`` paths (the raw and
   Macenko tiles are local artifacts, not CSV-sourced).
 
@@ -35,7 +37,7 @@ import matplotlib.pyplot as plt
 from PIL import Image
 
 from . import style
-from .loaders import REPO_ROOT, results_matrix
+from .loaders import REPO_ROOT, kfold_summary
 
 # Apply the locked style contract once for this module.
 style.apply()
@@ -56,44 +58,45 @@ _CROP_SIZE = 140
 # CSV-sourced bar data (panel d). Read by Run Label, never hard-coded.
 # ---------------------------------------------------------------------------
 
-#: (Run Label, dataset key) for the Macenko-ON and Macenko-OFF bars.
-#: PANDA: Run 10 (Mac ON) vs Run 23 (Mac OFF). PanNuke: Run 16 (Mac ON) vs
-#: Run 24 (Mac OFF). All four are the mobilenet_v2 v2-phase runs.
+#: (kfold run name, dataset key) for the Macenko-ON and Macenko-OFF bars.
+#: PANDA: ``g2_panda_mobilenet_v2`` (Mac ON) vs ``g5_panda_nomacenko``
+#: (Mac OFF). PanNuke: ``g3_pannuke_mobilenet_v2_final`` (Mac ON) vs
+#: ``g5_pannuke_nomacenko`` (Mac OFF). All four are the mobilenet_v2
+#: v2-phase fold-campaign runs.
 _MAC_ON = {
-    "PANDA": "PANDA-mobilenet_v2-alpha=1.5",
-    "PANNUKE": "PANNUKE-mobilenet_v2-alpha=1.5",
+    "PANDA": "g2_panda_mobilenet_v2",
+    "PANNUKE": "g3_pannuke_mobilenet_v2_final",
 }
 _MAC_OFF = {
-    "PANDA": "PANDA-mobilenet_v2-no-macenko-alpha=1.5",
-    "PANNUKE": "PANNUKE-mobilenet_v2-no-macenko-alpha=1.5",
+    "PANDA": "g5_panda_nomacenko",
+    "PANNUKE": "g5_pannuke_nomacenko",
 }
 
 
-def _row(matrix, run_label: str):
-    """Fetch a single results-matrix row by Run Label (raises if absent)."""
-    hits = matrix[matrix["Run Label"] == run_label]
-    if hits.empty:
-        raise KeyError(f"Run Label {run_label!r} not found in results matrix")
-    return hits.iloc[0]
+def _kfold_bar(run_name: str) -> tuple[float, float]:
+    """(mean_val_acc %, fold SD %) from the kfold summary (raises if absent)."""
+    kf = kfold_summary(run_name)
+    if kf is None:
+        raise KeyError(f"no kfold summary for {run_name!r}")
+    return (float(kf["mean_val_acc"]) * 100.0,
+            float(kf["std_val_acc"]) * 100.0)
 
 
-def _bars(matrix):
-    """Return (labels, on_acc, on_ci, off_acc, off_ci) for the two datasets.
+def _bars():
+    """Return (labels, on_acc, on_sd, off_acc, off_sd) for the two datasets.
 
-    ``on_ci`` / ``off_ci`` are ``(lower, upper)`` tuples in percentage points
-    (the parsed 95% Wilson-CI columns).
+    ``on_sd`` / ``off_sd`` are the across-folds standard deviations
+    (percentage points) from the kfold summaries — the fold-SD whiskers.
     """
     labels = []
-    on_acc, on_ci, off_acc, off_ci = [], [], [], []
+    on_acc, on_sd, off_acc, off_sd = [], [], [], []
     for ds in ("PANDA", "PANNUKE"):
         labels.append(ds)
-        on = _row(matrix, _MAC_ON[ds])
-        off = _row(matrix, _MAC_OFF[ds])
-        on_acc.append(float(on["Accuracy (%)"]))
-        off_acc.append(float(off["Accuracy (%)"]))
-        on_ci.append((float(on["Acc 95% CI Lower"]), float(on["Acc 95% CI Upper"])))
-        off_ci.append((float(off["Acc 95% CI Lower"]), float(off["Acc 95% CI Upper"])))
-    return labels, on_acc, on_ci, off_acc, off_ci
+        on_acc.append(_kfold_bar(_MAC_ON[ds])[0])
+        on_sd.append(_kfold_bar(_MAC_ON[ds])[1])
+        off_acc.append(_kfold_bar(_MAC_OFF[ds])[0])
+        off_sd.append(_kfold_bar(_MAC_OFF[ds])[1])
+    return labels, on_acc, on_sd, off_acc, off_sd
 
 
 def _build_fig():
@@ -102,8 +105,7 @@ def _build_fig():
     Split out from :func:`build` so the layout can be inspected
     programmatically (see :func:`verify`).
     """
-    matrix = results_matrix()
-    labels, on_acc, on_ci, off_acc, off_ci = _bars(matrix)
+    labels, on_acc, on_sd, off_acc, off_sd = _bars()
 
     # --- Image panels (a), (b), (c) -------------------------------------
     img_raw = np.array(Image.open(_RAW_TILE).convert("RGB"))
@@ -142,11 +144,9 @@ def _build_fig():
     on_color = [style.DATASET_COLORS[ds] for ds in labels]
     off_color = [style.DATASET_COLORS[ds] for ds in labels]
 
-    # CI whiskers: symmetric error bars from the parsed 95% Wilson CIs.
-    on_err = [[a - lo for a, (lo, hi) in zip(on_acc, on_ci)],
-              [hi - a for a, (lo, hi) in zip(on_acc, on_ci)]]
-    off_err = [[a - lo for a, (lo, hi) in zip(off_acc, off_ci)],
-               [hi - a for a, (lo, hi) in zip(off_acc, off_ci)]]
+    # Whiskers: symmetric error bars from the across-folds SD (fold-SD).
+    on_err = [on_sd, on_sd]
+    off_err = [off_sd, off_sd]
 
     # Short legend labels ("Macenko ON" / "Macenko OFF") with neutral condition
     # keying: Macenko ON is hatched ('//') and Macenko OFF is solid, so the

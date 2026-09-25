@@ -89,12 +89,14 @@ Self-test
 from __future__ import annotations
 
 import json
+import math
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+import numpy as np
 import pandas as pd
 
 # ---------------------------------------------------------------------------
@@ -277,11 +279,25 @@ def _parse_log_windows(log_path: Path):
 
 
 def _load_epoch_log() -> list:
-    """Load ``checkpoints/epoch_log.jsonl`` into a list of record dicts."""
+    """Load ``checkpoints/epoch_log.jsonl`` into a list of record dicts.
+
+    Malformed / non-JSON lines (e.g. a corrupted all-null-bytes record) are
+    skipped rather than allowed to crash the whole load — a single bad line
+    in a multi-thousand-line log must not take down every figure that reads
+    the shared epoch log.
+    """
     if not EPOCH_LOG_JSONL.exists():
         return []
+    records = []
     with EPOCH_LOG_JSONL.open() as fh:
-        return [json.loads(line) for line in fh if line.strip()]
+        for line in fh:
+            if not line.strip():
+                continue
+            try:
+                records.append(json.loads(line))
+            except (json.JSONDecodeError, ValueError):
+                continue
+    return records
 
 
 def _slice_window(epoch_log: list, dataset: str, encoder: str,
@@ -736,6 +752,159 @@ def round2_run_trajectory(run_num: int) -> pd.DataFrame:
         }
     )
     return out.sort_values("epoch").reset_index(drop=True)
+
+
+# ---------------------------------------------------------------------------
+# (f) Fold-campaign (k-fold CV) loaders
+# ---------------------------------------------------------------------------
+
+#: z-value for a two-sided 95% interval (matches scripts/compute_wilson_ci.py).
+_Z95 = 1.96
+
+
+def kfold_across_folds(run_name: str, round2_dir: Path | None = None) -> dict | None:
+    """The ``across_folds`` row of ``dice_ci_summary.csv`` for one k-fold run.
+
+    ``run_name`` is the bare run name (e.g. ``g1_tcga_vgg16``); the CSV
+    ``run_label`` is ``kfold_<run_name>``. Returns a dict with keys
+    ``point_estimate`` / ``ci_low`` / ``ci_high`` / ``fold_sd`` (all fractions
+    in [0, 1]) or ``None`` when the run has no ``across_folds`` row. The
+    ``point_estimate`` is the bootstrap Dice estimate across all folds; the
+    ``ci_low`` / ``ci_high`` are the 95% bootstrap CI bounds; ``fold_sd`` is
+    the standard deviation of the per-fold Dice.
+    """
+    ci = dice_ci_summary(round2_dir)
+    if ci.empty:
+        return None
+    label = f"kfold_{run_name}"
+    sel = ci[(ci["run_label"] == label) & (ci["stratum"] == "across_folds")]
+    if sel.empty:
+        return None
+    r = sel.iloc[0]
+    return {
+        "point_estimate": float(r["point_estimate"]),
+        "ci_low": float(r["ci_low"]),
+        "ci_high": float(r["ci_high"]),
+        "fold_sd": float(r["fold_sd"]),
+    }
+
+
+def kfold_acc_stats(run_name: str, round2_dir: Path | None = None) -> dict | None:
+    """The k-fold CV accuracy point estimate + fold SD for one run.
+
+    Reads ``kfold_<run_name>.json`` (``mean_val_acc`` / ``std_val_acc``) and
+    returns a dict with keys ``mean`` / ``sd`` (fractions in [0, 1]) or
+    ``None`` when the summary is absent. ``mean`` is the across-folds mean
+    validation accuracy (the point estimate the fold campaign reports);
+    ``sd`` is the across-folds standard deviation.
+    """
+    kf = kfold_summary(run_name, round2_dir)
+    if kf is None:
+        return None
+    if "mean_val_acc" not in kf or "std_val_acc" not in kf:
+        return None
+    return {
+        "mean": float(kf["mean_val_acc"]),
+        "sd": float(kf["std_val_acc"]),
+    }
+
+
+def kfold_acc_ci(run_name: str, round2_dir: Path | None = None) -> tuple[float, float, float] | None:
+    """95% across-folds CI for the k-fold CV accuracy (percent).
+
+    The fold campaign reports the per-fold validation accuracies
+    (``fold_results[*].best_val_acc``). The 95% CI is a **fold bootstrap**
+    interval: 10,000 resamples (with replacement) of the per-fold accuracies
+    (×100) drawn with ``numpy.random.default_rng(42)``, and the 2.5 / 97.5
+    percentiles of the resampled *means*. This replaces the earlier
+    normal-approximation ``mean ± z·(sd/√k)`` interval.
+
+    Returns ``(point, lo, hi)`` in percent, or ``None`` when the run has no
+    k-fold summary with at least two per-fold accuracies.
+    """
+    kf = kfold_summary(run_name, round2_dir)
+    if kf is None:
+        return None
+    fold_results = kf.get("fold_results")
+    if not fold_results:
+        return None
+    accs = np.array(
+        [float(f["best_val_acc"]) * 100.0 for f in fold_results], dtype=float
+    )
+    if accs.size < 2:
+        return None
+    mean = float(accs.mean())
+    rng = np.random.default_rng(42)
+    n_boot = 10_000
+    boot_means = np.empty(n_boot, dtype=float)
+    for i in range(n_boot):
+        boot_means[i] = rng.choice(accs, size=accs.size, replace=True).mean()
+    lo, hi = np.percentile(boot_means, [2.5, 97.5])
+    return (mean, float(lo), float(hi))
+
+
+def kfold_dice_ci(run_name: str, round2_dir: Path | None = None) -> tuple[float, float, float] | None:
+    """95% bootstrap across-folds CI for the k-fold CV Dice (percent).
+
+    Reads the ``across_folds`` row of ``dice_ci_summary.csv`` and returns
+    ``(point, lo, hi)`` in percent, or ``None`` when the run is not covered.
+    """
+    row = kfold_across_folds(run_name, round2_dir)
+    if row is None:
+        return None
+    return (row["point_estimate"] * 100.0,
+            row["ci_low"] * 100.0,
+            row["ci_high"] * 100.0)
+
+
+def kfold_run_stats(run_num: int, round2_dir: Path | None = None) -> dict | None:
+    """Fold-campaign statistics for one results-matrix row (1-based ``run_num``).
+
+    Joins the k-fold CV summary (``kfold_<run_name>.json``) to the bootstrap
+    Dice-CI table (``dice_ci_summary.csv`` ``across_folds`` row) and returns a
+    dict with the fold-aware columns the figures plot:
+
+    * ``acc_point`` / ``acc_ci_lo`` / ``acc_ci_hi`` — the across-folds mean
+      validation accuracy (percent) and its 95% CI
+      (``mean ± z·(sd/√k)`` from the kfold summary's ``mean_val_acc`` /
+      ``std_val_acc`` / ``completed_folds``).
+    * ``dice_point`` / ``dice_ci_lo`` / ``dice_ci_hi`` — the across-folds
+      bootstrap Dice point estimate and 95% CI (percent) from the CSV
+      ``across_folds`` row.
+    * ``fold_sd`` — the CSV ``fold_sd`` column (Dice fold SD, fraction).
+    * ``completed_folds`` — the number of completed folds.
+
+    Returns ``None`` when the run has no k-fold summary (i.e. it is not part
+    of the fold campaign).
+    """
+    run_name = run_name_for_run_num(run_num)
+    kf = kfold_summary(run_name, round2_dir)
+    if kf is None:
+        return None
+    k = int(kf.get("completed_folds") or 5)
+    if k < 1:
+        k = 5
+    mean = float(kf["mean_val_acc"])
+    sd = float(kf["std_val_acc"])
+    half = _Z95 * (sd / math.sqrt(k))
+    acc_point = mean * 100.0
+    acc_ci_lo = (mean - half) * 100.0
+    acc_ci_hi = (mean + half) * 100.0
+
+    af = kfold_across_folds(run_name, round2_dir)
+    if af is None:
+        return None
+    return {
+        "run_name": run_name,
+        "acc_point": acc_point,
+        "acc_ci_lo": acc_ci_lo,
+        "acc_ci_hi": acc_ci_hi,
+        "dice_point": af["point_estimate"] * 100.0,
+        "dice_ci_lo": af["ci_low"] * 100.0,
+        "dice_ci_hi": af["ci_high"] * 100.0,
+        "fold_sd": af["fold_sd"],
+        "completed_folds": k,
+    }
 
 
 def dice_ci_for_run(run_num: int) -> tuple[float, float, float] | None:

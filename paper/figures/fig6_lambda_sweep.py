@@ -4,19 +4,24 @@ Two side-by-side panels sharing a categorical x-axis of the four
 ``lambda_seg:lambda_cls`` ratios (one axis each, NO twinx), ~7in x ~3.2in:
 
 * (a) Validation Accuracy (%) — each sweep run is a marker
-  (``DATASET_COLORS['PANDA']`` + ``vgg16`` circle) with its 95% Wilson-CI
-  whisker; a black dashed hline marks the paper's *claimed* accuracy of the
-  run-03 baseline (read from the CSV ``Paper Acc (%)`` column).
-* (b) Validation Dice (%) — same markers but **no CI whiskers** (Dice has no
-  published CIs); the claimed hline marks the run-03 ``Paper Dice (%)``.
+  (``DATASET_COLORS['PANDA']`` + ``vgg16`` circle) with its 95% across-folds
+  CI whisker (k-fold CV mean ± z·(fold SD/√k)); a black dashed hline marks
+  the paper's *claimed* accuracy of the run-03 baseline (read from the CSV
+  ``Paper Acc (%)`` column).
+* (b) Validation Dice (%) — the **per-epoch validation macro-Dice**
+  (``mean_val_dice × 100`` from the ``kfold_<run>.json`` summary) as
+  points only (no whiskers); the claimed hline marks the run-03
+  ``Paper Dice (%)`` (98.0 %).
 
 The four sweep runs are the PANDA·VGG16 Group-4 lambda-sweep rows (raw
 input, eta=1e-3, no GradNorm): 1:1, 5:1, 1:10, 10:1. They are matched by the
 CSV ``Lambda Ratio (Seg:Cls)`` column (never hard-coded) and drawn in the
 fixed display order ``[1:10, 1:1, 5:1, 10:1]``.
 
-Data source: :func:`paper.figures.loaders.results_matrix` only — no value is
-hard-coded.
+Data source: the fold campaign — :func:`paper.figures.loaders.kfold_run_stats`
+(k-fold CV mean accuracy + bootstrap across-folds Dice) joined to
+:func:`paper.figures.loaders.results_matrix` for the claimed (paper) values.
+No single-split number is hard-coded.
 
 Output: ``paper/fig6_lambda_sweep.pdf`` + ``paper/fig6_lambda_sweep.png``
 (via :func:`paper.figures.style.save_figure`).
@@ -29,7 +34,13 @@ import matplotlib
 import matplotlib.pyplot as plt
 
 from . import style
-from .loaders import REPO_ROOT, results_matrix
+from .loaders import (
+    REPO_ROOT,
+    kfold_run_stats,
+    kfold_summary,
+    results_matrix,
+    run_name_for_run_num,
+)
 
 # Apply the locked style contract once for this module.
 style.apply()
@@ -104,10 +115,26 @@ def _build_fig():
     marker = style.ENCODER_MARKERS["vgg16"]
 
     xs = np.arange(len(_LAMBDA_ORDER), dtype=float)
-    acc = np.array([float(r["Accuracy (%)"]) for r in rows])
-    dice = np.array([float(r["Macro Dice (%)"]) for r in rows])
-    ci_lo = np.array([float(r["Acc 95% CI Lower"]) for r in rows])
-    ci_hi = np.array([float(r["Acc 95% CI Upper"]) for r in rows])
+    # Fold-campaign values: the across-folds k-fold CV mean accuracy (point)
+    # and its 95% CI (mean ± z·(fold SD/√k)), plus the bootstrap
+    # across-folds Dice point estimate. No single-split number is used.
+    # Each sweep row is a Group-4 results-matrix row; its 1-based run number
+    # is its position in the matrix (the CSV is in run order), so ``r.name``
+    # (the preserved index) + 1 is the run number.
+    run_nums = [int(r.name) + 1 for r in rows]
+    stats = [kfold_run_stats(rn) for rn in run_nums]
+    acc = np.array([s["acc_point"] for s in stats])
+    ci_lo = np.array([s["acc_ci_lo"] for s in stats])
+    ci_hi = np.array([s["acc_ci_hi"] for s in stats])
+    # Panel (b) estimator: the per-epoch validation macro-Dice
+    # (``mean_val_dice × 100`` from the kfold summary), NOT the pooled
+    # empty-credit Dice floor from the bootstrap CI table.
+    dice = np.array(
+        [
+            float(kfold_summary(run_name_for_run_num(rn))["mean_val_dice"]) * 100.0
+            for rn in run_nums
+        ]
+    )
 
     fig, (ax_a, ax_b) = plt.subplots(
         1, 2, figsize=(7, 3.2), dpi=300, sharex=True
@@ -116,7 +143,7 @@ def _build_fig():
     # --- Panel (a): Accuracy --------------------------------------------
     # Thin light connecting line (drawn first, behind the markers).
     ax_a.plot(xs, acc, color=_TIE_GRAY, linewidth=0.8, zorder=1)
-    # 95% Wilson-CI whiskers (vertical, along the accuracy axis).
+    # 95% across-folds CI whiskers (vertical, along the accuracy axis).
     cap = 0.15
     for x, lo, hi in zip(xs, ci_lo, ci_hi):
         ax_a.plot([x, x], [lo, hi], color=_CI_GRAY, linewidth=1.0,
@@ -141,10 +168,12 @@ def _build_fig():
               transform=ax_a.transData, ha="left", va="top",
               fontsize=7, color="black")
 
-    # --- Panel (b): Dice ------------------------------------------------
+    # --- Panel (b): Dice (per-epoch validation macro-Dice) -------------
+    # Points only — no CI whiskers (the per-epoch macro-Dice is a point
+    # estimate from the kfold summary, not a pooled bootstrap floor).
     # Thin light connecting line.
     ax_b.plot(xs, dice, color=_TIE_GRAY, linewidth=0.8, zorder=1)
-    # Measured markers (no CI whiskers for Dice).
+    # Measured markers.
     for x, y in zip(xs, dice):
         ax_b.plot(x, y, marker=marker, color=panda_color, markersize=6,
                   linestyle="none", zorder=3)
@@ -192,7 +221,9 @@ def verify() -> dict:
 
     Asserts:
       * exactly 4 points per panel (PANDA color, vgg16 marker);
-      * each panel's point values match the CSV within tolerance 0.01;
+      * each panel's point values match the fold-campaign values (k-fold CV
+        mean accuracy / per-epoch validation macro-Dice) within tolerance
+        0.01;
       * the claimed hlines equal the CSV ``Paper Acc (%)`` / ``Paper Dice (%)``
         of the run-03 baseline;
       * the rendered "claimed XX%" labels match the CSV values;
@@ -205,8 +236,15 @@ def verify() -> dict:
     claimed = _claimed_row()
     claimed_acc = float(claimed["Paper Acc (%)"])
     claimed_dice = float(claimed["Paper Dice (%)"])
-    acc_csv = [float(r["Accuracy (%)"]) for r in rows]
-    dice_csv = [float(r["Macro Dice (%)"]) for r in rows]
+    # Fold-campaign expected values (k-fold CV mean acc + per-epoch
+    # validation macro-Dice from the kfold summary).
+    run_nums = [int(r.name) + 1 for r in rows]
+    stats = [kfold_run_stats(rn) for rn in run_nums]
+    acc_csv = [s["acc_point"] for s in stats]
+    dice_csv = [
+        float(kfold_summary(run_name_for_run_num(rn))["mean_val_dice"]) * 100.0
+        for rn in run_nums
+    ]
 
     fig, (ax_a, ax_b) = _build_fig()
     fig.canvas.draw()

@@ -3,18 +3,20 @@
 One panel (~7in wide x ~4.5in tall, one axis, NO twinx). Six *matched*
 ablation pairs are drawn as a forest plot: each pair has two arms (arm A on
 top, arm B below) with a small gap between pairs. Each arm is a marker
-(color = dataset, shape = encoder) with a horizontal 95% Wilson-CI whisker
-and a 7pt annotation of the run number + value (e.g. ``R18 29.04``).
+(color = dataset, shape = encoder) with a horizontal 95% across-folds CI
+whisker and a 7pt annotation of the run number + value (e.g. ``R18 28.21``).
 
-The six pairs (all PANDA/TCGA/PanNuke, from
-:func:`paper.figures.loaders.results_matrix`):
+The six pairs (all PANDA/TCGA/PanNuke). The point estimates and CIs are the
+fold-campaign values from :func:`paper.figures.loaders.kfold_run_stats`
+(k-fold CV mean accuracy ± z·(fold SD/√k)); the dataset/encoder come from
+:func:`paper.figures.loaders.results_matrix`:
 
-* 18 vs 20 — isolated GradNorm (29.04) vs static 5:1 (45.39) — **disjoint**
-* 17 vs 20 — LR 1e-4 (43.35) vs 1e-3 (45.39) — **overlap**
-* 25 vs 08 — no-skip TCGA (94.34) vs matched (93.32) — **overlap**
-* 26 vs 10 — no-skip PANDA (35.31) vs matched (34.70) — **overlap**
-* 23 vs 10 — no-Mac PANDA (40.21) vs matched (34.70) — **disjoint**
-* 24 vs 16 — no-Mac PanNuke (99.36) vs matched (96.68) — **disjoint**
+* 18 vs 20 — isolated GradNorm (28.21) vs static 5:1 (38.18) — **disjoint**
+* 17 vs 20 — LR 1e-4 (44.87) vs 1e-3 (38.18) — **disjoint**
+* 25 vs 08 — no-skip TCGA (95.28) vs matched (95.26) — **overlap**
+* 26 vs 10 — no-skip PANDA (37.44) vs matched (37.56) — **overlap**
+* 23 vs 10 — no-Mac PANDA (41.38) vs matched (37.56) — **overlap**
+* 24 vs 16 — no-Mac PanNuke (99.24) vs matched (96.49) — **overlap**
 
 Verdict encoding (NOT color-alone): a right-margin column carries a text
 verdict per pair — ``CIs disjoint`` vs ``CIs overlap`` — recomputed from the
@@ -34,7 +36,7 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import NullFormatter
 
 from . import style
-from .loaders import REPO_ROOT, results_matrix
+from .loaders import REPO_ROOT, kfold_run_stats, results_matrix
 
 # Apply the locked style contract once for this module.
 style.apply()
@@ -62,14 +64,23 @@ _ARM_OFFSET = 0.5
 
 
 def _arm_data(run_num: int):
-    """Return ``(dataset, encoder, acc, ci_lo, ci_hi)`` for one run."""
+    """Return ``(dataset, encoder, acc, ci_lo, ci_hi)`` for one run.
+
+    The point estimate and 95% CI are the fold-campaign values
+    (:func:`paper.figures.loaders.kfold_run_stats`): the across-folds k-fold
+    CV mean accuracy and its ``mean ± z·(fold SD/√k)`` interval. The
+    dataset/encoder (for color/marker) come from the results matrix.
+    """
     row = results_matrix().iloc[run_num - 1]
+    stats = kfold_run_stats(run_num)
+    if stats is None:
+        raise AssertionError(f"run {run_num:02d} has no fold-campaign stats")
     return (
         str(row["Dataset"]),
         str(row["Encoder"]),
-        float(row["Accuracy (%)"]),
-        float(row["Acc 95% CI Lower"]),
-        float(row["Acc 95% CI Upper"]),
+        stats["acc_point"],
+        stats["acc_ci_lo"],
+        stats["acc_ci_hi"],
     )
 
 
@@ -144,7 +155,7 @@ def _build_fig():
     ax.set_yticks(pair_centers)
     ax.yaxis.set_major_formatter(NullFormatter())
     ax.set_xlabel("Validation Accuracy (%)", fontweight="bold")
-    ax.set_title("Matched Ablation Pairs (95% Wilson CIs)", fontweight="bold")
+    ax.set_title("Matched Ablation Pairs (95% across-folds CIs)", fontweight="bold")
     ax.grid(axis="x", linestyle="--", alpha=style.GRID_ALPHA)
 
     # --- Left-margin pair labels + right-margin verdicts ---------------

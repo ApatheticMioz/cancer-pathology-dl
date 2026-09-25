@@ -2,35 +2,35 @@
 
 Two side-by-side panels (one axis each, NO twinx), ~7in wide:
 
-* (a) Validation accuracy vs epoch — the PANDA test-time trajectories.
-  Three PANDA runs are drawn from :func:`paper.figures.loaders.run_trajectory`
-  (per-epoch ``best_vl_acc``, the value the CSV ``Accuracy (%)`` column
-  reports):
+* (a) Validation accuracy vs epoch — **fold-1 training trajectories from the
+  fold campaign** (``results/round2/kfold_<cfg>_fold1of5/epoch_log.jsonl``,
+  per-epoch ``best_vl_acc``):
 
-  * run 03 — PANDA·VGG16 baseline (45.15) — solid;
-  * run 10 — PANDA·MNV2 +GN package (34.70) — dashed;
-  * run 18 — PANDA·VGG16 iso-GN (29.04) — dotted.
+  * 03 — PANDA·VGG16 baseline (``g1_panda_vgg16``) — solid;
+  * 10 — PANDA·MNV2 +GN package (``g2_panda_mobilenet_v2``) — dashed;
+  * 18 — PANDA·VGG16 iso-GN (``g4_panda_isolate_gn``) — dotted.
 
-  All three use the locked ``DATASET_COLORS['PANDA']`` color and are
-  distinguished by linestyle + a direct 7pt label at the line's final-epoch
-  end (no legend box needed). A fourth curve is the canonical decoupled
-  GradNorm probe from :func:`paper.figures.loaders.canonical_gradnorm`
-  (running-max validation accuracy, 15 epochs, plateaus at 43.06) drawn in a
-  distinct dash-dot style (black) with a shaded 95% CI band. A black dashed
-  reference line marks the paper's claimed 88.0% accuracy.
+  Each curve's legend label carries the **five-fold mean** accuracy from the
+  ``kfold_<cfg>.json`` summary (34.51 / 37.56 / 28.21) — read from the
+  summary, never hard-coded. A fourth curve is the canonical decoupled
+  GradNorm probe's fold-1 trajectory
+  (``kfold_canonical_gradnorm_fold1of5``, 11 epochs) in a distinct dash-dot
+  style (black), with a horizontal reference line at the five-fold mean
+  (22.70) and a horizontal shaded 95% fold-bootstrap CI band
+  [14.66, 30.73] (from :func:`paper.figures.loaders.kfold_acc_ci`).
 
-* (b) GradNorm task-weight dynamics from the canonical log: the segmentation
-  and classification task weights per epoch (15 epochs), direct-labeled.
+* (b) GradNorm task-weight dynamics from the **seeded** canonical probe log
+  (``results/round2/canonical_gradnorm_probe/probe_log.jsonl``, seed 42):
+  the segmentation and classification task weights per epoch,
+  direct-labeled. The panel title discloses the seeded-probe provenance.
 
 Data / limitation note
 ----------------------
-:func:`paper.figures.loaders.run_epoch_windows` only covers *attributable*
-runs (17 of 26; runs 17, 19-22, 23, 26 are SKIPPED due to concurrent
-same-(dataset, encoder) overlap). The panel-(a) PANDA curves are therefore
-limited to runs 03 / 10 / 18 (all attributable) plus the canonical probe.
-Each of those runs is gated on its ``run_epoch_windows`` status: if a run is
-not ``PASS`` the curve is skipped gracefully (not plotted) rather than
-fabricated. :func:`verify` asserts all three are present.
+Panel (a) plots the fold-1 epoch logs of the fold campaign (the same
+provenance as the k-fold summaries in the results matrix), not the legacy
+single-run trajectories. The canonical curve is the fold-1 trajectory of
+the seeded canonical GradNorm run; its reference line and CI band are the
+across-folds mean and 95% fold-bootstrap CI of the same run.
 
 Output: ``paper/fig4_panda_anatomy.pdf`` + ``paper/fig4_panda_anatomy.png``
 (via :func:`paper.figures.style.save_figure`).
@@ -38,16 +38,17 @@ Output: ``paper/fig4_panda_anatomy.pdf`` + ``paper/fig4_panda_anatomy.png``
 
 from __future__ import annotations
 
-import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
+import pandas as pd
 
 from . import style
 from .loaders import (
     REPO_ROOT,
     canonical_gradnorm,
-    round2_run_trajectory,
-    run_epoch_windows,
+    kfold_acc_ci,
+    kfold_summary,
+    per_run_epoch_log,
 )
 
 # Apply the locked style contract once for this module.
@@ -57,18 +58,19 @@ style.apply()
 # Panel (a) curve definitions.
 # ---------------------------------------------------------------------------
 
-#: (run number, legend label, linestyle) for the three PANDA runs.
+#: (kfold run name, short name, linestyle) for the three PANDA runs.
 #: All use the locked PANDA color; linestyle distinguishes them in the
-#: frameless legend. The legend label carries the CSV-verified final
-#: validation accuracy (the value the CSV ``Accuracy (%)`` column reports).
+#: frameless legend. The legend label is built at render time from the
+#: kfold summary's five-fold mean (never hard-coded) — see
+#: :func:`_panda_label`.
 _PANDA_CURVES = [
-    (3, "03 baseline (43.25%)", "-"),
-    (10, "10 +GN package (33.70%)", "--"),
-    (18, "18 isolated GradNorm (26.09%)", ":"),
+    ("g1_panda_vgg16", "03 baseline", "-"),
+    ("g2_panda_mobilenet_v2", "10 +GN package", "--"),
+    ("g4_panda_isolate_gn", "18 isolated GradNorm", ":"),
 ]
 
-#: The paper's claimed PANDA validation accuracy (reference line).
-_CLAIMED_ACC = 88.0
+#: The canonical decoupled GradNorm run (fold campaign).
+_CANON_RUN = "canonical_gradnorm"
 
 #: Canonical probe curve style (distinct from the PANDA linestyles).
 _CANON_LINESTYLE = "-."
@@ -78,31 +80,54 @@ _SEG_COLOR = "#0072B2"
 _CLS_COLOR = "#D55E00"
 
 
-def _canonical_running_max():
-    """Return ``(epochs, running_max_val_acc, ci_lo, ci_hi)`` for the
-    canonical probe.
+def _fold1_trajectory(run_name: str) -> pd.DataFrame:
+    """Per-epoch fold-1 trajectory for one fold-campaign run.
 
-    The canonical log reports a per-epoch validation accuracy with a 95%
-    Wilson CI. The "best" validation accuracy is the running maximum; the
-    curve plateaus at 43.06 (the peak, epoch 13). The CI band tracks the CI
-    of the epoch that set the current running maximum (i.e. the CI of the
-    best value so far).
+    Reads ``results/round2/kfold_<run_name>_fold1of5/epoch_log.jsonl`` and
+    returns a DataFrame with columns ``epoch`` and ``best_vl_acc``
+    (percent), sorted by epoch. Returns an **empty** DataFrame when the
+    fold-1 log is absent.
     """
-    can = canonical_gradnorm()
-    epochs = can["epoch"].to_numpy(dtype=float)
-    val = can["val_acc"].to_numpy(dtype=float)
-    ci_lo = can["val_acc_ci_lo"].to_numpy(dtype=float)
-    ci_hi = can["val_acc_ci_hi"].to_numpy(dtype=float)
+    df = per_run_epoch_log(f"kfold_{run_name}_fold1of5")
+    if df.empty:
+        return pd.DataFrame(columns=["epoch", "best_vl_acc"])
+    recs = df.to_dict("records")
+    return pd.DataFrame(
+        {
+            "epoch": [int(r["epoch"]) for r in recs],
+            "best_vl_acc": [float(r["best_vl_acc"]) * 100.0 for r in recs],
+        }
+    ).sort_values("epoch").reset_index(drop=True)
 
-    run_max = np.maximum.accumulate(val)
-    # Index of the epoch that achieved the running max (first occurrence).
-    argmax_idx = np.zeros(len(val), dtype=int)
-    best = -np.inf
-    for i in range(len(val)):
-        if val[i] > best:
-            best = val[i]
-            argmax_idx[i] = i
-    return epochs, run_max, ci_lo[argmax_idx], ci_hi[argmax_idx]
+
+def _panda_label(run_name: str, short_name: str) -> str:
+    """Build the legend label ``"<short_name> (<5-fold mean>%)``" for a run.
+
+    The value is the five-fold mean accuracy from the ``kfold_<run_name>.json``
+    summary (CSV-derived, never hard-coded), so the label can never desync
+    from the data.
+    """
+    kf = kfold_summary(run_name)
+    if kf is None:
+        raise AssertionError(f"no kfold summary for {run_name}")
+    mean = float(kf["mean_val_acc"]) * 100.0
+    return f"{short_name} ({mean:.2f}%)"
+
+
+def _canonical_fold1():
+    """Return ``(traj, (point, lo, hi))`` for the canonical run.
+
+    ``traj`` is the fold-1 epoch trajectory (``epoch`` / ``best_vl_acc``
+    percent); the tuple is the across-folds mean and 95% fold-bootstrap CI
+    (percent) from :func:`paper.figures.loaders.kfold_acc_ci`, rounded to
+    2dp for plotting.
+    """
+    traj = _fold1_trajectory(_CANON_RUN)
+    ci = kfold_acc_ci(_CANON_RUN)
+    if ci is None:
+        raise AssertionError(f"no kfold acc CI for {_CANON_RUN}")
+    point, lo, hi = (round(v, 2) for v in ci)
+    return traj, (point, lo, hi)
 
 
 def _build_fig():
@@ -111,59 +136,52 @@ def _build_fig():
     Split out from :func:`build` so the layout can be inspected
     programmatically (see :func:`verify`).
     """
-    checks = run_epoch_windows()
     panda_color = style.DATASET_COLORS["PANDA"]
 
     fig, (ax_a, ax_b) = plt.subplots(
         1, 2, figsize=(7, 6.0), dpi=300
     )
 
-    # --- Panel (a): validation accuracy vs epoch -----------------------
-    # PANDA curves (per-epoch best_vl_acc), gated on run_epoch_windows status.
-    # Each curve carries a ``label`` for the frameless legend below (the
-    # in-plot direct labels were removed: they collided with / struck through
-    # their own curves in the crowded 28-45% zone).
-    for run_num, label, ls in _PANDA_CURVES:
-        traj = round2_run_trajectory(run_num)
+    # --- Panel (a): fold-1 validation accuracy vs epoch -----------------
+    # PANDA fold-1 curves (per-epoch best_vl_acc); legend labels carry the
+    # five-fold means from the kfold summaries.
+    for run_name, short_name, ls in _PANDA_CURVES:
+        traj = _fold1_trajectory(run_name)
         if traj.empty:
             continue
         ax_a.plot(traj["epoch"], traj["best_vl_acc"], color=panda_color,
-                  linestyle=ls, linewidth=1.4, zorder=3, label=label)
+                  linestyle=ls, linewidth=1.4, zorder=3,
+                  label=_panda_label(run_name, short_name))
 
-    # Canonical decoupled probe curve (running-max val acc) + CI band.
-    c_epochs, c_runmax, c_lo, c_hi = _canonical_running_max()
-    ax_a.fill_between(c_epochs, c_lo, c_hi, color="black", alpha=0.10,
-                      zorder=1, label=None)
-    ax_a.plot(c_epochs, c_runmax, color="black", linestyle=_CANON_LINESTYLE,
-              linewidth=1.4, zorder=3,
-              label=f"canonical decoupled probe ({c_runmax[-1]:.2f}%)")
-
-    # Reference line at the paper's claimed accuracy.
-    ax_a.axhline(_CLAIMED_ACC, color="black", linestyle="--", linewidth=1.0,
+    # Canonical fold-1 trajectory + horizontal 5-fold-mean line + CI band.
+    c_traj, (c_point, c_lo, c_hi) = _canonical_fold1()
+    ax_a.fill_between([0.5, 33.5], c_lo, c_hi, color="black", alpha=0.10,
+                       zorder=1, label=None)
+    ax_a.axhline(c_point, color="black", linestyle="--", linewidth=1.0,
                  zorder=2)
-    # Label just above the line. NOTE: use transData (NOT get_xaxis_transform,
-    # whose y is in axes-fraction 0-1) so y=88.8 is a data value just above the
-    # hline at 88 — using the xaxis transform here placed the text at
-    # 88.8 * axes-height (~87000 px off the top) and blew up the tight-bbox.
-    ax_a.text(0.5, _CLAIMED_ACC + 0.8, f"claimed {_CLAIMED_ACC:.1f}%",
+    ax_a.plot(c_traj["epoch"], c_traj["best_vl_acc"], color="black",
+              linestyle=_CANON_LINESTYLE, linewidth=1.4, zorder=3,
+              label=f"canonical fold-1 probe ({c_point:.2f}% 5-fold mean)")
+    # Label just above the mean line (transData: y is a data value).
+    ax_a.text(0.5, c_point + 0.8, f"5-fold mean {c_point:.2f}%",
               transform=ax_a.transData, ha="left", va="bottom",
               fontsize=7, color="black")
 
     ax_a.set_xlabel("Epoch", fontweight="bold")
     ax_a.set_ylabel("Validation Accuracy (%)", fontweight="bold")
-    ax_a.set_title("(a) PANDA Validation Accuracy vs Epoch", fontweight="bold")
-    ax_a.set_xlim(0.5, 35.5)
+    ax_a.set_title("(a) PANDA val. accuracy (fold 1)",
+                   fontweight="bold", loc="left")
+    ax_a.set_xlim(0.5, 33.5)
     ax_a.set_ylim(0, 100)
     ax_a.grid(True, linestyle="--", alpha=style.GRID_ALPHA)
 
     # One frameless legend for the four curves, anchored upper-right inside
-    # the axes but pulled down (bbox_to_anchor y=0.85) so it sits in the free
-    # band *below* the claimed-88% hline (y ~ 71-84) and above the curves
-    # (which live in the 28-45% zone) — no curve is struck.
+    # the axes but pulled down so it sits in the free band above the curves.
     ax_a.legend(loc="upper right", bbox_to_anchor=(1.0, 0.85),
                 fontsize=7, frameon=False)
 
-    # --- Panel (b): GradNorm task-weight dynamics ----------------------
+    # --- Panel (b): GradNorm task-weight dynamics -----------------------
+    # Seeded canonical probe log (seed 42); the title discloses provenance.
     can = canonical_gradnorm()
     epochs = can["epoch"].to_numpy(dtype=float)
     seg = can["seg_weight"].to_numpy(dtype=float)
@@ -181,12 +199,13 @@ def _build_fig():
 
     ax_b.set_xlabel("Epoch", fontweight="bold")
     ax_b.set_ylabel("Task Weight", fontweight="bold")
-    ax_b.set_title("(b) GradNorm Task-Weight Dynamics", fontweight="bold")
+    ax_b.set_title("(b) GradNorm task weights (seed 42)",
+                   fontweight="bold", loc="right")
     ax_b.set_xlim(0.5, 15.5)
     ax_b.set_ylim(0, 2.0)
     ax_b.grid(True, linestyle="--", alpha=style.GRID_ALPHA)
 
-    # Explicit margins (tight_layout fails here: the "claimed 88.0%" label
+    # Explicit margins (tight_layout fails here: the "5-fold mean" label
     # near the top of panel (a) conflicts with the title under tight_layout).
     fig.subplots_adjust(left=0.08, right=0.98, top=0.90, bottom=0.12,
                         wspace=0.30)
@@ -204,40 +223,60 @@ def verify() -> dict:
     """Verify the Figure 4 data contract (no visual read-back).
 
     Checks:
-      1. Both panels present and non-empty.
-      2. Panel (a) x-range covers [0.5, 35.5] (all 35 epochs).
-      3. Panel (a) y-range covers [0, 100].
-      4. Panel (a) claimed 88.0% line present.
-      5. Panel (b) task-weight curves have final values matching the canonical
-         probe log.
-      6. Bounding box ratio (height / width) is between 0.35 and 0.55 —
-         this catches the F4b defect where a mis-transformed label blew the
-         tight-bbox up to a ~1:42 vertical sliver. Returns a summary dict.
+      1. All three PANDA fold-1 trajectories and the canonical fold-1
+         trajectory (11 epochs) are present.
+      2. Panel (a) legend labels equal the kfold five-fold means (2dp).
+      3. Panel (a) horizontal reference line sits at the 5-fold mean
+         (22.70, 2dp).
+      4. Panel (a) shaded band spans the 95% fold-bootstrap CI
+         [14.66, 30.73] (2dp).
+      5. Panel (b) task-weight curves have final values matching the
+         canonical probe log (weights sum to 2.0).
+      6. Rendered PNG geometry is sane (width/height in [800, 6000] px,
+         aspect h/w in [0.4, 3.0]).
     """
-    TOL = 0.01
-    # All three PANDA runs must have round-2 trajectories.
-    for rn, _, _ in _PANDA_CURVES:
-        traj = round2_run_trajectory(rn)
-        assert not traj.empty, f"run {rn:02d} round-2 epoch log is empty"
+    # All three PANDA runs must have fold-1 trajectories.
+    for run_name, _, _ in _PANDA_CURVES:
+        traj = _fold1_trajectory(run_name)
+        assert not traj.empty, f"{run_name} fold-1 epoch log is empty"
+
+    c_traj, (c_point, c_lo, c_hi) = _canonical_fold1()
+    assert not c_traj.empty, "canonical fold-1 epoch log is empty"
+    assert int(c_traj["epoch"].iloc[-1]) == 11, (
+        f"canonical fold-1 trajectory has {len(c_traj)} epochs, expected 11"
+    )
 
     # Build the figure to ensure it renders without error.
     fig, (ax_a, ax_b) = _build_fig()
     fig.canvas.draw()
 
-    # Panel (a): count the PANDA curves (PANDA color) + the canonical curve.
-    # get_color() returns the original color spec (a hex string here), so
-    # normalize both sides through to_rgba before comparing.
-    panda_rgba = matplotlib.colors.to_rgba(style.DATASET_COLORS["PANDA"])
-    n_panda = sum(
-        1 for ln in ax_a.get_lines()
-        if matplotlib.colors.to_rgba(ln.get_color()) == panda_rgba
-    )
-    n_canon = sum(
-        1 for ln in ax_a.get_lines()
-        if ln.get_linestyle() == _CANON_LINESTYLE
-    )
-    assert n_panda == 3, f"expected 3 PANDA curves in (a), got {n_panda}"
-    assert n_canon == 1, f"expected 1 canonical curve in (a), got {n_canon}"
+    # Panel (a): legend labels must equal the kfold five-fold means (2dp).
+    legend = ax_a.get_legend()
+    assert legend is not None, "panel (a) has no legend"
+    labels = [t.get_text() for t in legend.get_texts()]
+    for run_name, short_name, _ in _PANDA_CURVES:
+        kf = kfold_summary(run_name)
+        mean = float(kf["mean_val_acc"]) * 100.0
+        expected = f"{short_name} ({mean:.2f}%)"
+        assert expected in labels, (
+            f"legend missing {expected!r}; got {labels}"
+        )
+
+    # Panel (a): horizontal reference line at the 5-fold mean (2dp).
+    hline = None
+    for ln in ax_a.get_lines():
+        y = ln.get_ydata()
+        if len(y) == 2 and y[0] == y[1] and abs(y[0] - c_point) < 1e-9:
+            hline = ln
+    assert hline is not None, f"no horizontal line at 5-fold mean {c_point}"
+
+    # Panel (a): shaded band spanning [lo, hi] (2dp).
+    band = None
+    for pc in ax_a.collections:
+        ys = pc.get_paths()[0].vertices[:, 1]
+        if abs(ys.min() - c_lo) < 1e-9 and abs(ys.max() - c_hi) < 1e-9:
+            band = pc
+    assert band is not None, f"no shaded band [{c_lo}, {c_hi}]"
 
     # Panel (b): count the two task-weight lines.
     seg_rgba = matplotlib.colors.to_rgba(_SEG_COLOR)
@@ -253,36 +292,24 @@ def verify() -> dict:
     assert n_seg == 1, f"expected 1 seg line in (b), got {n_seg}"
     assert n_cls == 1, f"expected 1 cls line in (b), got {n_cls}"
 
-    # Final values must match the CSV / canonical log within tolerance.
-    final_acc = {}
-    for rn, _, _ in _PANDA_CURVES:
-        traj = round2_run_trajectory(rn)
-        final_acc[rn] = float(traj["best_vl_acc"].iloc[-1])
-    expected = {3: 43.25, 10: 33.70, 18: 26.09}
-    for rn, exp in expected.items():
-        assert abs(final_acc[rn] - exp) <= TOL, (
-            f"run {rn:02d} final acc {final_acc[rn]:.4f} != expected {exp}"
-        )
-
-    _, c_runmax, _, _ = _canonical_running_max()
-    canon_final = float(c_runmax[-1])
-    assert len(c_runmax) > 0 and canon_final > 0, "canonical probe trajectory empty or non-positive"
-
     can = canonical_gradnorm()
     final_seg = float(can["seg_weight"].iloc[-1])
     final_cls = float(can["cls_weight"].iloc[-1])
-    assert abs(final_seg + final_cls - 2.0) <= 0.05, f"task weights sum {final_seg + final_cls} != 2.0"
+    assert abs(final_seg + final_cls - 2.0) <= 0.05, (
+        f"task weights sum {final_seg + final_cls} != 2.0"
+    )
 
-    print(f"fig4 panel (a) final val acc: "
-          f"run03={final_acc[3]:.2f} run10={final_acc[10]:.2f} "
-          f"run18={final_acc[18]:.2f} canonical={canon_final:.2f}")
+    print(f"fig4 panel (a) 5-fold means: "
+          f"03={float(kfold_summary('g1_panda_vgg16')['mean_val_acc']) * 100:.2f} "
+          f"10={float(kfold_summary('g2_panda_mobilenet_v2')['mean_val_acc']) * 100:.2f} "
+          f"18={float(kfold_summary('g4_panda_isolate_gn')['mean_val_acc']) * 100:.2f} "
+          f"canonical={c_point:.2f} CI=[{c_lo:.2f}, {c_hi:.2f}]")
     print(f"fig4 panel (b) final weights: seg={final_seg:.3f} cls={final_cls:.3f}")
 
     # --- Geometry guard --------------------------------------------------
     # Save the figure to a temp PNG and assert the rendered pixel dimensions
     # are sane (the F4b defect: a mis-transformed text label blew the
-    # tight-bbox up to a ~1:42 vertical sliver). Width/height must each be in
-    # [800, 6000] px at 300 dpi and the aspect ratio (h/w) in [0.4, 3.0].
+    # tight-bbox up to a ~1:42 vertical sliver).
     import tempfile
     from pathlib import Path
     from PIL import Image
@@ -301,14 +328,14 @@ def verify() -> dict:
     plt.close(fig)
 
     return {
-        "n_panda_curves": n_panda,
-        "n_canonical_curves": n_canon,
+        "n_panda_curves": 3,
+        "n_canonical_curves": 1,
         "n_seg_lines": n_seg,
         "n_cls_lines": n_cls,
-        "final_acc_run03": final_acc[3],
-        "final_acc_run10": final_acc[10],
-        "final_acc_run18": final_acc[18],
-        "final_acc_canonical": canon_final,
+        "legend_labels": labels,
+        "canonical_5fold_mean": c_point,
+        "canonical_ci_lo": c_lo,
+        "canonical_ci_hi": c_hi,
         "final_seg_weight": final_seg,
         "final_cls_weight": final_cls,
         "png_width_px": w,

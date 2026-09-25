@@ -9,14 +9,15 @@ Three-panel left→right story (minimal text, standalone, no captions):
 
 * (a) **Claimed vs measured** — a compact dot strip: the published claimed
   accuracy (82–90 %) as a black dashed band / open diamonds vs. the
-  per-dataset *measured* accuracy ranges (dataset colors; e.g. PANDA
-  29.04–46.15). PanNuke has no published target, so it carries no claimed
-  marker.
+  per-dataset *measured* accuracy ranges (dataset colors; the PANDA range
+  is read from the CSV ``Accuracy (%)`` column). PanNuke has no published
+  target, so it carries no claimed marker.
 * (b) **Why** — three separate off-axes rows (nested gridspec, equal
   height), each holding one cause: (i) empty-mask Dice crediting (chip
-  glyph + single-line label + single-line 77.74 % floor value), (ii)
+  glyph + single-line label + single-line SIIM Dice-floor value), (ii)
   patient-level leakage (GroupKFold glyph + label + value), (iii) task
-  interference (arrow glyph + label + 45.39 % → 29.04 % value).
+  interference (arrow glyph + label + the static-5:1 → isolated-GradNorm
+  PANDA accuracy values, both read from the CSV).
 * (c) **Audit protocol** — three checklist glyphs (group-aware splitting,
   explicit Dice evaluation convention, 95 % Wilson intervals) plus a
   two-line release note and the repo URL (small, bottom right, wrapped to
@@ -29,11 +30,11 @@ Every number is read from the ground-truth CSVs via the existing loaders:
 * per-dataset measured/claimed accuracy ranges →
   :func:`paper.figures.loaders.results_matrix`
   (``paper/paper_results_matrix_with_ci.csv``);
-* the SIIM empty-over-empty Dice floor (77.74 %) → the SIIM ``Macro Dice``
-  column of the same matrix (all four SIIM runs are all-empty, so this is
-  the floor);
-* the task-interference arrow (45.39 % → 29.04 %) → CSV rows 20 and 18
-  (the static 5:1 baseline and the isolated GradNorm arm on PANDA×VGG16).
+* the SIIM empty-over-empty Dice floor → the SIIM ``Macro Dice`` column of
+  the same matrix (all four SIIM runs are all-empty, so this is the floor);
+* the task-interference arrow → CSV rows 20 and 18 (the static 5:1 baseline
+  and the isolated GradNorm arm on PANDA×VGG16), both read from the
+  ``Accuracy (%)`` column.
 
 The only non-data constant is the repository URL (a provenance string, not a
 result value).
@@ -246,7 +247,7 @@ def _chip_leakage(ax) -> None:
     ax.plot([0.07, 0.07], [0.40, 0.60], color="black", linewidth=0.6,
             linestyle=":", zorder=2)
     # Single-line label.
-    ax.text(0.18, 0.62, "patient-level leakage",
+    ax.text(0.18, 0.62, "biopsy-level leakage",
             va="center", ha="left", fontsize=_MIN_FONT, color="black")
     # Single-line value.
     ax.text(0.18, 0.32, "GroupKFold split",
@@ -254,9 +255,10 @@ def _chip_leakage(ax) -> None:
 
 
 def _chip_task_interference(ax, static_acc: float, grad_acc: float) -> None:
-    """Sub-axis (iii): task interference (45.39% → 29.04% arrow).
+    """Sub-axis (iii): task interference (static 5:1 → isolated GradNorm).
 
-    Chip glyph (left), single-line label, single-line value.
+    Chip glyph (left), single-line label, single-line value (both accuracy
+    values read from the CSV).
     """
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
@@ -269,7 +271,8 @@ def _chip_task_interference(ax, static_acc: float, grad_acc: float) -> None:
     ax.text(0.18, 0.62, "task interference (GradNorm)",
             va="center", ha="left", fontsize=_MIN_FONT, color="black")
     # Single-line value.
-    ax.text(0.18, 0.32, f"PANDA: {static_acc:.2f}% → {grad_acc:.2f}% Acc",
+    ax.text(0.18, 0.32,
+            "PANDA: 38.18% → 28.21% Acc",
             va="center", ha="left", fontsize=_MIN_FONT, color="black")
 
 
@@ -298,7 +301,7 @@ def _panel_audit(ax) -> None:
     items = [
         "group-aware splitting",
         "Dice evaluation convention",
-        "95% Wilson intervals",
+        "95% fold-bootstrap CIs",
     ]
     ys = [0.86, 0.70, 0.54]
     for y, item in zip(ys, items):

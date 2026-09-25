@@ -1,28 +1,32 @@
-"""Figure 3 — 26-run claimed-vs-measured dot plot with 95% Wilson CIs.
+"""Figure 3 — 26-run claimed-vs-measured dot plot with 95% CIs (fold campaign).
 
 The paper's centerpiece figure. Two side-by-side panels share a common
 categorical y-axis of 26 rows (one row per run, in CSV order, which is
 already grouped into the five experiment groups):
 
 * LEFT  — Validation Accuracy (%): each measured value is a filled marker
-  (color = dataset, shape = encoder) with its 95% Wilson-CI whisker; the
-  paper's *claimed* accuracy is a black open diamond; a thin light-gray
-  tie line connects measured to claimed (the gap is the paper's argument).
-* RIGHT — Validation Dice (%): same layout but **no CI whiskers** (Dice has
-  no published CIs) — see the caption source comment below.
+  (color = dataset, shape = encoder) with its 95% across-folds CI whisker
+  (k-fold CV mean ± z·(fold SD/√k)); the paper's *claimed* accuracy is a
+  black open diamond; a thin light-gray tie line connects measured to
+  claimed (the gap is the paper's argument).
+* RIGHT — Validation Dice (%): same layout, with the 95% bootstrap
+  across-folds CI whisker from ``dice_ci_summary.csv`` (the fold campaign
+  now provides a Dice CI, so the panel is no longer CI-free).
 
 The claimed diamonds (and their tie lines) are omitted for the PanNuke rows,
 which have no published comparison (Paper value NaN).
 
-Data source: :func:`paper.figures.loaders.results_matrix` only — no value is
-hard-coded.
+Data source: the fold campaign — :func:`paper.figures.loaders.kfold_run_stats`
+(k-fold CV accuracy mean/SD from ``kfold_*.json`` and the bootstrap
+across-folds Dice CI from ``dice_ci_summary.csv``) joined to
+:func:`paper.figures.loaders.results_matrix` for the claimed (paper) values.
+No single-split number is hard-coded.
 
 Caption source note
 -------------------
-The Accuracy panel carries 95% Wilson-CI whiskers on every measured point;
-the Dice panel deliberately has **no** whiskers because no published
-confidence intervals exist for the macro-Dice claims. This asymmetry is
-intentional and must be stated in the figure caption.
+The Accuracy panel carries 95% across-folds CI whiskers (k-fold mean ±
+z·SD/√k); the Dice panel carries 95% bootstrap across-folds CI whiskers from
+the fold campaign. Both panels now show CIs.
 
 Output: ``paper/fig3_results_dotplot.pdf`` + ``paper/fig3_results_dotplot.png``
 (via :func:`paper.figures.style.save_figure`).
@@ -37,7 +41,7 @@ from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 
 from . import style
-from .loaders import REPO_ROOT, results_matrix
+from .loaders import REPO_ROOT, kfold_run_stats, results_matrix
 
 # Apply the locked style contract once for this module.
 style.apply()
@@ -182,6 +186,9 @@ def _build_fig():
                         linestyle="-", alpha=0.5, zorder=0)
 
     # --- Per-row markers, CI whiskers, claimed diamonds, tie lines ------
+    # Measured values + CIs come from the fold campaign (k-fold CV accuracy
+    # mean/SD and the bootstrap across-folds Dice CI); the claimed (paper)
+    # values come from the results matrix. No single-split number is used.
     for i in range(n):
         row = matrix.iloc[i]
         y = y_pos[i]
@@ -190,17 +197,29 @@ def _build_fig():
         color = style.DATASET_COLORS[ds]
         marker = style.ENCODER_MARKERS[enc]
 
-        meas_acc = float(row["Accuracy (%)"])
-        meas_dice = float(row["Macro Dice (%)"])
-        ci_lo = row["Acc 95% CI Lower"]
-        ci_hi = row["Acc 95% CI Upper"]
+        stats = kfold_run_stats(i + 1)
+        if stats is None:
+            # Not part of the fold campaign: fall back to the CSV row.
+            meas_acc = float(row["Accuracy (%)"])
+            meas_dice = float(row["Macro Dice (%)"])
+            acc_lo = float(row["Acc 95% CI Lower"])
+            acc_hi = float(row["Acc 95% CI Upper"])
+            dice_lo = float(row["Dice 95% CI Lower (bootstrap)"])
+            dice_hi = float(row["Dice 95% CI Upper (bootstrap)"])
+        else:
+            meas_acc = stats["acc_point"]
+            meas_dice = stats["dice_point"]
+            acc_lo = stats["acc_ci_lo"]
+            acc_hi = stats["acc_ci_hi"]
+            dice_lo = stats["dice_ci_lo"]
+            dice_hi = stats["dice_ci_hi"]
         paper_acc = row["Paper Acc (%)"]
         paper_dice = row["Paper Dice (%)"]
 
         # --- Accuracy panel --------------------------------------------
-        # 95% Wilson-CI whisker (horizontal, along the accuracy axis).
-        if pd.notna(ci_lo) and pd.notna(ci_hi):
-            flo, fhi = float(ci_lo), float(ci_hi)
+        # 95% across-folds CI whisker (horizontal, along the accuracy axis).
+        if pd.notna(acc_lo) and pd.notna(acc_hi):
+            flo, fhi = acc_lo, acc_hi
             ax_acc.plot([flo, fhi], [y, y], color=_CI_GRAY, linewidth=1.0,
                         zorder=2, solid_capstyle="butt")
             cap = 0.15
@@ -220,7 +239,17 @@ def _build_fig():
                         markersize=6, linestyle="none", zorder=4)
 
         # --- Dice panel ------------------------------------------------
-        # No CI whisker for Dice (no published CIs).
+        # 95% bootstrap across-folds CI whisker (the fold campaign provides
+        # a Dice CI, so the panel is no longer CI-free).
+        if pd.notna(dice_lo) and pd.notna(dice_hi):
+            dlo, dhi = dice_lo, dice_hi
+            ax_dice.plot([dlo, dhi], [y, y], color=_CI_GRAY, linewidth=1.0,
+                         zorder=2, solid_capstyle="butt")
+            cap = 0.15
+            ax_dice.plot([dlo, dlo], [y - cap, y + cap], color=_CI_GRAY,
+                         linewidth=1.0, zorder=2)
+            ax_dice.plot([dhi, dhi], [y - cap, y + cap], color=_CI_GRAY,
+                         linewidth=1.0, zorder=2)
         ax_dice.plot(meas_dice, y, marker=marker, color=color,
                      markersize=6, linestyle="none", zorder=3)
         if pd.notna(paper_dice):
@@ -267,7 +296,7 @@ def _build_fig():
                           mfc="none", mec="black", markersize=6,
                           label="Claimed (paper)"))
     handles.append(Line2D([], [], color=_CI_GRAY, linewidth=1.0,
-                          label="95% CI (Acc)"))
+                          label="95% CI (across-folds)"))
     fig.legend(handles=handles, loc="lower center", ncol=4, fontsize=7,
                bbox_to_anchor=(0.5, 0.01))
 
@@ -309,6 +338,12 @@ def verify() -> dict:
     n_nan_dice = int(matrix["Macro Dice (%)"].isna().sum())
     assert n_nan_acc == 0, f"{n_nan_acc} NaN measured Accuracy values"
     assert n_nan_dice == 0, f"{n_nan_dice} NaN measured Dice values"
+
+    # Every row must be covered by the fold campaign (k-fold summary +
+    # across-folds bootstrap Dice CI) so the plotted points are the
+    # fold-aware values, not single-split numbers.
+    n_fold = sum(1 for i in range(n) if kfold_run_stats(i + 1) is not None)
+    assert n_fold == n, f"expected {n} fold-campaign rows, got {n_fold}"
 
     # Build the figure to ensure it renders without error.
     fig, (ax_acc, ax_dice) = _build_fig()
@@ -359,6 +394,7 @@ def verify() -> dict:
     return {
         "n_rows": n,
         "n_with_ci": n_ci,
+        "n_fold_campaign_rows": n_fold,
         "n_nan_acc": n_nan_acc,
         "n_nan_dice": n_nan_dice,
         "n_acc_yticks": n_acc_ticks,
