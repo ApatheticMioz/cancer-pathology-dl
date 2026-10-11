@@ -8,12 +8,12 @@
 \textbf{Run} & \textbf{Phase} & \textbf{Dataset} & \textbf{Encoder} & \textbf{LR} & \textbf{GradNorm} & \textbf{$\alpha$} & \textbf{Acc \%(\%)} & \textbf{Dice \%(\%)} & \textbf{Paper Acc \%(\%)} & \textbf{Paper Dice \%(\%)} & \textbf{Acc $\Delta$ \%(\%)} & \textbf{Dice $\Delta$ \%(\%)} \\
 \midrule
 PANDA/mobilenet_v2 $\times$ & v2 & PANDA & mobilenet_v2 & 1e-4 & \checkmark & 1.5 & 36.88 & 85.35 & 88.0 & 99.0 & -51.12 & -13.65 \\
-TCGA/mobilenet_v2 $\times$ & v2 & TCGA & mobilenet_v2 & 1e-4 & \checkmark & 1.5 & 93.32 & 80.97 & 90.0 & 98.0 & 3.32 & -17.03 \\
+TCGA/mobilenet_v2 $\times$ & v2 & TCGA & mobilenet_v2 & 1e-4 & \checkmark & 1.5 & 93.32 & 80.97 & 89.0 & 98.0 & 4.32 & -17.03 \\
 PANDA/vgg16 (seg:cls=1:1) & v1 & PANDA & vgg16 & 1e-3 &  & 0.0 & 43.11 & 85.35 & 87.0 & 98.0 & -43.89 & -12.65 \\
 PANDA/vgg16 (seg:cls=1:10) & v1 & PANDA & vgg16 & 1e-3 &  & 0.0 & 43.68 & 85.35 & 87.0 & 98.0 & -43.32 & -12.65 \\
 PANDA/vgg16 (seg:cls=10:1) & v1 & PANDA & vgg16 & 1e-3 &  & 0.0 & 43.87 & 85.47 & 87.0 & 98.0 & -43.13 & -12.53 \\
-TCGA/vgg16 ($\alpha$=0.0) & v1 & TCGA & vgg16 & 1e-3 &  & 0.0 & 89.07 & 79.78 & 89.0 & 97.0 & 0.07 & -17.22 \\
-TCGA/mobilenet_v2 ($\alpha$=0.0) & v1 & TCGA & mobilenet_v2 & 1e-3 &  & 0.0 & 95.12 & 84.47 & 90.0 & 98.0 & 5.12 & -13.53 \\
+TCGA/vgg16 ($\alpha$=0.0) & v1 & TCGA & vgg16 & 1e-3 &  & 0.0 & 89.07 & 79.78 & 90.0 & 97.0 & -0.93 & -17.22 \\
+TCGA/mobilenet_v2 ($\alpha$=0.0) & v1 & TCGA & mobilenet_v2 & 1e-3 &  & 0.0 & 95.12 & 84.47 & 89.0 & 98.0 & 6.12 & -13.53 \\
 PANDA/vgg16 ($\alpha$=0.0) & v1 & PANDA & vgg16 & 1e-3 &  & 0.0 & 43.25 & 85.50 & 87.0 & 98.0 & -43.75 & -12.5 \\
 PANDA/mobilenet_v2 ($\alpha$=0.0) & v1 & PANDA & mobilenet_v2 & 1e-3 &  & 0.0 & 45.01 & 85.35 & 88.0 & 99.0 & -42.99 & -13.65 \\
 SIIM/vgg16 ($\alpha$=0.0) & v1 & SIIM & vgg16 & 1e-3 &  & 0.0 & 79.58 & 77.74 & 82.0 & 99.0 & -2.42 & -21.26 \\
@@ -21,8 +21,8 @@ SIIM/mobilenet_v2 ($\alpha$=0.0) & v1 & SIIM & mobilenet_v2 & 1e-3 &  & 0.0 & 83
 PANNUKE/vgg16 ($\alpha$=0.0) & v1 & PANNUKE & vgg16 & 1e-3 &  & 0.0 & 97.72 & 68.49 & --- & --- & --- & --- \\
 PANNUKE/mobilenet_v2 ($\alpha$=0.0) & v1 & PANNUKE & mobilenet_v2 & 1e-3 &  & 0.0 & 99.05 & 69.31 & --- & --- & --- & --- \\
 PANDA/vgg16 ($\alpha$=0.0) & v1 & PANDA & vgg16 & 1e-3 &  & 0.0 & 43.16 & 85.35 & 87.0 & 98.0 & -43.84 & -12.65 \\
-TCGA/vgg16 ($\alpha$=1.5) & v2 & TCGA & vgg16 & 1e-4 & \checkmark & 1.5 & 93.19 & 75.24 & 89.0 & 97.0 & 4.19 & -21.76 \\
-TCGA/mobilenet_v2 ($\alpha$=1.5) & v2 & TCGA & mobilenet_v2 & 1e-4 & \checkmark & 1.5 & 94.22 & 83.85 & 90.0 & 98.0 & 4.22 & -14.15 \\
+TCGA/vgg16 ($\alpha$=1.5) & v2 & TCGA & vgg16 & 1e-4 & \checkmark & 1.5 & 93.19 & 75.24 & 90.0 & 97.0 & 3.19 & -21.76 \\
+TCGA/mobilenet_v2 ($\alpha$=1.5) & v2 & TCGA & mobilenet_v2 & 1e-4 & \checkmark & 1.5 & 94.22 & 83.85 & 89.0 & 98.0 & 5.22 & -14.15 \\
 PANDA/vgg16 ($\alpha$=1.5) & v2 & PANDA & vgg16 & 1e-4 & \checkmark & 1.5 & 33.03 & 85.35 & 87.0 & 98.0 & -53.97 & -12.65 \\
 PANDA/mobilenet_v2 ($\alpha$=1.5) & v2 & PANDA & mobilenet_v2 & 1e-4 & \checkmark & 1.5 & 33.70 & 85.35 & 88.0 & 99.0 & -54.3 & -13.65 \\
 SIIM/vgg16 ($\alpha$=1.5) & v2 & SIIM & vgg16 & 1e-4 & \checkmark & 1.5 & 82.01 & 77.74 & 82.0 & 99.0 & 0.01 & -21.26 \\

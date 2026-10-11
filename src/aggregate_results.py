@@ -18,6 +18,8 @@ import re
 import sys
 from pathlib import Path
 
+from src.config import PAPER_TARGETS
+
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
@@ -301,10 +303,17 @@ def parse_summary_file(filepath: Path, lr: str = "") -> list[dict]:
         acc = round(100.0 * run_data.get("final_val_acc", 0.0), 2)
         dice = round(100.0 * run_data.get("final_val_dice", 0.0), 2)
 
-        paper_acc = run_data.get("paper_acc")
-        paper_dice = run_data.get("paper_dice")
-        acc_delta = run_data.get("acc_delta")
-        dice_delta = run_data.get("dice_delta")
+        target = PAPER_TARGETS.get(f"{dataset.lower()}_{encoder.lower()}")
+        if target:
+            paper_acc = target["acc"]
+            paper_dice = target["dice"]
+            acc_delta = ((acc / 100.0) - paper_acc) if acc is not None else None
+            dice_delta = ((dice / 100.0) - paper_dice) if dice is not None else None
+        else:
+            paper_acc = run_data.get("paper_acc")
+            paper_dice = run_data.get("paper_dice")
+            acc_delta = run_data.get("acc_delta")
+            dice_delta = run_data.get("dice_delta")
 
         paper_acc_str = f"{round(100.0 * paper_acc, 2)}" if paper_acc is not None else ""
         paper_dice_str = f"{round(100.0 * paper_dice, 2)}" if paper_dice is not None else ""
@@ -553,12 +562,51 @@ def _find_dump_dirs(*base_labels: str, campaign_dir: Path | None = None) -> list
     return dirs
 
 
+_DICE_CI_SUMMARY_CACHE: dict[str, dict[str, dict]] | None = None
+
+
+def _load_precomputed_dice_ci_summary(campaign_dir: Path | None = None) -> dict[str, dict[str, dict]]:
+    """Load precomputed bootstrap Dice CIs from results/kfold_campaign/dice_ci_summary.csv."""
+    global _DICE_CI_SUMMARY_CACHE
+    if _DICE_CI_SUMMARY_CACHE is not None:
+        return _DICE_CI_SUMMARY_CACHE
+    base = campaign_dir or CAMPAIGN_DIR
+    csv_path = base / "dice_ci_summary.csv"
+    if not csv_path.is_file():
+        _DICE_CI_SUMMARY_CACHE = {}
+        return _DICE_CI_SUMMARY_CACHE
+    summary: dict[str, dict[str, dict]] = {}
+    with open(csv_path, newline="") as f:
+        reader = csv.DictReader(f)
+        for r in reader:
+            lbl = r.get("run_label")
+            st = r.get("stratum")
+            if not lbl or not st:
+                continue
+            try:
+                summary.setdefault(lbl, {})[st] = {
+                    "point": float(r["point_estimate"]),
+                    "lo": float(r["ci_low"]),
+                    "hi": float(r["ci_high"]),
+                    "n": int(r["n"]),
+                }
+            except (ValueError, KeyError):
+                continue
+    _DICE_CI_SUMMARY_CACHE = summary
+    return _DICE_CI_SUMMARY_CACHE
+
+
 def compute_dice_ci(*base_labels: str, campaign_dir: Path | None = None) -> dict:
     """Pool per-case dice across a run's dump dirs; bootstrap CI per stratum.
 
     Returns ``{stratum: {point, lo, hi, n}}`` for overall / positive_only /
-    negative_only.  Dice CIs are strictly percentile-bootstrap (never Wilson).
+    negative_only / across_folds.  Dice CIs are strictly percentile-bootstrap (never Wilson).
+    Prefers precomputed values in ``dice_ci_summary.csv`` for instant execution.
     """
+    precomputed = _load_precomputed_dice_ci_summary(campaign_dir)
+    for label in base_labels:
+        if label in precomputed:
+            return precomputed[label]
     bmod = _bootstrap_mod()
     dump_dirs = _find_dump_dirs(*base_labels, campaign_dir=campaign_dir)
     if not dump_dirs:
@@ -644,9 +692,15 @@ def augment_records_with_ci(
             rec["Splitter Branch"] = _read_splitter_branch(run_name, campaign_dir)
 
         # Bootstrap Dice CIs (strictly separate from the Wilson Acc CIs above).
-        dice = compute_dice_ci(f"kfold_{run_name}", run_name, campaign_dir=campaign_dir)
+        run_id = rec.get("_run_id", "")
+        dice = compute_dice_ci(
+            f"kfold_{run_name}",
+            f"{run_id}_{run_name}" if run_id else run_name,
+            run_name,
+            campaign_dir=campaign_dir,
+        )
         if dice:
-            ov = dice.get("overall")
+            ov = dice.get("across_folds") or dice.get("overall")
             if ov:
                 rec["Dice 95% CI Lower (bootstrap)"] = round(100.0 * ov["lo"], 2)
                 rec["Dice 95% CI Upper (bootstrap)"] = round(100.0 * ov["hi"], 2)

@@ -188,8 +188,8 @@ PHASE_CONFIGS = {
 # Paper reference targets for comparison
 # ---------------------------------------------------------------------------
 PAPER_TARGETS = {
-    "tcga_vgg16": {"acc": 0.89, "dice": 0.97},
-    "tcga_mobilenet_v2": {"acc": 0.90, "dice": 0.98},
+    "tcga_vgg16": {"acc": 0.90, "dice": 0.97},
+    "tcga_mobilenet_v2": {"acc": 0.89, "dice": 0.98},
     "panda_vgg16": {"acc": 0.87, "dice": 0.98},
     "siim_vgg16": {"acc": 0.82, "dice": 0.99},
     "panda_mobilenet_v2": {"acc": 0.88, "dice": 0.99},

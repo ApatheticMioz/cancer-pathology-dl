@@ -167,6 +167,9 @@ def bootstrap_ci(
     n = len(values)
     if n == 0:
         raise ValueError("cannot bootstrap an empty sample")
+    v0 = values[0]
+    if all(v == v0 for v in values):
+        return float(v0), float(v0)
     try:
         import numpy as np
 
@@ -271,6 +274,17 @@ def across_folds_row(
 # Main
 # ---------------------------------------------------------------------------
 
+def _process_single_run(item: tuple[str, Path, int, int]) -> list[dict]:
+    label, run_dir, n_resamples, seed = item
+    records = load_records(run_dir / "per_slice_dice.jsonl")
+    batch_mean = batch_mean_from_summary(run_dir)
+    fold = None
+    m = FOLD_RE.match(label)
+    if m:
+        fold = int(m.group("n"))
+    return stratum_rows(label, records, batch_mean, n_resamples, seed, fold=fold)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--campaign-dir", type=Path, default=DEFAULT_CAMPAIGN,
@@ -290,15 +304,12 @@ def main() -> None:
     if not runs:
         raise SystemExit(f"no per_slice_dice.jsonl dumps found under {args.campaign_dir}")
 
+    import concurrent.futures
+    items = [(label, run_dir, args.n_resamples, args.seed) for label, run_dir in sorted(runs.items())]
     all_rows: list[dict] = []
-    for label, run_dir in runs.items():
-        records = load_records(run_dir / "per_slice_dice.jsonl")
-        batch_mean = batch_mean_from_summary(run_dir)
-        fold = None
-        m = FOLD_RE.match(label)
-        if m:
-            fold = int(m.group("n"))
-        all_rows.extend(stratum_rows(label, records, batch_mean, args.n_resamples, args.seed, fold=fold))
+    with concurrent.futures.ProcessPoolExecutor() as executor:
+        for rows in executor.map(_process_single_run, items):
+            all_rows.extend(rows)
 
     if args.fold_aware:
         # Group fold dumps by base; emit across_folds rows for bases with >=2 folds.
