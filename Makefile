@@ -12,12 +12,12 @@ figures:
 	echo "==> Building figures with $$PY"; \
 	$$PY -m paper.figures.build_all
 
-# CBM graphical abstract: a wide ~2.5:1 banner (Claimed-vs-Measured / Why /
+# Graphical abstract: a wide ~2.5:1 banner (Claimed-vs-Measured / Why /
 # Audit protocol) built by the paper.figures package. It overwrites
 # paper/graphical_abstract.{pdf,png}; the paper itself embeds nothing of it.
 graphical-abstract:
 	@if [ -x venv/bin/python ]; then PY=venv/bin/python; else PY=python3; fi; \
-	echo "==> Building graphical abstract (wide CBM banner) with $$PY"; \
+	echo "==> Building graphical abstract banner with $$PY"; \
 	$$PY -m paper.figures.build_all ga
 
 clean-paper:

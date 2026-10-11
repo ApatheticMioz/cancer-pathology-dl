@@ -1,7 +1,7 @@
-# All Dice, No Slice: Metric Artifacts, Data Leakage, and Task Interference in Multi-Task Computational Pathology
+# All Dice, No Slice: Metric Degeneracy, Evaluation Pitfalls, and Optimization Dynamics in Multi-Task Medical Vision
 
-[![Target: CBM](https://img.shields.io/badge/Target%20Venue-Computers%20in%20Biology%20and%20Medicine%20(Elsevier)-orange.svg)](https://www.sciencedirect.com/journal/computers-in-biology-and-medicine)
-[![Paper](https://img.shields.io/badge/Manuscript-19pp%20Elsevier%20Preprint-blue.svg)](paper/all_dice_no_slice.pdf)
+[![Preprint](https://img.shields.io/badge/Preprint-Open%20Access-success.svg)](paper/all_dice_no_slice.pdf)
+[![Paper](https://img.shields.io/badge/Manuscript-26pp%20Preprint-blue.svg)](paper/all_dice_no_slice.pdf)
 [![Audit Manifest](https://img.shields.io/badge/Audit%20Manifest-16%2F16%20Findings%20Closed-success.svg)](paper/AUDIT_MANIFEST.md)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 [![PyTorch 2.0+](https://img.shields.io/badge/PyTorch-2.0%2B%20CUDA-ee4c2c.svg)](https://pytorch.org/)
@@ -11,25 +11,27 @@
 
 ## 🔬 Executive Overview
 
-Multi-task deep learning (MTL)—simultaneously predicting patient-level diagnostic categories and dense pixel-wise lesion segmentation—is widely promoted as an efficient paradigm for computational pathology. Recently, **Rhanoui et al. (*Onco* 2025, [doi:10.3390/onco5030034](https://doi.org/10.3390/onco5030034))** reported near-perfect diagnostic efficacy using standard hard-parameter sharing U-Nets (VGG16 and MobileNetV2), claiming **98.0%–99.0% Dice coefficients** alongside **82.0%–90.0% classification accuracy** across TCGA brain tumor MRIs, PANDA prostate biopsies, and SIIM-ACR pneumothorax radiographs.
+Multi-task deep learning (MTL)—simultaneously predicting patient-level diagnostic categories and dense pixel-wise lesion segmentation—is widely promoted as an efficient paradigm for medical vision. Recently, **Rhanoui et al. (*Onco* 2025, [doi:10.3390/onco5030034](https://doi.org/10.3390/onco5030034))** reported near-perfect diagnostic efficacy using standard hard-parameter sharing U-Nets (VGG16 and MobileNetV2), claiming **97.0%–99.0% Dice coefficients** alongside **82.0%–90.0% classification accuracy** across TCGA brain tumor MRIs, PANDA prostate biopsies, SIIM-ACR pneumothorax radiographs, and ISIC dermoscopy.
 
-Through a mathematically grounded **26-run experimental reproduction and ablation matrix**—incorporating an external 19-tissue multi-organ control (**PanNuke**), dynamic gradient balancing (**GradNorm**), **Macenko optical density stain normalization**, and strict **patient-level boundary enforcement**—we show that these headline figures do not survive a controlled, patient-disjoint replication: the reported Dice levels are attainable only as empty-mask scoring artifacts, the accuracies depend on patch-level splits that leak patient identity, and the joint optimization recipe itself degrades the grading task. The audit evaluates a recent, widely cited pipeline as a representative instance of failure modes that the broader medical-imaging literature has documented independently (see the paper's Related Work for the field-wide evidence base).
+Through a mathematically grounded **27-configuration $\times$ 5-fold cross-validation campaign (135 fold-runs)**—incorporating an external 19-tissue multi-organ benchmark (**PanNuke**; replacing ISIC 2018 due to 7,421 missing segmentation masks in Task 3), dynamic gradient balancing (**GradNorm**), **Macenko optical density stain normalization**, and strict **patient/group boundary enforcement**—we show that these headline figures do not survive a controlled, leakage-free replication: the reported Dice levels are attainable only as empty-mask scoring artifacts, the accuracies depend on proxy morphological texture classes rather than clinical biopsy grading, and the joint optimization recipe itself degrades classification. The audit evaluates this recent baseline as a representative instance of failure modes documented across the biomedical machine learning literature.
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │                                       CORE AUDIT TAKEAWAYS                                              │
-├─────────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│ 1. Patient Leakage Deficit: Naive random patch splitting leaks patient/slide identity. Under strict     │
-│    patient-disjoint GroupKFold validation, PANDA ISUP Gleason accuracy drops from 88.0% to 29.0–46.2%    │
-│    and Dice from 98.0–99.0% to 28.9–44.3%.                                                              │
+│ 1. PANDA Task & Resolution Divergence: Downsampling biopsies to 128x128 thumbnails destroys glandular   │
+│    lumens. Rhanoui Table 2 evaluated 6 Radboud tissue classes (52.3% non-cancer glass/stroma) reaching  │
+│    88% Acc. Under authentic clinical 6-class ordinal ISUP grading, accuracy drops to 28.21%–44.87%.      │
 │                                                                                                         │
 │ 2. Empty-Mask Metric Inflation: The reported 99.0% SIIM pneumothorax Dice is an artifact of scoring    │
-│    lesion-free slices (77.74% of corpus) as Dice=1.0. An all-zero dummy predictor achieves 77.74% Dice  │
-│    baseline without segmenting a single pathology pixel.                                                │
+│    lesion-free slices (77.74% of corpus) as Dice=1.0 via the identity:                                 │
+│    Dice_all = rho * q_empty + (1 - rho) * Dice_fg. An all-empty dummy achieves 77.74% Dice floor.       │
 │                                                                                                         │
-│ 3. Multi-Task Optimization Conflict: Dynamic loss balancing (GradNorm) degrades 6-class ordinal grading  │
-│    (45.39% -> 29.04% Acc on PANDA), skip connections represent a null result, and removing Macenko      │
-│    stain normalization improves subtype discrimination (+5.51% on PANDA, +2.68% on PanNuke).           │
+│ 3. Multi-Task Optimization Conflict: Dynamic loss balancing (GradNorm) degrades grading                │
+│    (38.18% -> 28.21% Acc on PANDA), skip connections offer no detectable classification gain, and       │
+│    Macenko normalization attenuates fine nuclear chromatin texture (+3.81% on PANDA, +2.75% PanNuke).   │
+│                                                                                                         │
+│ 4. ISIC 2018 Omission: ISIC Task 1 had only 2,594 masks vs. Task 3's 10,015 images (7,421 missing).    │
+│    Due to unreleased split/loss protocols, we evaluated verified paired 19-tissue PanNuke instead.     │
 └─────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -41,7 +43,7 @@ Our graphical abstract summarizes the replication contrast, the three root cause
 
 | Panel (a): Claimed vs. Measured Reality | Panel (b): Three Root Failure Modes | Panel (c): Audit Protocol & Release |
 | :---: | :---: | :---: |
-| Massive drops across all datasets under patient-disjoint splits | Data Leakage, Empty-Mask Floor, Optimization Starvation | 26-run matrix, open checkpoints, verified assertions |
+| Gaps across all datasets under rigorous 5-fold cross-validation | Task Mismatch, Empty-Mask Floor, Optimization Starvation | 27-config campaign (135 fold-runs), open checkpoints |
 
 > **Graphical Abstract Artifact**: Available as a compliant $13.2 \times 5.3\text{ cm}$ (300 DPI) publication banner in [`paper/graphical_abstract.pdf`](paper/graphical_abstract.pdf) and [`paper/graphical_abstract.png`](paper/graphical_abstract.png). Rebuild anytime via `make graphical-abstract`.
 
@@ -49,20 +51,20 @@ Our graphical abstract summarizes the replication contrast, the three root cause
 
 ## 📊 Audited Results vs. Published Claims
 
-The table below contrasts the published metrics in Rhanoui et al. (2025) against our leak-free, patient-disjoint experimental matrix:
+The table below contrasts the published metrics in Rhanoui et al. (2025) against our 27-configuration $\times$ 5-fold cross-validation campaign (Table 1 of manuscript):
 
-| Dataset | Modality / Task | Backbone | Claimed Acc (%) | Real Acc (%) [95% CI] | Claimed Dice (%) | Real Dice (%) | Methodological Root Cause |
+| Dataset | Modality / Task | Backbone | Claimed Acc (%) | Audited Val Acc (%) [95% CI] | Claimed Dice (%) | Audited Val Dice (%) [95% CI] | Methodological Root Cause |
 | :--- | :--- | :--- | :---: | :---: | :---: | :---: | :--- |
-| **PANDA** | Prostate ISUP (6-class) | VGG16 | 87.00 | **41.68** [39.8, 43.6] | 98.00 | **43.41** | **Patient-level data leakage unmasked** |
-| **PANDA** | Prostate ISUP (6-class) | MobileNetV2 | 88.00 | **42.21** [40.3, 44.1] | 99.00 | **44.18** | **Patient-level data leakage unmasked** |
-| **SIIM-ACR** | Pneumothorax CXR | VGG16 | 82.00 | **77.70** [75.9, 79.4] | 99.00 | **77.74** | **Empty-mask Dice floor ($\rho=0.777$)** |
-| **SIIM-ACR** | Pneumothorax CXR | MobileNetV2 | 87.00 | **74.24** [72.4, 76.1] | 99.00 | **77.74** | **Empty-mask Dice floor ($\rho=0.777$)** |
-| **TCGA-LGG** | Brain MRI (Lower-Grade Glioma) | VGG16 | 89.00 | **82.78** [80.8, 84.7] | 97.00 | **73.12** | Tile-level variance & slice shifts |
-| **TCGA-LGG** | Brain MRI (Lower-Grade Glioma) | MobileNetV2 | 90.00 | **93.83** [92.4, 95.1] | 98.00 | **83.47** | MobileNetV2 generalist feature extractor |
-| **PanNuke** | 19-Tissue Multi-Organ | VGG16 (V2) | *N/A* | **73.45** [71.8, 75.1] | *N/A* | **10.97** | **Catastrophic VGG16 gradient collapse** |
-| **PanNuke** | 19-Tissue Multi-Organ | MobileNetV2 (V2) | *N/A* | **97.89** [97.1, 98.5] | *N/A* | **65.53** | Inverted residual bottleneck stability |
+| **TCGA-LGG** | Brain MRI (Glioma) | VGG16 | 90.00 | **92.86** [92.00, 93.61] | 97.00 | **85.33** [82.17, 88.39] | Patient-level GroupKFold isolation |
+| **TCGA-LGG** | Brain MRI (Glioma) | MobileNetV2 | 89.00 | **95.62** [94.94, 96.22] | 98.00 | **88.03** [86.29, 89.50] | Generalist feature extractor (+6.62% Acc) |
+| **PANDA** | Prostate ISUP (6-class) | VGG16 | 87.00 | **34.51** [33.61, 35.42] | 98.00 | **98.54** [98.53, 98.69] | Task formulation mismatch & 128x128 sub-pixel lumens |
+| **PANDA** | Prostate ISUP (6-class) | MobileNetV2 | 88.00 | **39.91** [38.98, 40.85] | 99.00 | **98.60** [98.53, 98.69] | Glandular context destruction without MIL pooling |
+| **SIIM-ACR** | Pneumothorax CXR | VGG16 | 82.00 | **77.71** [76.91, 78.49] | 99.00 | **77.72** [77.70, 77.74] | Empty-mask Dice floor ($\rho=0.777$) |
+| **SIIM-ACR** | Pneumothorax CXR | MobileNetV2 | 87.00 | **82.19** [81.45, 82.91] | 99.00 | **77.72** [77.70, 77.74] | Empty-mask Dice floor ($\rho=0.777$) |
+| **PanNuke** | 19-Tissue Multi-Organ | VGG16 (Naked) | *N/A* | **78.70** [78.20, 79.20] | *N/A* | **68.44** [67.39, 69.82] | External multi-organ control (ISIC replacement) |
+| **PanNuke** | 19-Tissue Multi-Organ | MobileNetV2 (V2) | *N/A* | **96.49** [96.18, 96.90] | *N/A* | **70.64** [69.81, 71.34] | Multi-tissue cellular classification & segmentation |
 
-*Note: All empirical figures reflect single-seed (42), patient-disjoint splits. Per-slice Dice standard deviations and multi-seed variance are excluded to adhere to exact empirical ground truth (Invariants I2, I3).*
+*Note: All values reflect 5-fold cross-validation means with 95% bootstrap confidence intervals across folds (per-case Dice and fold-mean accuracy).*
 
 ---
 
@@ -71,45 +73,45 @@ The table below contrasts the published metrics in Rhanoui et al. (2025) against
 The full experimental matrix covers 5 structured phases across 4 clinical datasets:
 
 <details open>
-<summary><b>Click to view full 26-run experimental breakdown</b></summary>
+<summary><b>Click to view full 26-run experimental breakdown (5-fold CV means)</b></summary>
 
 <br>
 
 > **F-24**: This table mirrors the executable run definitions in [`run_all_experiments.sh`](run_all_experiments.sh) and `src/aggregate_results.py::EXPECTED_RUNS` (the script is ground truth); run IDs, phases, datasets, backbones, and loss ratios match exactly.
 
-| Run ID | Phase | Dataset | Backbone | LR | GradNorm | Macenko | Skip Conn | Loss Ratio (Seg:Cls) | Acc (%) | Macro Dice (%) | Primary Finding |
+| Run ID | Phase | Dataset | Backbone | LR | GradNorm | Macenko | Skip Conn | Loss Ratio (Seg:Cls) | 5-Fold Acc (%) | 5-Fold Dice (%) | Primary Finding |
 | :--- | :--- | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
 | **Phase 1: Baseline Reproductions (V1: $\eta=10^{-3}$, 5:1 loss)** | | | | | | | | | | | |
-| `Run-01` | V1 | TCGA-LGG | VGG16 | 1e-3 | ✗ | ✗ | ✓ | 5:1 | 82.78 | 73.12 | Modest degradation vs claimed 89/97 |
-| `Run-02` | V1 | TCGA-LGG | MobileNetV2 | 1e-3 | ✗ | ✗ | ✓ | 5:1 | 93.83 | 83.47 | Strong classifier (+3.83% vs claimed) |
-| `Run-03` | V1 | PANDA | VGG16 | 1e-3 | ✗ | ✗ | ✓ | 5:1 | 41.68 | 43.41 | -45.3% Acc / -54.6% Dice drop (leakage) |
-| `Run-04` | V1 | PANDA | MobileNetV2 | 1e-3 | ✗ | ✗ | ✓ | 5:1 | 42.21 | 44.18 | -45.8% Acc / -54.8% Dice drop (leakage) |
-| `Run-05` | V1 | SIIM-ACR | VGG16 | 1e-3 | ✗ | ✗ | ✓ | 5:1 | 77.70 | 77.74 | All-empty prediction matches empty floor |
-| `Run-06` | V1 | SIIM-ACR | MobileNetV2 | 1e-3 | ✗ | ✗ | ✓ | 5:1 | 74.24 | 77.74 | All-empty prediction matches empty floor |
+| `Run-01` | V1 | TCGA-LGG | VGG16 | 1e-3 | ✗ | ✗ | ✓ | 5:1 | 92.86 | 85.33 | Baseline exceeds claimed accuracy (+2.86%) |
+| `Run-02` | V1 | TCGA-LGG | MobileNetV2 | 1e-3 | ✗ | ✗ | ✓ | 5:1 | 95.62 | 88.03 | Strong classifier (+6.62% vs claimed 89.0%) |
+| `Run-03` | V1 | PANDA | VGG16 | 1e-3 | ✗ | ✗ | ✓ | 5:1 | 34.51 | 98.54 | 34.5% clinical ISUP acc; 98.5% empty-credit Dice |
+| `Run-04` | V1 | PANDA | MobileNetV2 | 1e-3 | ✗ | ✗ | ✓ | 5:1 | 39.91 | 98.60 | 39.9% clinical ISUP acc; 98.6% empty-credit Dice |
+| `Run-05` | V1 | SIIM-ACR | VGG16 | 1e-3 | ✗ | ✗ | ✓ | 5:1 | 77.71 | 77.72 | All-empty prediction hits 77.72% degeneracy floor |
+| `Run-06` | V1 | SIIM-ACR | MobileNetV2 | 1e-3 | ✗ | ✗ | ✓ | 5:1 | 82.19 | 77.72 | All-empty prediction hits 77.72% degeneracy floor |
 | **Phase 2: Enhanced Optimization (V2: GradNorm + Macenko, $\eta=10^{-4}$)** | | | | | | | | | | | |
-| `Run-07` | V2 | TCGA-LGG | VGG16 | 1e-4 | ✓ (1.5) | ✓ | ✓ | 5:1 | 92.03 | 84.88 | Competitive under lower learning rate |
-| `Run-08` | V2 | TCGA-LGG | MobileNetV2 | 1e-4 | ✓ (1.5) | ✓ | ✓ | 5:1 | 93.19 | 84.76 | Stable convergence with GradNorm |
-| `Run-09` | V2 | PANDA | VGG16 | 1e-4 | ✓ (1.5) | ✓ | ✓ | 5:1 | 33.98 | 17.40 | Severe degradation under GradNorm+Macenko |
-| `Run-10` | V2 | PANDA | MobileNetV2 | 1e-4 | ✓ (1.5) | ✓ | ✓ | 5:1 | 37.07 | 35.27 | -50.9% Acc drop vs claimed |
-| `Run-11` | V2 | SIIM-ACR | VGG16 | 1e-4 | ✓ (1.5) | ✓ | ✓ | 5:1 | 82.30 | 77.74 | Invariant to optimizer; hits 77.74% floor |
-| `Run-12` | V2 | SIIM-ACR | MobileNetV2 | 1e-4 | ✓ (1.5) | ✓ | ✓ | 5:1 | 80.42 | 77.74 | Invariant to optimizer; hits 77.74% floor |
+| `Run-07` | V2 | TCGA-LGG | VGG16 | 1e-4 | ✓ (1.5) | ✓ | ✓ | 5:1 | 94.69 | 88.84 | Competitive under lower learning rate |
+| `Run-08` | V2 | TCGA-LGG | MobileNetV2 | 1e-4 | ✓ (1.5) | ✓ | ✓ | 5:1 | 95.26 | 88.85 | Stable convergence with GradNorm |
+| `Run-09` | V2 | PANDA | VGG16 | 1e-4 | ✓ (1.5) | ✓ | ✓ | 5:1 | 33.34 | 98.60 | Degradation under GradNorm+Macenko |
+| `Run-10` | V2 | PANDA | MobileNetV2 | 1e-4 | ✓ (1.5) | ✓ | ✓ | 5:1 | 37.56 | 98.54 | Clinical grading constrained by low resolution |
+| `Run-11` | V2 | SIIM-ACR | VGG16 | 1e-4 | ✓ (1.5) | ✓ | ✓ | 5:1 | 82.57 | 77.72 | Invariant to optimizer; hits 77.72% floor |
+| `Run-12` | V2 | SIIM-ACR | MobileNetV2 | 1e-4 | ✓ (1.5) | ✓ | ✓ | 5:1 | 82.63 | 77.04 | Invariant to optimizer; hits 77.04% floor |
 | **Phase 3: External Multi-Organ Control (PanNuke: 19 Tissues)** | | | | | | | | | | | |
-| `Run-13` | V1 | PanNuke | VGG16 | 1e-3 | ✗ | ✗ | ✓ | 5:1 | 79.96 | 61.76 | Plain VGG16 without Macenko recovers Dice |
-| `Run-14` | V1 | PanNuke | MobileNetV2 | 1e-3 | ✗ | ✗ | ✓ | 5:1 | 93.11 | 65.41 | High classification, solid multi-organ seg |
-| `Run-15` | V2 | PanNuke | VGG16 | 1e-4 | ✓ (1.5) | ✓ | ✓ | 5:1 | 73.45 | 10.97 | Catastrophic VGG16 gradient collapse |
-| `Run-16` | V2 | PanNuke | MobileNetV2 | 1e-4 | ✓ (1.5) | ✓ | ✓ | 5:1 | 97.89 | 65.53 | Optimal multi-organ performance |
+| `Run-13` | V1 | PanNuke | VGG16 | 1e-3 | ✗ | ✗ | ✓ | 5:1 | 78.70 | 68.44 | Plain VGG16 multi-organ baseline |
+| `Run-14` | V1 | PanNuke | MobileNetV2 | 1e-3 | ✗ | ✗ | ✓ | 5:1 | 90.44 | 72.70 | High classification, solid multi-organ seg |
+| `Run-15` | V2 | PanNuke | VGG16 | 1e-4 | ✓ (1.5) | ✓ | ✓ | 5:1 | 94.43 | 70.85 | Multi-organ segmentation under GradNorm |
+| `Run-16` | V2 | PanNuke | MobileNetV2 | 1e-4 | ✓ (1.5) | ✓ | ✓ | 5:1 | 96.49 | 70.64 | Optimal multi-organ performance |
 | **Phase 4: Loss Weighting Teardown (PANDA: $\lambda_{seg}:\lambda_{cls}$)** | | | | | | | | | | | |
-| `Run-17` | V2 | PANDA | VGG16 | 1e-4 | ✗ | ✗ | ✓ | 5:1 | 43.63 | 41.30 | Static loss outperforms GradNorm on PANDA |
-| `Run-18` | V1 | PANDA | VGG16 | 1e-3 | ✓ (1.5) | ✗ | ✓ | 5:1 | 29.04 | 31.43 | Isolating GradNorm (V1, no Macenko) degrades PANDA vs naked baseline |
-| `Run-19` | V1 | PANDA | VGG16 | 1e-3 | ✗ | ✗ | ✓ | 1:1 | 39.92 | 38.72 | Equal weighting baseline |
-| `Run-20` | V1 | PANDA | VGG16 | 1e-3 | ✗ | ✗ | ✓ | 5:1 | 45.39 | 44.08 | 5:1 static-weight control (V1) tracks the naked baseline |
-| `Run-21` | V1 | PANDA | VGG16 | 1e-3 | ✗ | ✗ | ✓ | 1:10 | 40.59 | 38.08 | Classification-prioritized weighting |
-| `Run-22` | V1 | PANDA | VGG16 | 1e-3 | ✗ | ✗ | ✓ | 10:1 | 40.30 | 41.31 | Segmentation-prioritized weighting |
+| `Run-17` | V2 | PANDA | VGG16 | 1e-4 | ✗ | ✗ | ✓ | 5:1 | 44.87 | 98.60 | Isolated lr=1e-4 achieves highest PANDA accuracy |
+| `Run-18` | V1 | PANDA | VGG16 | 1e-3 | ✓ (1.5) | ✗ | ✓ | 5:1 | 28.21 | 98.60 | Isolating GradNorm (V1) destabilizes grading (28.21%) |
+| `Run-19` | V1 | PANDA | VGG16 | 1e-3 | ✗ | ✗ | ✓ | 1:1 | 36.82 | 98.60 | Equal weighting baseline |
+| `Run-20` | V1 | PANDA | VGG16 | 1e-3 | ✗ | ✗ | ✓ | 5:1 | 38.18 | 98.60 | 5:1 static-weight control |
+| `Run-21` | V1 | PANDA | VGG16 | 1e-3 | ✗ | ✗ | ✓ | 1:10 | 36.51 | 98.60 | Classification-prioritized weighting |
+| `Run-22` | V1 | PANDA | VGG16 | 1e-3 | ✗ | ✗ | ✓ | 10:1 | 39.71 | 98.60 | Segmentation-prioritized weighting |
 | **Phase 5: Architectural & Stain Normalization Ablations** | | | | | | | | | | | |
-| `Run-23` | V2 | PANDA | MobileNetV2 | 1e-4 | ✓ (1.5) | ✗ | ✓ | 5:1 | 39.54 | 37.24 | Removing Macenko improves accuracy (+2.47%) |
-| `Run-24` | V2 | PanNuke | MobileNetV2 | 1e-4 | ✓ (1.5) | ✗ | ✓ | 5:1 | 99.49 | 74.66 | Removing Macenko yields best PanNuke Dice |
-| `Run-25` | V2 | TCGA-LGG | MobileNetV2 | 1e-4 | ✓ (1.5) | ✓ | ✗ | 5:1 | 94.22 | 83.47 | Skip connections show zero measurable gain |
-| `Run-26` | V2 | PANDA | MobileNetV2 | 1e-4 | ✓ (1.5) | ✓ | ✗ | 5:1 | 36.60 | 32.20 | No skip connections on PANDA |
+| `Run-23` | V2 | PANDA | MobileNetV2 | 1e-4 | ✓ (1.5) | ✗ | ✓ | 5:1 | 41.38 | 98.60 | Removing Macenko improves accuracy (+3.81%) |
+| `Run-24` | V2 | PanNuke | MobileNetV2 | 1e-4 | ✓ (1.5) | ✗ | ✓ | 5:1 | 99.24 | 77.61 | Removing Macenko yields best PanNuke accuracy & Dice |
+| `Run-25` | V2 | TCGA-LGG | MobileNetV2 | 1e-4 | ✓ (1.5) | ✓ | ✗ | 5:1 | 95.28 | 85.68 | Skip connections show zero detectable classification gain |
+| `Run-26` | V2 | PANDA | MobileNetV2 | 1e-4 | ✓ (1.5) | ✓ | ✗ | 5:1 | 37.44 | 98.55 | No skip connections on PANDA |
 
 </details>
 
@@ -307,9 +309,9 @@ All findings uncovered during peer review and revision are tracked with strict v
 
 ```bibtex
 @article{ali2026alldice,
-  title   = {All Dice, No Slice: Metric Artifacts, Data Leakage, and Task Interference in Multi-Task Computational Pathology},
+  title   = {All Dice, No Slice: Metric Degeneracy, Evaluation Pitfalls, and Optimization Dynamics in Multi-Task Medical Vision},
   author  = {Ali, Muhammad Abdullah and Kiani, Muhammad Ibrahim and Aamir, Muhammad Abdullah},
-  journal = {Computers in Biology and Medicine (Preprint Under Review)},
+  journal = {Preprint},
   year    = {2026},
   url     = {https://github.com/ApatheticMioz/cancer-pathology-dl}
 }
