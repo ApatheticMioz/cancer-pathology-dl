@@ -5,7 +5,7 @@ Port of the original ``paper/generate_figures.py::generate_figure_1`` onto the
 content:
 
 * (a) raw PANDA biopsy tile crop (native chromatin)
-* (b) Macenko-normalized crop (optical-density filtered)
+* (b) Macenko-normalized crop (optical-density projected)
 * (c) absolute texture-discrepancy heatmap
 * (d) Macenko ON/OFF top-1 accuracy bars
 
@@ -128,7 +128,7 @@ def _build_fig():
     axes[0].axis("off")
 
     axes[1].imshow(crop_mac)
-    axes[1].set_title("(b) Macenko-Normalized\n(Optical Density Filtered)", fontweight="bold")
+    axes[1].set_title("(b) Macenko-Normalized\n(Optical Density Projected)", fontweight="bold")
     axes[1].axis("off")
 
     im_diff = axes[2].imshow(diff, cmap=style.HEATMAP_CMAP)

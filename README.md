@@ -13,25 +13,26 @@
 
 Multi-task deep learning (MTL)—simultaneously predicting patient-level diagnostic categories and dense pixel-wise lesion segmentation—is widely promoted as an efficient paradigm for medical vision. Recently, **Rhanoui et al. (*Onco* 2025, [doi:10.3390/onco5030034](https://doi.org/10.3390/onco5030034))** reported near-perfect diagnostic efficacy using standard hard-parameter sharing U-Nets (VGG16 and MobileNetV2), claiming **97.0%–99.0% Dice coefficients** alongside **82.0%–90.0% classification accuracy** across TCGA brain tumor MRIs, PANDA prostate biopsies, SIIM-ACR pneumothorax radiographs, and ISIC dermoscopy.
 
-Through a mathematically grounded **27-configuration $\times$ 5-fold cross-validation campaign (135 fold-runs)**—incorporating an external 19-tissue multi-organ benchmark (**PanNuke**; replacing ISIC 2018 due to 7,421 missing segmentation masks in Task 3), dynamic gradient balancing (**GradNorm**), **Macenko optical density stain normalization**, and strict **patient/group boundary enforcement**—we show that these headline figures do not survive a controlled, leakage-free replication: the reported Dice levels are attainable only as empty-mask scoring artifacts, the accuracies depend on proxy morphological texture classes rather than clinical biopsy grading, and the joint optimization recipe itself degrades classification. The audit evaluates this recent baseline as a representative instance of failure modes documented across the biomedical machine learning literature.
+Through a mathematically grounded **27-configuration $\times$ 5-fold cross-validation campaign (135 fold-runs)**—incorporating an external 19-tissue multi-organ benchmark (**PanNuke**; replacing ISIC 2018 due to unaligned annotation releases between Task 1 and Task 3), dynamic gradient balancing (**GradNorm**), **Macenko optical density stain normalization**, and strict **patient/group boundary enforcement**—we show that these headline figures do not survive a controlled, leakage-free replication: the reported Dice levels are vulnerable to empty-mask scoring artifacts, the accuracies depend on proxy morphological texture classes rather than clinical biopsy grading, and joint optimization dynamics alter classification performance. The audit evaluates this recent baseline as a representative instance of failure modes documented across the biomedical machine learning literature.
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │                                       CORE AUDIT TAKEAWAYS                                              │
-│ 1. PANDA Task & Resolution Divergence: Downsampling biopsies to 128x128 thumbnails destroys glandular   │
-│    lumens. Rhanoui Table 2 evaluated 6 Radboud tissue classes (52.3% non-cancer glass/stroma) reaching  │
-│    88% Acc. Under authentic clinical 6-class ordinal ISUP grading, accuracy drops to 28.21%–44.87%.      │
+│ 1. PANDA Task Formulation Divergence: Rhanoui Table 2 evaluated 6 Radboud tissue classes (52.3%         │
+│    non-cancer glass/stroma) reaching 88% Acc. Under authentic clinical 6-class ordinal ISUP grading,    │
+│    standard CNNs on 128x128 thumbnails achieve 28.21%–44.87% (different, non-comparable tasks).         │
 │                                                                                                         │
-│ 2. Empty-Mask Metric Inflation: The reported 99.0% SIIM pneumothorax Dice is an artifact of scoring    │
-│    lesion-free slices (77.74% of corpus) as Dice=1.0 via the identity:                                 │
-│    Dice_all = rho * q_empty + (1 - rho) * Dice_fg. An all-empty dummy achieves 77.74% Dice floor.       │
+│ 2. Empty-Mask Metric Inflation: Overall Dice can conceal foreground failure on sparse datasets via:    │
+│    Dice_all = rho * q_empty + (1 - rho) * Dice_fg. An all-empty model achieves the 77.72% score floor   │
+│    on SIIM pneumothorax without segmenting any lesions.                                                 │
 │                                                                                                         │
-│ 3. Multi-Task Optimization Conflict: Dynamic loss balancing (GradNorm) degrades grading                │
-│    (38.18% -> 28.21% Acc on PANDA), skip connections offer no detectable classification gain, and       │
-│    Macenko normalization attenuates fine nuclear chromatin texture (+3.81% on PANDA, +2.75% PanNuke).   │
+│ 3. Multi-Task Optimization Dynamics: Dynamic balancing (GradNorm) drops validation accuracy            │
+│    (38.18% -> 28.21% Acc on PANDA, consistent with gradient conflict hypotheses), skip connections     │
+│    show modest paired differences (+0.02 / -0.12 pts), and Macenko normalization alters chromatic       │
+│    contrast (+3.81% on PANDA, +2.75% PanNuke when bypassed).                                            │
 │                                                                                                         │
-│ 4. ISIC 2018 Omission: ISIC Task 1 had only 2,594 masks vs. Task 3's 10,015 images (7,421 missing).    │
-│    Due to unreleased split/loss protocols, we evaluated verified paired 19-tissue PanNuke instead.     │
+│ 4. ISIC 2018 Omission: Official ISIC Task 1 had 2,594 masks vs. Task 3's 10,015 images. Due to         │
+│    unreleased split/loss protocols, we evaluated verified paired 19-tissue PanNuke instead.             │
 └─────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
