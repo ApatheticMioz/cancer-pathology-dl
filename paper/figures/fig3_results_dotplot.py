@@ -167,13 +167,13 @@ def _build_fig():
     # x headroom so markers / CI whiskers / claimed diamonds never clip.
     ax_acc.set_xlim(-2, 105)
     ax_acc.set_xticks([0, 20, 40, 60, 80, 100])
-    ax_acc.set_xlabel("Validation Accuracy (%)", fontweight="bold", fontsize=7.5)
+    ax_acc.set_xlabel("Accuracy (%)", fontweight="bold", fontsize=7.5, labelpad=3)
     ax_acc.set_title("Validation Accuracy (%)", fontweight="bold", fontsize=8)
 
     ax_dice.set_ylim(-0.5, n - 0.5)
     ax_dice.set_xlim(-2, 105)
     ax_dice.set_xticks([0, 20, 40, 60, 80, 100])
-    ax_dice.set_xlabel("Validation Dice (%)", fontweight="bold", fontsize=7.5)
+    ax_dice.set_xlabel("Macro Dice (%)", fontweight="bold", fontsize=7.5, labelpad=3)
     ax_dice.set_title("Validation Dice (%)", fontweight="bold", fontsize=8)
 
     # --- Group separators (thin horizontal lines) on both panels --------
@@ -266,7 +266,9 @@ def _build_fig():
     # --- Layout, then place group labels in the left margin -------------
     # The left margin is widened so the per-run row labels fit, and the
     # group labels are placed to the *left* of the row labels (no overlap).
-    fig.subplots_adjust(left=0.28, right=0.98, top=0.90, bottom=0.18)
+    # The bottom margin is set to 0.22 so the figure-level legend sits safely
+    # below the x-axis labels with zero overlap.
+    fig.subplots_adjust(left=0.28, right=0.98, top=0.91, bottom=0.22)
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
     pos = ax_acc.get_position()
@@ -298,7 +300,7 @@ def _build_fig():
     handles.append(Line2D([], [], color=_CI_GRAY, linewidth=1.0,
                           label="95% CI (across-folds)"))
     fig.legend(handles=handles, loc="lower center", ncol=4, fontsize=6.8,
-               bbox_to_anchor=(0.63, 0.012))
+               bbox_to_anchor=(0.63, 0.02))
 
     return fig, (ax_acc, ax_dice)
 

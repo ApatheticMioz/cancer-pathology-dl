@@ -127,21 +127,20 @@ def _build_fig():
             ax.plot([hi, hi], [y - cap, y + cap], color=color, linewidth=1.2,
                     zorder=2)
             # Marker at the measured value.
+            # Marker at the measured value.
             ax.plot(val, y, marker=marker, color=color, markersize=6,
                     linestyle="none", zorder=3)
-            # 7pt annotation of run number + value, next to the marker.
-            # Left-side arms (PANDA, < 80) annotate to the right; right-side
-            # arms (TCGA/PanNuke, >= 80) annotate to the left to avoid the
-            # right edge.
+            # 6.8pt annotation of run number + value, offset past the error whisker
+            # to prevent crossing or overlapping the CI line.
             if val < 80:
                 ax.annotate(f"R{run_num:02d} {val:.2f}",
-                            xy=(val, y), xytext=(8, 0),
-                            textcoords="offset points", fontsize=7,
+                            xy=(hi, y), xytext=(5, 0),
+                            textcoords="offset points", fontsize=6.8,
                             ha="left", va="center", color="black")
             else:
                 ax.annotate(f"R{run_num:02d} {val:.2f}",
-                            xy=(val, y), xytext=(-8, 0),
-                            textcoords="offset points", fontsize=7,
+                            xy=(lo, y), xytext=(-5, 0),
+                            textcoords="offset points", fontsize=6.8,
                             ha="right", va="center", color="black")
 
     # --- Axes -----------------------------------------------------------
@@ -161,7 +160,7 @@ def _build_fig():
     # --- Left-margin pair labels + right-margin verdicts ---------------
     # Explicit margins leave room for both the left pair labels and the
     # right verdict column.
-    fig.subplots_adjust(left=0.30, right=0.80, top=0.90, bottom=0.12)
+    fig.subplots_adjust(left=0.32, right=0.78, top=0.90, bottom=0.14)
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
     pos = ax.get_position()

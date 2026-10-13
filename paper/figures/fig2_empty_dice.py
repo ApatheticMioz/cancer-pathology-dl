@@ -239,8 +239,7 @@ def _build_fig():
 
     # Analytic illustration: a model with genuine foreground Dice 77.74%
     # would report rho_hat*1.0 + (1-rho_hat)*0.7774 = 95.04%. Small marker +
-    # short label only (no arrow) so it does not cross the lines; the full
-    # explanation belongs in the figure caption.
+    # short label positioned above the marker to avoid line collision.
     siim_inflated = _RHO_HAT * 1.0 + (1.0 - _RHO_HAT) * (_FG_DICE_PCT / 100.0)
     ax_c.plot(_RHO_HAT * 100.0, siim_inflated * 100.0,
               marker=style.CLAIMED_STYLE["marker"],
@@ -248,8 +247,9 @@ def _build_fig():
               color=style.CLAIMED_STYLE["color"], markersize=6, linestyle="none")
     ax_c.annotate(f"{siim_inflated * 100:.1f}%",
                   xy=(_RHO_HAT * 100.0, siim_inflated * 100),
-                  xytext=(7, 3), textcoords="offset points",
-                  fontsize=7, color="black")
+                  xytext=(8, -8), textcoords="offset points",
+                  fontsize=7, fontweight="bold", color="black",
+                  va="top", ha="left")
 
     # Measured floor: all-empty predictions (77.74%). Marker + short label;
     # included in the legend.
@@ -265,14 +265,9 @@ def _build_fig():
     # (rho=0, 44.08) is visible (the previous [70,101] window hid it).
     ax_c.set_xlim([0, 100])
     ax_c.set_ylim([0, 100])
-    # Add an explicit tick at the curve's 44.08 anchor and label it. The
-    # regular 40 tick is dropped (it sits only 4.08 units below the 44.08
-    # anchor, so its 7 pt label would collide with the anchor's in this
-    # shorter, wider panel); the 44.08 anchor itself stays visible.
+    # Add an explicit tick at the curve's 44.08 anchor and label it.
     ax_c.set_yticks([0, 20, 44.08, 60, 80, 100])
     ax_c.set_yticklabels(["0", "20", "44.08", "60", "80", "100"])
-    ax_c.annotate("curve anchor", xy=(0, 44.08), xytext=(6, -11),
-                  textcoords="offset points", fontsize=6.5, color="black")
 
     ax_c.set_xlabel(r"Empty-Slice Fraction $\rho$ (%)", fontweight="bold")
     ax_c.set_ylabel("Reported Macroscopic Dice (%)", fontweight="bold")

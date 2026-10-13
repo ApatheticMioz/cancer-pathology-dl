@@ -64,9 +64,9 @@ style.apply()
 #: kfold summary's five-fold mean (never hard-coded) — see
 #: :func:`_panda_label`.
 _PANDA_CURVES = [
-    ("g1_panda_vgg16", "03 baseline", "-"),
-    ("g2_panda_mobilenet_v2", "10 +GN package", "--"),
-    ("g4_panda_isolate_gn", "18 isolated GradNorm", ":"),
+    ("g1_panda_vgg16", "Static Baseline (VGG16)", "-"),
+    ("g2_panda_mobilenet_v2", "Static Baseline (MNV2)", "--"),
+    ("g4_panda_isolate_gn", "Isolated GradNorm", ":"),
 ]
 
 #: The canonical decoupled GradNorm run (fold campaign).
@@ -161,11 +161,7 @@ def _build_fig():
                  zorder=2)
     ax_a.plot(c_traj["epoch"], c_traj["best_vl_acc"], color="black",
               linestyle=_CANON_LINESTYLE, linewidth=1.4, zorder=3,
-              label=f"canonical fold-1 probe ({c_point:.2f}% 5-fold mean)")
-    # Label just above the mean line (transData: y is a data value).
-    ax_a.text(0.5, c_point + 0.8, f"5-fold mean {c_point:.2f}%",
-              transform=ax_a.transData, ha="left", va="bottom",
-              fontsize=7, color="black")
+              label=f"Decoupled GradNorm ({c_point:.2f}% mean)")
 
     ax_a.set_xlabel("Epoch", fontweight="bold")
     ax_a.set_ylabel("Validation Accuracy (%)", fontweight="bold")
@@ -188,21 +184,20 @@ def _build_fig():
     cls = can["cls_weight"].to_numpy(dtype=float)
     ax_b.plot(epochs, seg, color=_SEG_COLOR, linewidth=1.4, zorder=3)
     ax_b.plot(epochs, cls, color=_CLS_COLOR, linewidth=1.4, zorder=3)
-    # Direct labels at the final-epoch end, placed to the LEFT of the point
-    # (inside the plot) so they are never clipped by the panel edge.
-    ax_b.annotate("seg", xy=(epochs[-1], seg[-1]), xytext=(-6, 0),
-                  textcoords="offset points", fontsize=7, color=_SEG_COLOR,
-                  va="center", ha="right")
-    ax_b.annotate("cls", xy=(epochs[-1], cls[-1]), xytext=(-6, 0),
-                  textcoords="offset points", fontsize=7, color=_CLS_COLOR,
-                  va="center", ha="right")
+    # Direct labels at the final-epoch end, offset safely from borders.
+    ax_b.annotate("seg", xy=(epochs[-1], seg[-1]), xytext=(-6, 4),
+                  textcoords="offset points", fontsize=7, fontweight="bold",
+                  color=_SEG_COLOR, va="bottom", ha="right")
+    ax_b.annotate("cls", xy=(epochs[-1], cls[-1]), xytext=(-6, -4),
+                  textcoords="offset points", fontsize=7, fontweight="bold",
+                  color=_CLS_COLOR, va="top", ha="right")
 
     ax_b.set_xlabel("Epoch", fontweight="bold")
     ax_b.set_ylabel("Task Weight", fontweight="bold")
-    ax_b.set_title("(b) GradNorm task weights (seed 42)",
+    ax_b.set_title("(b) Dynamic Task-Weight Trajectory",
                    fontweight="bold", loc="right")
     ax_b.set_xlim(0.5, 15.5)
-    ax_b.set_ylim(0, 2.0)
+    ax_b.set_ylim(-0.06, 2.15)
     ax_b.grid(True, linestyle="--", alpha=style.GRID_ALPHA)
 
     # Explicit margins (tight_layout fails here: the "5-fold mean" label

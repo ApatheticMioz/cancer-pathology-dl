@@ -6,8 +6,6 @@
 \usepackage{url}
 \usepackage{cite}
 \usepackage{microtype}
-\usepackage{tikz}
-\usetikzlibrary{arrows.meta,positioning}
 
 \setlength{\textfloatsep}{5pt plus 1pt minus 2pt}
 \setlength{\floatsep}{5pt plus 1pt minus 2pt}
@@ -15,7 +13,6 @@
 \setlength{\dblfloatsep}{5pt plus 1pt minus 2pt}
 \clubpenalty=10000
 \widowpenalty=10000
-
 
 \title{All Dice, No Slice: Metric Degeneracy, Evaluation Pitfalls, and Optimization Dynamics in Multi-Task Medical Vision}
 
@@ -28,97 +25,40 @@
 \maketitle
 
 \begin{abstract}
-Joint classification and lesion segmentation via hard parameter-sharing networks offer an attractive paradigm for resource-constrained clinical AI deployments. Recent oncology literature reports near-saturated diagnostic accuracies and segmentation Dice scores under lightweight backbones and static loss weighting, suggesting that joint optimization readily masters multi-modal medical tasks. However, these performance claims often obscure foundational evaluation pitfalls, metric aggregation artifacts, and cross-task optimization dynamics. This paper presents a systematic methodological investigation and factorial benchmark across four diverse clinical imaging modalities: brain tumor MRI, prostate histopathology, chest radiography, and multi-organ histology under rigorous patient- and image-isolated cross-validation. We investigate four central research questions: first, we prove analytically and demonstrate empirically how macroscopic slice-averaged Dice scores reward negative predictions on lesion-free cases, establishing an artificial performance floor that conceals complete foreground omission; second, we resolve critical task-formulation discrepancies in computational pathology, demonstrating why proxy morphological texture classification diverges from authentic clinical ordinal grading; third, we reveal destructive gradient interference during joint multi-task optimization, where dynamic gradient balancing degrades classification discrimination on shared representations; and fourth, we show that standard color deconvolution heuristics can paradoxically attenuate subtle diagnostic features. Our findings expose systemic vulnerabilities in conventional multi-task benchmarks and provide rigorous evaluation guidelines to ensure clinically trustworthy translation.
+Joint classification and semantic segmentation via hard parameter-sharing networks offer an efficient paradigm for resource-constrained clinical AI deployments. While multi-task architectures frequently report high diagnostic accuracy and segmentation overlap, evaluating dual-task performance across diverse imaging modalities involves subtle metric aggregation effects, optimization trade-offs, and clinical task-formulation boundaries. This paper presents a systematic methodological investigation across four diverse clinical imaging modalities: brain tumor MRI, prostate histopathology, chest radiography, and multi-organ histology under patient-isolated cross-validation. We investigate four foundational research questions: first, we show analytically and empirically that macroscopic slice-averaged Dice scores establish an artificial performance baseline on negative-dominant cohorts that conceals complete foreground lesion omission; second, we examine representation boundaries on compressed biopsy images, clarifying how proxy morphological patch categorization diverges from whole-core clinical ordinal grading; third, we characterize multi-task optimization dynamics on shared encoders, demonstrating that dynamic gradient balancing can induce parameter instability and degrade classification discrimination; and fourth, we evaluate color deconvolution preprocessing, showing that standard optical density projection can attenuate discriminative cellular micro-textures. We conclude with five practical evaluation guidelines to ensure reliable and clinically trustworthy translation of multi-task medical vision systems.
 \end{abstract}
 
 \begin{keywords}
-Multi-Task Learning, Medical Image Analysis, Semantic Segmentation, Metric Degeneracy, Histopathology.
+Multi-Task Learning, Medical Image Analysis, Semantic Segmentation, Metric Evaluation, Digital Pathology.
 \end{keywords}
 
 \section{Introduction}
 \label{sec:intro}
-Deep learning systems in digital pathology and medical imaging are increasingly tasked with delivering both holistic diagnostic categorization and localized lesion delineation \cite{litjens2017survey,campanella2019clinical}. While large visual foundation models demonstrate high representation capacity across gigapixel whole-slide images \cite{chen2024uni,lu2024conch,vorontsov2024virchow}, their computational footprint precludes direct deployment in edge environments or low-resource clinical facilities. Consequently, hard parameter sharing via lightweight encoder--decoder architectures, particularly dual-headed U-Net topologies \cite{ronneberger2015u}, remains a compelling design pattern that couples classification and segmentation within a unified inference pass.
+Deep learning systems in digital pathology and medical imaging are increasingly tasked with delivering both holistic diagnostic categorization and localized lesion delineation \cite{litjens2017survey,campanella2019clinical}. While visual foundation models demonstrate high representation capacity across gigapixel whole-slide images \cite{chen2024uni,lu2024conch,vorontsov2024virchow}, their computational footprint precludes direct deployment in edge environments or low-resource clinical facilities. Consequently, hard parameter sharing via lightweight encoder--decoder architectures, particularly dual-headed U-Net topologies \cite{ronneberger2015u}, remains a compelling design pattern that couples classification and segmentation within a unified inference pass.
 
-Recently, several studies across oncology literature have asserted that standard U-Net backbones with lightweight feature extractors (such as VGG16 \cite{simonyan2014very} and MobileNetV2 \cite{sandler2018mobilenetv2}) simultaneously achieve near-saturated classification accuracies ($86\%$--$90\%$) and Dice similarity coefficients exceeding $97\%$ across diverse clinical modalities \cite{rhanoui2025multitask}. These metrics were reported under static loss weighting and high initial learning rates across brain MRI, dermoscopy, prostate biopsy, and chest radiography cohorts. Because such pipelines promise high diagnostic yield at minimal computational expense, their reported success has been widely cited as empirical validation for joint parameter-sharing recipes in downstream clinical oncology studies.
+Dual-headed architectures employing lightweight backbones (such as VGG16 \cite{simonyan2014very} and MobileNetV2 \cite{sandler2018mobilenetv2}) have been reported to achieve strong simultaneous classification and segmentation performance across diverse imaging modalities, including brain MRI, prostate biopsy, and chest radiography \cite{rhanoui2025multitask}. Because lightweight parameter-sharing networks offer substantial efficiency advantages over multi-network ensembles, understanding the empirical factors governing their performance is critical for clinical translation.
 
-Despite these promising headline figures, fundamental principles from machine learning and biomedical validation literature suggest that naive multi-task co-training rarely yields seamless performance parity without intricate optimization trade-offs. First, region-overlap metrics behave pathologically in sparse cohorts where lesion annotations are absent across substantial subsets of the data \cite{reinke2024metrics,eelbode2020optimization}. Second, clinical histopathology requires multiscale diagnostic assessment; evaluating low-capacity models on aggressive spatial thumbnails risks conflating coarse background tissue categorization with clinical ordinal grading \cite{bulten2022artificial,kapoor2023leakage}. Third, sharing parameters across dense pixel-wise segmentation and global classification objectives frequently induces destructive gradient conflict, causing one task to dominate representation learning \cite{standley2020tasks,crawshaw2020survey}.
+However, evaluating multi-task medical models involves complex interplay between metric definitions, task formulations, and optimization dynamics. First, conventional region-overlap metrics, such as macroscopic Dice scores, exhibit mathematical boundary artifacts in cohorts where lesion-free images predominate \cite{reinke2024metrics,eelbode2020optimization}. Second, in computational pathology, the spatial resolution of inputs determines diagnostic feasibility; evaluating low-capacity encoders on heavily downsampled images may conflate coarse morphological tissue categorization with fine-grained clinical ordinal grading \cite{bulten2022artificial,kapoor2023leakage}. Third, optimizing dense pixel-wise segmentation alongside global classification objectives frequently induces gradient interference on shared representations, demanding careful loss balancing \cite{standley2020tasks,crawshaw2020survey}.
 
-Rather than examining a single isolated pipeline, this work conducts a systematic empirical inquiry into the broader paradigm of lightweight multi-task medical vision. We investigate four foundational research questions:
+In this work, we conduct a systematic empirical inquiry into lightweight multi-task medical vision, structured around four core research questions:
 \begin{enumerate}
-    \item \textbf{RQ1 (Metric Validity in Sparse Regimes):} How do conventional biomedical overlap metrics (specifically macroscopic Dice under empty-reference crediting) behave when negative-case prevalence is high, and how can true foreground lesion delineation be isolated from background-credit artifacts?
-    \item \textbf{RQ2 (Task Formulation vs.\ Resolution Boundaries):} What are the representation boundaries of standard 2D CNN encoders on severely downsampled biopsy thumbnails ($128 \times 128$), and how does performance diverge between coarse morphological tissue proxies and clinical ordinal ISUP grading?
-    \item \textbf{RQ3 (Multi-Task Optimization Dynamics):} In hard parameter-sharing dual-head architectures, how do static loss balancing, dynamic gradient normalization (GradNorm), and lateral skip connections impact cross-task gradient competition and representation learning?
-    \item \textbf{RQ4 (Preprocessing and Feature Attenuation):} Does standard color deconvolution (Macenko stain normalization) preserve fine-grained diagnostic chromatin textures, or does it impose an empirical performance penalty in deep histopathology classifiers?
+    \item \textbf{RQ1 (Metric Behavior in Sparse Regimes):} How do conventional overlap metrics behave when negative cases predominate, and how can true foreground lesion delineation be isolated from background-credit artifacts?
+    \item \textbf{RQ2 (Task Formulation vs.\ Resolution Boundaries):} What are the representation limits of standard 2D encoders on downsampled biopsy tiles, and how does performance differ between coarse morphological tissue proxies and whole-core clinical ordinal grading?
+    \item \textbf{RQ3 (Multi-Task Optimization Dynamics):} How do static loss weighting, dynamic gradient balancing (GradNorm), and lateral skip connections influence cross-task gradient competition on shared backbones?
+    \item \textbf{RQ4 (Preprocessing and Feature Preservation):} Does standard color deconvolution (Macenko stain normalization) preserve fine-grained diagnostic textures, or can optical density projection alter discriminative features?
 \end{enumerate}
 
-To answer these questions, we conduct a 27-configuration factorial campaign evaluated across five-fold cross-validation (135 total fold-runs) over four benchmark medical datasets: TCGA-LGG brain tumor MRI, PANDA prostate biopsies, SIIM-ACR pneumothorax radiographs, and the PanNuke multi-organ benchmark (Figure~\ref{fig:pipeline}). Our primary contributions are summarized as follows:
+To address these questions, we perform a controlled factorial benchmark evaluated under patient-isolated cross-validation across four diverse clinical datasets: TCGA-LGG brain MRI, PANDA prostate biopsies, SIIM-ACR pneumothorax radiographs, and PanNuke multi-organ histopathology (Figure~\ref{fig:pipeline}). Our primary contributions are summarized as follows:
 \begin{itemize}
-    \item We expose the empty-mask Dice metric degeneracy both analytically and empirically, proving that macroscopic aggregation conventions establish an artificial score floor on negative-dominant cohorts that conceals catastrophic foreground omission.
-    \item We resolve the task-formulation divergence between proxy tissue classification and authentic clinical grading in computational pathology, delineating the fundamental resolution boundaries of low-capacity networks on downsampled biopsies.
-    \item We systematically characterize multi-task optimization dynamics and architectural components through controlled factorial ablations, quantifying destructive gradient interference under dynamic balancing and uncovering the discriminative penalty of color deconvolution.
+    \item We analyze the empty-mask Dice aggregation behavior analytically and empirically, demonstrating how macroscopic cohort averages establish a baseline floor on negative-dominant datasets and proposing disaggregated foreground reporting.
+    \item We clarify the methodological distinction between proxy morphological tile classification and clinical ordinal grading in digital pathology, delineating the spatial resolution boundaries of compact 2D networks.
+    \item We systematically characterize multi-task optimization dynamics and preprocessing pipelines through controlled factorial ablations, quantifying the stability of static versus dynamic gradient balancing and evaluating the discriminative impact of stain normalization.
 \end{itemize}
 
 \begin{figure}[t]
 \centering
-\begin{tikzpicture}[
-    scale=0.74, every node/.style={transform shape},
-    modbox/.style={draw=black!70, rounded corners=2.5pt, fill=black!4, align=center, font=\scriptsize, inner sep=3pt, thick},
-    encbox/.style={draw=blue!80!black, rounded corners=2.5pt, fill=blue!8, align=center, font=\scriptsize, inner sep=3pt, thick},
-    headcls/.style={draw=orange!80!black, rounded corners=2.5pt, fill=orange!10, align=center, font=\scriptsize, inner sep=3pt, thick},
-    headseg/.style={draw=teal!80!black, rounded corners=2.5pt, fill=teal!10, align=center, font=\scriptsize, inner sep=3pt, thick},
-    optbox/.style={draw=purple!80!black, rounded corners=2.5pt, fill=purple!8, align=center, font=\scriptsize, inner sep=3.5pt, thick},
-    arr/.style={-{Stealth[length=1.6mm]}, thick, draw=black!75},
-    skiparr/.style={-{Stealth[length=1.6mm]}, dashed, thick, draw=teal!70!black}
-]
-% Inputs & Preprocessing
-\node[modbox, minimum width=2.1cm] (input) at (0, 2.5) {
-  \textbf{Clinical Inputs $\mathbf{x}$}\\
-  \tiny TCGA $\cdot$ PANDA\\
-  \tiny SIIM $\cdot$ PanNuke\\
-  \tiny $\pm$ Macenko OD Norm
-};
-
-% Shared Encoder
-\node[encbox, minimum width=2.3cm] (enc) at (3.1, 2.5) {
-  \textbf{Shared Encoder $f_\theta$}\\
-  \tiny VGG16 / MobileNet\\
-  \tiny Bottleneck $\mathbf{z} \in \mathbb{R}^{h \times w \times d}$
-};
-
-% Classification Head (top right)
-\node[headcls, minimum width=2.3cm] (cls) at (6.6, 3.55) {
-  \textbf{Classification Head}\\
-  \tiny $\text{GAP} \to \text{MLP} \to \hat{\mathbf{y}}_{cls}$\\
-  \tiny $\mathcal{L}_{cls}$ (CCE Diagnostic)
-};
-
-% Segmentation Decoder (bottom right)
-\node[headseg, minimum width=2.3cm] (seg) at (6.6, 1.45) {
-  \textbf{Segmentation Decoder}\\
-  \tiny $\text{Dec}_\phi \to \mathbf{l}_{seg}$\\
-  \tiny $\mathcal{L}_{seg}$ (BCE/CE Mask)
-};
-
-% Connections from Input to Encoder
-\draw[arr] (input) -- (enc);
-
-% Connections from Encoder to Heads
-\draw[arr] (enc.north east) to[out=30, in=180] (cls.west);
-\draw[arr] (enc.south east) to[out=330, in=180] (seg.west);
-
-% Skip connection
-\draw[skiparr] (enc.south) to[out=270, in=200] node[below, font=\tiny, text=teal!80!black, yshift=1pt] {Lateral Skips $\{\mathbf{s}_l\}$} (seg.south west);
-
-% Loss & Optimization Bar (spanning bottom)
-\node[optbox, minimum width=7.8cm] (opt) at (3.3, 0.0) {
-  \textbf{Multi-Task Optimization \& 27-Configuration Factorial Audit}\\
-  \tiny Static Weighting ($\lambda_{seg}{:}\lambda_{cls}$) vs.\ Dynamic GradNorm ($\mathcal{L}_{grad}$) $\;\vert\;$ 135 Fold-Runs (5-Fold CV)
-};
-
-\draw[arr] (cls.east) to[out=0, in=45] (opt.east);
-\draw[arr] (seg.east) to[out=0, in=15] (opt.east);
-\end{tikzpicture}
-\caption{Architectural formulation and factorial audit framework across four clinical imaging modalities, integrating shared feature extraction, dual diagnostic heads with lateral skip pathways, and adaptive optimization balancing under patient-isolated cross-validation.}
+\includegraphics[width=\columnwidth]{fig1_pipeline.pdf}
+\caption{System architecture and multi-task evaluation framework across four clinical imaging modalities, integrating shared feature extraction, decoupled diagnostic heads with lateral skip connections, and adaptive optimization dynamics under patient-isolated cross-validation.}
 \label{fig:pipeline}
 \end{figure}
 
@@ -155,16 +95,16 @@ Under empty-credit assignment across all $N$ slices, the macroscopic mean decomp
 \end{equation}
 where $\rho = \frac{1}{N}\sum_{i=1}^N \mathbf{1}[|Y_i|=0]$ denotes the proportion of ground-truth negative cases, $q_{\text{empty}} = P(|\hat{Y}|=0 \mid |Y|=0)$ represents the model's true-negative prediction rate on negative cases, and $\overline{\text{Dice}}_{\text{fg}}$ denotes the mean overlap on positive cases.
 
-Crucially, for a collapsed model that predicts empty masks across all inputs, $\overline{\text{Dice}}_{\text{fg}} = 0$ while $q_{\text{empty}} = 1$. In this degenerate state, the reported macroscopic metric simplifies to $\overline{\text{Dice}}_{\text{all}} = \rho$. Consequently, on cohorts with high negative prevalence, such as chest radiographs ($\rho = 77.72\%$), an entirely uninformative model automatically achieves an apparent score of nearly $78\%$. Furthermore, attaining a published score of $99\%$ on such data requires positive-case foreground Dice to exceed:
+For a baseline model that predicts empty masks across all inputs, $\overline{\text{Dice}}_{\text{fg}} = 0$ while $q_{\text{empty}} = 1$. In this degenerate case, the macroscopic metric reduces directly to $\overline{\text{Dice}}_{\text{all}} = \rho$. Consequently, in cohorts with high negative prevalence, such as chest radiographs ($\rho = 77.72\%$), an all-empty model achieves a nominal score of $77.72\%$. Furthermore, achieving an aggregate score of $99\%$ on such data requires positive-case foreground Dice to satisfy:
 \begin{equation}
-    \overline{\text{Dice}}_{\text{fg}} \approx \frac{0.99 - \rho}{1 - \rho} \approx 95.51\%,
+    \overline{\text{Dice}}_{\text{fg}} \ge \frac{0.99 - \rho}{1 - \rho} \approx 95.51\%,
 \end{equation}
-even under perfect true-negative discrimination ($q_{\text{empty}} = 1$). Without isolating foreground overlap, macroscopic slice averages conceal complete failure on target lesions (Figure~\ref{fig:empty_dice}).
+even under perfect true-negative specificity ($q_{\text{empty}} = 1$). Without reporting disaggregated foreground overlap, macroscopic cohort averages can obscure substantial false-negative rates on target lesions (Figure~\ref{fig:empty_dice}).
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=\columnwidth]{fig2_empty_mask_dice.pdf}
-\caption{Illustration of the empty-mask Dice metric degeneracy on SIIM-ACR pneumothorax radiographs. (a) Lesion-free image correctly predicted empty receives a perfect 1.0 credit. (b) Lesion-bearing image with total foreground omission scores 0.0. (c) Exact macroscopic curve demonstrating the high artificial baseline floor determined by the negative fraction $\rho$.}
+\caption{Illustration of the empty-mask Dice metric behavior on SIIM-ACR pneumothorax radiographs. (a) Lesion-free image correctly predicted empty receives 1.0 credit. (b) Lesion-bearing image with total foreground omission scores 0.0. (c) Macroscopic curve demonstrating the baseline floor determined by the negative fraction $\rho$.}
 \label{fig:empty_dice}
 \end{figure}
 
@@ -194,11 +134,11 @@ We evaluate our multi-task pipeline across four diverse clinical datasets:
 \end{enumerate}
 
 \subsection{Training Protocol and Execution Safeguards}
-All experiments were implemented in PyTorch using ImageNet-pretrained VGG16 and MobileNetV2 encoders. Models were optimized using Adam over 50 epochs with early stopping (patience 10) under mixed-precision floating-point arithmetic. Gradient norm clipping (threshold 1.0) was applied at every step. Across the 135 fold-runs, all partition boundaries, random seeds, and metric computations were locked to ensure exact auditability.
+All experiments were implemented in PyTorch using ImageNet-pretrained VGG16 and MobileNetV2 encoders. Models were optimized using Adam over 50 epochs with early stopping (patience 10) under mixed-precision floating-point arithmetic. Gradient norm clipping (threshold 1.0) was applied at every step. Across all cross-validation folds, patient partitions, random seeds, and evaluation metrics were strictly controlled to ensure reproducibility.
 
 \begin{table*}[t]
 \centering
-\caption{Empirical summary of the 27-configuration reproduction campaign across four clinical benchmarks. Validation accuracy and Dice are reported across 5-fold cross-validation with 95\% bootstrap confidence intervals. The substantial performance gap on PANDA stems from evaluating authentic clinical ordinal ISUP grading rather than proxy morphological tissue categories. SIIM-ACR Dice scores reflect the empty-mask background floor.}
+\caption{Cross-validation performance across four clinical imaging benchmarks under patient-isolated partitions (reported with 95\% bootstrap confidence intervals). Discrepancies on PANDA reflect clinical ordinal ISUP grading versus proxy morphological tile categorization. SIIM-ACR Dice scores reflect the empty-mask true-negative baseline.}
 \label{tab:results_matrix}
 \scriptsize
 \begin{tabular}{@{}l c c c c c c@{}}
@@ -220,13 +160,13 @@ PanNuke & 5 & 78.70 -- 99.24 & 68.44 -- 77.61 & --- & --- & Multi-Organ Histopat
 \label{fig:results_dotplot}
 \end{figure*}
 
-\section{Empirical Results and Failure Analysis}
+\section{Empirical Results and Diagnostic Analysis}
 
 \subsection{Benchmark Performance Comparison}
 Table~\ref{tab:results_matrix} provides a comprehensive overview of the empirical replication results alongside claimed literature targets. While TCGA-LGG classification slightly exceeds published numbers under rigorous patient-isolated splits, substantial discrepancies emerge on histopathology and radiography benchmarks. Figure~\ref{fig:results_dotplot} plots fold-mean accuracies and Dice scores across all configurations.
 
 \subsection{The Empty-Mask Score Floor on Radiography}
-On the SIIM-ACR pneumothorax benchmark, the public cohort contains 77.72\% lesion-free images ($\rho = 0.7772$). Across 19 out of 20 cross-validation folds, the multi-task models converged to entirely empty segmentation predictions. Under empty-credit scoring, these collapsed models achieved an average validation Dice of exactly 77.72\% on three configurations and 77.04\% on the fourth. The models failed to identify any foreground pneumothorax regions, yet registered an apparent score approaching 78\% (illustrated qualitatively in Figure~\ref{fig:qualitative}). As derived in Section~\ref{sec:dice} and shown in Figure~\ref{fig:empty_dice}(c), achieving a reported score of 99\% on this dataset requires true foreground overlap to exceed 95.5\%, a standard that standard lightweight CNNs cannot attain. Macro-averaging over empty slices masks severe clinical false-negative failure.
+On the SIIM-ACR pneumothorax benchmark, the public cohort contains 77.72\% lesion-free images ($\rho = 0.7772$). Across 19 out of 20 cross-validation folds, the multi-task models converged to entirely empty segmentation predictions. Under empty-credit scoring, these models achieved an average validation Dice of 77.04\%--77.72\% purely through true-negative empty-credit assignment (Figure~\ref{fig:qualitative}). As derived in Section~\ref{sec:dice} and shown in Figure~\ref{fig:empty_dice}(c), reporting 99\% Dice in this regime requires true foreground overlap to exceed 95.51\%, which is difficult for lightweight models to achieve without dedicated foreground loss reweighting. Disaggregating foreground overlap from negative-case classification provides a clearer reflection of clinical detection performance.
 
 \begin{figure}[t]
 \centering
@@ -236,9 +176,10 @@ On the SIIM-ACR pneumothorax benchmark, the public cohort contains 77.72\% lesio
 \end{figure}
 
 \subsection{Task-Formulation Discrepancy in Prostate Pathology}
-The largest divergence in Table~\ref{tab:results_matrix} occurs on the PANDA prostate biopsy benchmark. Previous studies reported 88\% accuracy alongside 99\% Dice \cite{rhanoui2025multitask}. Under our 12 factorial PANDA configurations, clinical 6-class ordinal ISUP grading achieved a fold-mean accuracy between 28.21\% and 44.87\%. 
+The divergence observed on the PANDA benchmark (28.21\%--44.87\% measured accuracy versus previously reported values of ~88\%) illustrates a fundamental distinction in task formulation within computational pathology. 
+In prior multi-task literature \cite{rhanoui2025multitask}, the classification objective was framed as predicting six morphological tissue categories extracted from localized segmentation masks (background stroma, benign epithelium, and Gleason pattern patches), where benign tissue and stroma constituted over 52\% of the sample distribution ($5,558$ of $10,618$ images). In contrast, clinical diagnostic deployment requires whole-biopsy ordinal ISUP grading (Grades 0--5), which reflects overall prognostic tumor aggressiveness across heterogeneous gland architectures \cite{bulten2022artificial}.
 
-This performance divergence is directly explained by task definition and internal methodology discrepancies in the baseline literature. As documented in Table 2 of Rhanoui et al. \cite{rhanoui2025multitask}, the cited study evaluated six proxy morphological tissue categories extracted from Radboud segmentation masks (Background, Stroma, Benign epithelium, Gleason 3, 4, 5), where non-cancerous background glass and stroma alone comprised 52.3\% of the samples ($5,558$ of $10,618$ images). Paradoxically, despite defining six classes, their segmentation was reported as a binary cancer-vs-background detection task (Section 4.2 of \cite{rhanoui2025multitask}). In sharp contrast, genuine clinical ISUP grading evaluates global cancer aggressiveness across the entire core according to international pathology guidelines \cite{bulten2022artificial}. Classifying subtle Gleason glandular patterns from compressed $128 \times 128$ thumbnails without multiscale attention or multiple-instance learning represents a fundamentally different and far more demanding task. When evaluated against authentic clinical endpoints, lightweight CNN thumbnails reach an empirical upper bound of approximately 45\%.
+Distinguishing subtle intermediate Gleason patterns (such as differentiating poorly formed Gleason 4 glands from well-formed Gleason 3 tubules) requires resolving cellular architectural boundaries. When whole-core biopsies are downsampled to $128 \times 128$ pixel thumbnails without multiscale tiling, high-power fields, or multiple-instance attention mechanisms, fine glandular features are blurred into coarse texture maps. Under these spatial constraints, compact 2D CNN encoders reach an empirical capacity limit around 45\% accuracy for clinical 6-class ordinal grading. This finding demonstrates that model evaluation in digital pathology must strictly distinguish between localized morphological patch categorizations and authentic patient-level diagnostic endpoints.
 
 \begin{figure}[t]
 \centering
@@ -287,15 +228,15 @@ Analyzing gradient trajectories reveals that because segmentation cross-entropy 
 \section{Guidelines for Reliable Multi-Task Benchmarking}
 Based on our findings, we propose five methodological guidelines for multi-task medical image analysis:
 \begin{enumerate}
-    \item \textbf{Disaggregated Metric Reporting:} On sparse-lesion cohorts, researchers must report foreground-only overlap alongside negative-case true negative rates, avoiding pooled macroscopic averages that obscure complete false negatives.
+    \item \textbf{Disaggregated Metric Reporting:} On sparse-lesion cohorts, researchers should report foreground-only overlap alongside negative-case true negative rates, avoiding pooled macroscopic averages that obscure complete false negatives.
     \item \textbf{Patient-Level Partition Isolation:} Cross-validation folds must strictly isolate independent patient units to prevent identity leakage across spatial tiles.
     \item \textbf{Clinical Endpoint Alignment:} Benchmark tasks must align with actionable clinical diagnostic targets rather than simplified morphological proxies.
-    \item \textbf{Validation of Preprocessing Pipelines:} Normalization heuristics, such as color deconvolution, must be empirically validated against raw inputs to ensure diagnostic features are preserved.
-    \item \textbf{Optimization Diagnostics:} Multi-task models should monitor task gradient norms and directional alignment to identify destructive interference before clinical translation.
+    \item \textbf{Validation of Preprocessing Pipelines:} Normalization heuristics, such as color deconvolution, should be empirically validated against raw inputs to ensure diagnostic features are preserved.
+    \item \textbf{Optimization Diagnostics:} Multi-task models should monitor task gradient norms and directional alignment to identify destructive interference before clinical deployment.
 \end{enumerate}
 
 \section{Conclusion}
-This paper presented a systematic empirical investigation into hard parameter-sharing multi-task architectures across four diverse clinical benchmarks. Framing our inquiry around four foundational research questions, we deconstructed headline performance claims: we proved the empty-mask Dice degeneracy analytically and empirically, resolved task-formulation discrepancies in prostate pathology, and characterized destructive gradient interference under dynamic balancing. We demonstrated that standard color deconvolution can attenuate fine discriminative textures, while lateral skip connections exert minimal influence on shared classification representations. Our open evaluation framework and findings provide robust methodological foundations to ensure clinically trustworthy multi-task medical vision systems.
+This paper presented a systematic empirical investigation into hard parameter-sharing multi-task architectures across four diverse clinical benchmarks. Framing our inquiry around four foundational research questions, we analyzed multi-task performance boundaries: we proved the empty-mask Dice baseline floor analytically and empirically, clarified task-formulation boundaries in prostate pathology, and characterized gradient interference under dynamic balancing. We demonstrated that standard color deconvolution can attenuate fine discriminative textures, while lateral skip connections exert minimal influence on shared classification representations. Our evaluation framework and findings provide robust methodological foundations to ensure clinically trustworthy multi-task medical vision systems.
 
 \newpage
 \interlinepenalty=10000

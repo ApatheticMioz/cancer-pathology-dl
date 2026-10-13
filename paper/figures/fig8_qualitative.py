@@ -319,34 +319,37 @@ def _build_fig():
     )
 
     for r, rec in enumerate(records):
-        # --- Row label (dataset + run + encoder) -------------------------
+        # --- Row label (dataset + encoder) -------------------------------
         ax_lab = fig.add_subplot(gs[r, 0])
         ax_lab.axis("off")
         ax_lab.text(
             0.5, 0.5,
-            f"{rec['label']}\nRun {rec['run']} · {rec['encoder']}",
+            f"{rec['label']}\n({rec['encoder']})",
             ha="center", va="center", fontsize=8, fontweight="bold",
         )
 
         # --- Image panel --------------------------------------------------
         ax_img = fig.add_subplot(gs[r, 1])
         ax_img.imshow(rec["img_rgb"])
-        ax_img.set_title("Image", fontsize=8, fontweight="bold")
+        ax_img.set_title("Input Image", fontsize=7.5,
+                         fontweight="bold" if r == 0 else "normal")
         ax_img.axis("off")
 
         # --- Ground-truth panel ------------------------------------------
         ax_gt = fig.add_subplot(gs[r, 2])
         ax_gt.imshow(_overlay(rec["img_rgb"], rec["gt"], rec["seg_classes"]))
-        ax_gt.set_title("Ground truth", fontsize=8, fontweight="bold")
+        ax_gt.set_title("Ground Truth", fontsize=7.5,
+                        fontweight="bold" if r == 0 else "normal")
         ax_gt.axis("off")
 
         # --- Prediction panel (with per-tile Dice) -----------------------
         ax_pred = fig.add_subplot(gs[r, 3])
         ax_pred.imshow(_overlay(rec["img_rgb"], rec["pred"], rec["seg_classes"]))
-        dice_txt = f"Prediction\nDice = {rec['dice']:.2f}"
         if rec["binary"] and rec["dataset"] == "siim" and float(rec["pred"].sum()) == 0.0:
-            dice_txt += "\n(all-empty)"
-        ax_pred.set_title(dice_txt, fontsize=8, fontweight="bold")
+            pred_title = "Pred: Dice=0.00 (empty)"
+        else:
+            pred_title = f"Pred: Dice={rec['dice']:.2f}"
+        ax_pred.set_title(pred_title, fontsize=7.5, fontweight="bold")
         ax_pred.axis("off")
 
     return fig, records

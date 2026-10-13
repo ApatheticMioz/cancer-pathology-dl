@@ -121,7 +121,9 @@ def _build_fig():
     crop_mac = img_mac[r1:r2, c1:c2]
     diff = np.mean(np.abs(crop_raw.astype(float) - crop_mac.astype(float)), axis=-1)
 
-    fig, axes = plt.subplots(1, 4, figsize=(10.5, 2.7), dpi=300)
+    from mpl_toolkits.axes_grid1 import make_axes_locatable
+
+    fig, axes = plt.subplots(1, 4, figsize=(10.8, 2.7), dpi=300)
 
     axes[0].imshow(crop_raw)
     axes[0].set_title("(a) Raw Biopsy Tile\n(Native Chromatin)", fontweight="bold")
@@ -134,7 +136,9 @@ def _build_fig():
     im_diff = axes[2].imshow(diff, cmap=style.HEATMAP_CMAP)
     axes[2].set_title("(c) Absolute Texture\nDiscrepancy Map", fontweight="bold")
     axes[2].axis("off")
-    cbar = fig.colorbar(im_diff, ax=axes[2], fraction=0.046, pad=0.04)
+    divider = make_axes_locatable(axes[2])
+    cax = divider.append_axes("right", size="5%", pad=0.08)
+    cbar = fig.colorbar(im_diff, cax=cax)
     cbar.ax.tick_params(labelsize=7)
 
     # --- Panel (d): Macenko ON/OFF accuracy bars (CSV-sourced) ----------
@@ -169,7 +173,7 @@ def _build_fig():
     axes[3].set_title("(d) Ablation Accuracy Gain\n(Macenko ON vs OFF)", fontweight="bold")
     axes[3].set_xticks(x)
     axes[3].set_xticklabels([f"{ds}\n(ISUP 0–5)" if ds == "PANDA" else f"{ds}\n(19 tissues)" for ds in labels])
-    axes[3].set_ylim([20, 105])
+    axes[3].set_ylim([20, 112])
     # Legend in the upper-left: the PANDA bars (left group) only reach ~40%,
     # so the upper-left corner (y > ~45) is clear headroom.
     axes[3].legend(handles=legend_elements, loc="upper left")
@@ -179,11 +183,11 @@ def _build_fig():
     for i in range(len(labels)):
         delta = off_acc[i] - on_acc[i]
         axes[3].annotate(f"+{delta:.2f}%",
-                         xy=(x[i] + width / 2, off_acc[i] + 1.5),
+                         xy=(x[i] + width / 2, off_acc[i] + 1.8),
                          ha="center", va="bottom", fontsize=8, fontweight="bold",
                          color=style.NULL_GRAY)
 
-    plt.tight_layout()
+    fig.subplots_adjust(left=0.04, right=0.98, top=0.88, bottom=0.18, wspace=0.38)
     return fig, axes
 
 
