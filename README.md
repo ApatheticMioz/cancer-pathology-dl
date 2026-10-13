@@ -1,7 +1,7 @@
 # All Dice, No Slice: Metric Degeneracy, Evaluation Pitfalls, and Optimization Dynamics in Multi-Task Medical Vision
 
-[![Preprint](https://img.shields.io/badge/Preprint-Open%20Access-success.svg)](paper/all_dice_no_slice.pdf)
-[![Paper](https://img.shields.io/badge/Manuscript-26pp%20Preprint-blue.svg)](paper/all_dice_no_slice.pdf)
+[![Conference](https://img.shields.io/badge/Conference-ICCII%202026-success.svg)](all_dice_no_slice.pdf)
+[![Paper](https://img.shields.io/badge/Manuscript-6pp%20IEEE%20Format-blue.svg)](all_dice_no_slice.pdf)
 [![Audit Manifest](https://img.shields.io/badge/Audit%20Manifest-16%2F16%20Findings%20Closed-success.svg)](paper/AUDIT_MANIFEST.md)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 [![PyTorch 2.0+](https://img.shields.io/badge/PyTorch-2.0%2B%20CUDA-ee4c2c.svg)](https://pytorch.org/)
@@ -171,16 +171,15 @@ cancer-pathology-dl/
 │   ├── checkpoints.py               # Atomic checkpoint management and per-run summary JSONs
 │   ├── aggregate_results.py         # Results aggregator, CSV matrices, and LaTeX table generator
 │   └── utils.py                     # Seed pinning, hardware telemetry, thread-safe logging
-├── paper/                           # Journal publication package (Elsevier CBM)
-│   ├── all_dice_no_slice.tex        # 19-page manuscript source (elsarticle preprint)
-│   ├── all_dice_no_slice.pdf        # Compiled submission-ready PDF (0 overfull, interleaved floats)
+├── paper/                           # Conference publication package (IEEE spconf.sty format)
+│   ├── all_dice_no_slice.tex        # 6-page conference manuscript source (spconf.sty)
+│   ├── all_dice_no_slice.pdf        # Compiled submission PDF (exactly 6 pages, 0 overfull)
+│   ├── spconf.sty                   # IEEE Signal Processing Society conference style
+│   ├── references.bib               # Curated BibTeX references
 │   ├── AUDIT_MANIFEST.md            # Structured finding ledger (16/16 closed findings)
-│   ├── references.bib               # 40+ verified BibTeX references
 │   ├── paper_results_matrix_with_ci.csv # Complete audited 26-run CSV with 95% CIs
-│   ├── graphical_abstract.pdf       # 13.2 x 5.3 cm compliant CBM graphical abstract banner
+│   ├── graphical_abstract.pdf       # 13.2 x 5.3 cm publication banner
 │   ├── graphical_abstract.png       # 300 DPI high-resolution render of the banner
-│   ├── cover_letter.md              # Editor cover letter for Computers in Biology and Medicine
-│   ├── highlights.spl               # CBM highlights (5 bullet points <= 85 characters)
 │   └── figures/                     # Publication figure generation suite
 │       ├── build_all.py             # Master figure builder & assertion verifier
 │       ├── fig1_pipeline.py         # Figure 1: Pipeline & audit framework
@@ -254,7 +253,7 @@ chmod +x run_all_experiments.sh
 The repository includes automated build targets for the complete publication package:
 
 ```bash
-# Compile the 19-page Elsevier PDF manuscript
+# Compile the 6-page IEEE PDF manuscript (scripts/build_paper.sh)
 make paper
 
 # Regenerate all publication figures with assertion verifications
@@ -309,12 +308,12 @@ All findings uncovered during peer review and revision are tracked with strict v
 ## 📜 Citation
 
 ```bibtex
-@article{ali2026alldice,
-  title   = {All Dice, No Slice: Metric Degeneracy, Evaluation Pitfalls, and Optimization Dynamics in Multi-Task Medical Vision},
-  author  = {Ali, Muhammad Abdullah and Kiani, Muhammad Ibrahim and Aamir, Muhammad Abdullah},
-  journal = {Preprint},
-  year    = {2026},
-  url     = {https://github.com/ApatheticMioz/cancer-pathology-dl}
+@inproceedings{ali2026alldice,
+  title     = {All Dice, No Slice: Metric Degeneracy, Evaluation Pitfalls, and Optimization Dynamics in Multi-Task Medical Vision},
+  author    = {Ali, Muhammad Abdullah and Kiani, Muhammad Ibrahim and Aamir, Muhammad Abdullah and {Ul Ain}, Qurat},
+  booktitle = {Proceedings of the International Conference on Computing, Intelligence and Innovation (ICCII)},
+  year      = {2026},
+  url       = {https://github.com/ApatheticMioz/cancer-pathology-dl}
 }
 ```
 

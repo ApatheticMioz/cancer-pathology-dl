@@ -101,6 +101,9 @@ Desktop.ini
 # PDFs and LaTeX build artifacts
 # ============================================================
 *.pdf
+1. Exposing_the_Limits_of_Deepfake_Detection_using_novel_Facial_mole_attack_A_Perceptual_Black-_Box_Adversarial_Attack_Study.pdf
+*.docx
+
 !all_dice_no_slice.pdf
 !paper/all_dice_no_slice.pdf
 !paper/fig*.pdf

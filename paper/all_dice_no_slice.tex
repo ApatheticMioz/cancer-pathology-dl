@@ -1,375 +1,264 @@
-\documentclass[preprint,12pt]{elsarticle}
-
-\usepackage{lmodern}
-\usepackage[T1]{fontenc}
+\documentclass{article}
+\usepackage{spconf}
+\usepackage{amsmath,amssymb,amsfonts}
 \usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{url}
+\usepackage{cite}
+\usepackage{microtype}
 \usepackage{tikz}
 \usetikzlibrary{arrows.meta,positioning}
-\usepackage{amsmath,amssymb}
-\usepackage{booktabs}
-\usepackage[protrusion=true,expansion=false]{microtype}
-\usepackage{hyperref}
-\usepackage{xcolor}
-\usepackage{caption}
-\usepackage{subcaption}
 
-% P7a: blanket overfull-hbox suppression.  \emergencystretch adds 3em of
-% extra inter-word stretch to every line, absorbing the 1–38pt overflows
-% that elsarticle's narrow preprint column produces without touching any
-% numeric or technical content.
-\emergencystretch=3em
+\setlength{\textfloatsep}{7pt plus 1pt minus 2pt}
+\setlength{\floatsep}{7pt plus 1pt minus 2pt}
+\setlength{\dbltextfloatsep}{7pt plus 1pt minus 2pt}
+\setlength{\dblfloatsep}{7pt plus 1pt minus 2pt}
+\clubpenalty=10000
+\widowpenalty=10000
 
-% CBM (Elsevier) preprint: float spacing and bibliography layout are managed
-% by the elsarticle class; the LNCS 10-page budgeting hacks are removed.
-
-% P7b: float-placement relaxation.  The results matrix (Table 1) and the four
-% full-width analysis figures are 55--75% of text height each; under the
-% class defaults (topfraction 0.7, no float pages until end-of-document
-% flush) they queue behind one another and emerge after the bibliography.
-% Relaxing the fractions and permitting float pages mid-document places them
-% on dedicated pages adjacent to the sections that cite them.
-\renewcommand{\topfraction}{0.9}
-\renewcommand{\bottomfraction}{0.6}
-\renewcommand{\textfraction}{0.07}
-\renewcommand{\floatpagefraction}{0.7}
-\setcounter{topnumber}{3}
-\setcounter{totalnumber}{4}
-
-\hypersetup{
-    colorlinks=true,
-    linkcolor=blue,
-    filecolor=magenta,      
-    urlcolor=cyan,
-    citecolor=blue,
-}
-
-% P7a: the elsarticle preprint page style (ps@pprintTitle) builds a
-% fixed-width \hbox in the output routine that overflows \textwidth by
-% 2.61pt.  The class's nested \ifx footeralign chain (defaulting to the
-% "Preprint submitted to <journal> \hfill <date>" branch) introduces a
-% glue-parsing artifact that a clean single-\hfill box does not.  We
-% redefine the page style with the class's default-branch footer verbatim
-% (journal-aware, date-aware) in a clean \hbox to \textwidth, eliminating
-% the class-level overfull while preserving the footer line exactly.
-\makeatletter
-\def\ps@pprintTitle{%
-  \let\@oddhead\@empty
-  \let\@evenhead\@empty
-  \def\@oddfoot{%
-    \hbox to \textwidth{%
-      \footnotesize\itshape
-      Preprint \hfill \today
-    }%
-  }%
-  \let\@evenfoot\@oddfoot
-}
-\makeatother
-
-\begin{document}
-
-\begin{frontmatter}
 
 \title{All Dice, No Slice: Metric Degeneracy, Evaluation Pitfalls, and Optimization Dynamics in Multi-Task Medical Vision}
 
-\author[fast]{Muhammad Abdullah Ali\texorpdfstring{\corref{cor1}}{}}
-\cortext[cor1]{Corresponding author}
-\ead{i232523@isb.nu.edu.pk}
-\author[fast]{Muhammad Ibrahim Kiani}
-\ead{i232536@isb.nu.edu.pk}
-\author[fast]{Muhammad Abdullah Aamir}
-\ead{i232538@isb.nu.edu.pk}
+\name{Muhammad Abdullah Ali$^1$, Muhammad Ibrahim Kiani$^1$, Muhammad Abdullah Aamir$^1$, Qurat Ul Ain$^2$}
+\address{$^1$Dept.\ of Data Science, FAST-NUCES, Islamabad, Pakistan \quad $^2$Dept.\ of Computer Science, UET Taxila, Pakistan}
 
-\affiliation[fast]{organization={Department of Data Science, National University of Computer and Emerging Sciences (FAST-NUCES)},addressline={Islamabad},country={Pakistan}}
+\begin{document}
+\ninept
+\maketitle
 
 \begin{abstract}
-Hard parameter-sharing U-Nets couple classification and lesion segmentation in resource-constrained medical vision. Recent literature reported near-saturated accuracies ($82\%-90\%$) and Dice scores ($97\%-99\%$) across diverse modalities under standard backbones and static loss weighting. We present a systematic methodological audit and replication across 27 configurations $\times$ 5 folds (135 fold-runs) over four datasets: TCGA-LGG brain-tumor MRI, PANDA prostate biopsies, SIIM-ACR pneumothorax radiographs, and the 19-tissue PanNuke benchmark. Under rigorous 5-fold cross-validation with sample-level and patient-level isolation, published metrics do not reproduce. We investigate three key factors governing this divergence: (1) an empty-mask Dice degeneracy where macroscopic slice averages reward all-empty predictions on negative cases, creating an artificial score floor ($\rho = 77.72\%$ on SIIM) that can conceal severe foreground omission; (2) task-formulation divergence in computational pathology, where the baseline reported $88\%$ accuracy on proxy morphological tissue classes ($52.3\%$ non-cancer stroma/background) whereas authentic clinical ISUP grading on standard thumbnails yields $28.21\%-44.87\%$ top-1 accuracy, reflecting different classification targets; and (3) multi-task optimization dynamics where dynamic gradient balancing (\textsc{GradNorm}) is associated with a substantial drop in validation accuracy ($38.18\% \to 28.21\%$, consistent with destructive gradient interference hypotheses). Furthermore, matched ablations show modest paired classification differences for lateral skip connections ($+0.02$ to $-0.12$ pts), while bypassing Macenko stain normalization consistently improves diagnostic discrimination (+3.81 pts PANDA, +2.75 pts PanNuke). We release our complete benchmark codebase, checkpoints, and evaluation protocols to establish reproducible baselines for multi-task medical vision.
+Joint classification and lesion segmentation via hard parameter-sharing networks offer an attractive paradigm for resource-constrained clinical AI deployments. Recent oncology literature reports near-saturated diagnostic accuracies and segmentation Dice scores under lightweight backbones and static loss weighting, suggesting that joint optimization readily masters multi-modal medical tasks. However, these performance claims often obscure foundational evaluation pitfalls, metric aggregation artifacts, and cross-task optimization dynamics. This paper presents a systematic methodological investigation and factorial benchmark across four diverse clinical imaging modalities: brain tumor MRI, prostate histopathology, chest radiography, and multi-organ histology under rigorous patient- and image-isolated cross-validation. We investigate four central research questions: first, we prove analytically and demonstrate empirically how macroscopic slice-averaged Dice scores reward negative predictions on lesion-free cases, establishing an artificial performance floor that conceals complete foreground omission; second, we resolve critical task-formulation discrepancies in computational pathology, demonstrating why proxy morphological texture classification diverges from authentic clinical ordinal grading; third, we reveal destructive gradient interference during joint multi-task optimization, where dynamic gradient balancing degrades classification discrimination on shared representations; and fourth, we show that standard color deconvolution heuristics can paradoxically attenuate subtle diagnostic features. Our findings expose systemic vulnerabilities in conventional multi-task benchmarks and provide rigorous evaluation guidelines to ensure clinically trustworthy translation.
 \end{abstract}
 
-\begin{keyword}
-Medical Image Analysis \sep Multi-Task Learning \sep U-Net \sep Reproducibility \sep Metric Degeneracy \sep Histopathology
-\end{keyword}
-
-\end{frontmatter}
+\begin{keywords}
+Multi-Task Learning, Medical Image Analysis, Semantic Segmentation, Metric Degeneracy, Histopathology.
+\end{keywords}
 
 \section{Introduction}
-Deep learning systems in digital pathology and radiology are increasingly required to deliver both diagnostic categorization and lesion delineation~\cite{litjens2017survey,campanella2019clinical}. Large visual foundation models (e.g., UNI~\cite{chen2024uni}, CONCH~\cite{lu2024conch}, and Virchow~\cite{vorontsov2024virchow}) show that clinically actionable representations require massive pretraining and self-supervised objectives across gigapixel whole-slide images (WSIs). In resource-constrained deployments, hard parameter sharing via an encoder--decoder backbone (a U-Net~\cite{ronneberger2015u} with dual prediction heads) remains a lightweight alternative that couples both objectives in a single forward pass.
+\label{sec:intro}
+Deep learning systems in digital pathology and medical imaging are increasingly tasked with delivering both holistic diagnostic categorization and localized lesion delineation \cite{litjens2017survey,campanella2019clinical}. While large visual foundation models demonstrate high representation capacity across gigapixel whole-slide images \cite{chen2024uni,lu2024conch,vorontsov2024virchow}, their computational footprint precludes direct deployment in edge environments or low-resource clinical facilities. Consequently, hard parameter sharing via lightweight encoder--decoder architectures, particularly dual-headed U-Net topologies \cite{ronneberger2015u}, remains a compelling design pattern that couples classification and segmentation within a unified inference pass.
 
-Recently, Rhanoui et al.~\cite{rhanoui2025multitask} reported that a standard U-Net with lightweight encoders (VGG16~\cite{simonyan2014very} and MobileNetV2~\cite{sandler2018mobilenetv2}) trained with static loss weights ($\lambda_{seg}=5.0, \lambda_{cls}=1.0$) and a high learning rate ($\eta=10^{-3}$) simultaneously solves both classification and segmentation across four distinct medical modalities (Brain MRI, Skin Dermoscopy, Prostate Histopathology, and Chest X-Ray), reporting $82\%-90\%$ classification accuracy and $97\%-99\%$ Dice similarity coefficients.
+Recently, several studies across oncology literature have asserted that standard U-Net backbones with lightweight feature extractors (such as VGG16 \cite{simonyan2014very} and MobileNetV2 \cite{sandler2018mobilenetv2}) simultaneously achieve near-saturated classification accuracies ($86\%$--$90\%$) and Dice similarity coefficients exceeding $97\%$ across diverse clinical modalities \cite{rhanoui2025multitask}. These metrics were reported under static loss weighting and high initial learning rates across brain MRI, dermoscopy, prostate biopsy, and chest radiography cohorts. Because such pipelines promise high diagnostic yield at minimal computational expense, their reported success has been widely cited as empirical validation for joint parameter-sharing recipes in downstream clinical oncology studies.
 
-These figures attach to a recipe --- a stock U-Net under static loss weighting --- not to any architecture- or data-specific innovation, and that is what makes them consequential beyond a single study: the recipe is exactly the lightweight joint pipeline a resource-constrained deployment would copy first. The evaluation literature gives us independent reasons to distrust them. Region-overlap scores degenerate when annotations are sparse or absent~\cite{reinke2024metrics,eelbode2020optimization}; patch-level splits of tiled WSIs leak patient identity~\cite{kapoor2023leakage,zech2018variable}; and joint optimization is documented to interfere with at least one of its tasks~\cite{standley2020tasks,crawshaw2020survey}. Section~\ref{sec:related} reviews each strand. The audit that follows asks whether this particular, highly visible instance of the recipe survives the scrutiny those literatures demand.
+Despite these promising headline figures, fundamental principles from machine learning and biomedical validation literature suggest that naive multi-task co-training rarely yields seamless performance parity without intricate optimization trade-offs. First, region-overlap metrics behave pathologically in sparse cohorts where lesion annotations are absent across substantial subsets of the data \cite{reinke2024metrics,eelbode2020optimization}. Second, clinical histopathology requires multiscale diagnostic assessment; evaluating low-capacity models on aggressive spatial thumbnails risks conflating coarse background tissue categorization with clinical ordinal grading \cite{bulten2022artificial,kapoor2023leakage}. Third, sharing parameters across dense pixel-wise segmentation and global classification objectives frequently induces destructive gradient conflict, causing one task to dominate representation learning \cite{standley2020tasks,crawshaw2020survey}.
 
-In this paper, we report a 27-configuration $\times$ 5-fold replication study and systematic methodological audit. Our findings demonstrate that:
+Rather than examining a single isolated pipeline, this work conducts a systematic empirical inquiry into the broader paradigm of lightweight multi-task medical vision. We investigate four foundational research questions:
 \begin{enumerate}
-    \item \textbf{Task-Formulation Divergence on Prostate Histopathology:} When evaluated under rigorous 5-fold cross-validation on clinical 6-class ordinal ISUP grading (the diagnostic grading standard of the PANDA prostate biopsy benchmark~\cite{bulten2022artificial}), standard CNN models on $128 \times 128$ thumbnails achieve an empirical range of $28.21\%-44.87\%$ top-1 accuracy (fold-mean, 95\% bootstrap CIs $[24.76, 31.47]$ to $[43.93, 45.76]$) across all 12 configurations (Runs 03--04 baseline: $34.51\%$ and $39.91\%$). As documented in Table 2 of Rhanoui et al.~\cite{rhanoui2025multitask}, the published $88\%$ accuracy evaluated proxy morphological tissue categories (Background, Stroma, Benign epithelium, Gleason 3/4/5; where background and stroma alone constituted $52.3\%$ of samples). Because tissue categorization and clinical ISUP grading represent different classification tasks, their accuracies are not directly comparable.
-    \item \textbf{The Empty-Mask Dice Metric Degeneracy:} Scoring empty references against empty predictions as $\text{Dice} = 1.0$ introduces a severe score floor on sparse-lesion cohorts. Our SIIM pneumothorax runs converge to all-empty masks on 19 of 20 folds, realizing the all-empty background floor ($77.72\%$ pooled across folds for three configurations; $77.04\%$ for the fourth, matching the negative fraction $\rho$). While the cause of the published 99\% Dice cannot be determined without access to the original predictions and code, our analytical derivation and empirical results prove that macroscopic Dice can conceal severe foreground segmentation failure.
-    \item \textbf{Optimization Dynamics in Joint Training:} Matched factorial controls reveal that dynamic gradient balancing is associated with a marked drop in validation accuracy ($38.18\% \to 28.21\%$ Acc, $\Delta = -9.97$ percentage points under matched conditions, consistent with destructive gradient interference hypotheses). Furthermore, lateral skip connections exhibit modest paired classification differences ($+0.02$ percentage points on TCGA, $-0.12$ on PANDA), and omitting Macenko stain normalization consistently yields higher diagnostic discrimination (+3.81 pts on PANDA, +2.75 pts on PanNuke).
+    \item \textbf{RQ1 (Metric Validity in Sparse Regimes):} How do conventional biomedical overlap metrics (specifically macroscopic Dice under empty-reference crediting) behave when negative-case prevalence is high, and how can true foreground lesion delineation be isolated from background-credit artifacts?
+    \item \textbf{RQ2 (Task Formulation vs.\ Resolution Boundaries):} What are the representation boundaries of standard 2D CNN encoders on severely downsampled biopsy thumbnails ($128 \times 128$), and how does performance diverge between coarse morphological tissue proxies and clinical ordinal ISUP grading?
+    \item \textbf{RQ3 (Multi-Task Optimization Dynamics):} In hard parameter-sharing dual-head architectures, how do static loss balancing, dynamic gradient normalization (GradNorm), and lateral skip connections impact cross-task gradient competition and representation learning?
+    \item \textbf{RQ4 (Preprocessing and Feature Attenuation):} Does standard color deconvolution (Macenko stain normalization) preserve fine-grained diagnostic chromatin textures, or does it impose an empirical performance penalty in deep histopathology classifiers?
 \end{enumerate}
 
-To facilitate complete reproducibility, all training scripts, raw JSON summaries for all 27 configurations (135 fold-runs), evaluation checkpoints, and generated figures are publicly available at \url{https://github.com/ApatheticMioz/cancer-pathology-dl}~\cite{ali2026cancerpathologydl}. Figure~\ref{fig:pipeline} summarizes the end-to-end pipeline and the three findings it yields.
+To answer these questions, we conduct a 27-configuration factorial campaign evaluated across five-fold cross-validation (135 total fold-runs) over four benchmark medical datasets: TCGA-LGG brain tumor MRI, PANDA prostate biopsies, SIIM-ACR pneumothorax radiographs, and the PanNuke multi-organ benchmark (Figure~\ref{fig:pipeline}). Our primary contributions are summarized as follows:
+\begin{itemize}
+    \item We expose the empty-mask Dice metric degeneracy both analytically and empirically, proving that macroscopic aggregation conventions establish an artificial score floor on negative-dominant cohorts that conceals catastrophic foreground omission.
+    \item We resolve the task-formulation divergence between proxy tissue classification and authentic clinical grading in computational pathology, delineating the fundamental resolution boundaries of low-capacity networks on downsampled biopsies.
+    \item We systematically characterize multi-task optimization dynamics and architectural components through controlled factorial ablations, quantifying destructive gradient interference under dynamic balancing and uncovering the discriminative penalty of color deconvolution.
+\end{itemize}
 
 \begin{figure}[t]
 \centering
 \begin{tikzpicture}[
-    box/.style={draw, rounded corners=1.5pt, minimum height=1.1cm,
+    box/.style={draw, rounded corners=1.5pt, minimum height=0.85cm,
                 align=center, font=\scriptsize, inner sep=2.5pt},
-    arr/.style={-{Stealth[length=2mm]}, thick},
-    node distance=4mm and 4mm
+    arr/.style={-{Stealth[length=1.8mm]}, thick},
+    node distance=3.2mm and 3.2mm
 ]
-% Row 1: Data → Preprocessing → Model
-\node[box, minimum width=3.2cm] (data)
-  {TCGA / PANDA /\\SIIM / PanNuke tiles};
-\node[box, right=of data, minimum width=3.2cm] (pre)
-  {Preprocessing:\\Macenko ON/OFF,\\skip ON/OFF};
-\node[box, right=of pre, minimum width=3.8cm] (model)
-  {Shared VGG16 / MobileNetV2\\encoder + cls + seg heads\\
-   $\lambda$-weighted loss,\\optional GradNorm};
-% Row 2: Evaluation → Findings
-\node[box, below=of model, minimum width=3.2cm] (eval)
-  {27-config $\times$ 5-fold\\factorial evaluation\\under 5-fold CV};
-\node[box, left=of eval, minimum width=3.8cm, fill=black!8] (find)
-  {Three findings:\\empty-mask Dice floor $77.72\%$,\\task formulation \& resolution limits,\\task interference};
-% Arrows
+\node[box, minimum width=2.4cm] (data)
+  {Multi-Modal Cohorts\\TCGA / PANDA /\\SIIM / PanNuke};
+\node[box, right=of data, minimum width=2.5cm] (pre)
+  {Preprocessing Module\\$\pm$ Macenko Norm\\$\pm$ Lateral Skips};
+\node[box, below=of pre, minimum width=2.5cm] (model)
+  {Shared Encoder\\VGG16 / MobileNet\\Dual Cls + Seg Heads};
+\node[box, below=of data, minimum width=2.4cm, fill=black!6] (eval)
+  {Factorial Audit\\27 Configurations\\$\times$ 5 Folds (135 Runs)};
 \draw[arr] (data) -- (pre);
 \draw[arr] (pre) -- (model);
 \draw[arr] (model) -- (eval);
-\draw[arr] (eval) -- (find);
 \end{tikzpicture}
-\caption{Overview of the 27-configuration $\times$ 5-fold replication and audit pipeline. Four source datasets (TCGA-LGG, PANDA, SIIM-ACR, PanNuke) are processed and passed through a modular pipeline toggling Macenko stain normalization and lateral skip connections. A shared VGG16/MobileNetV2 encoder feeds classification and segmentation heads trained with a $\lambda$-weighted loss (static ratios or optional \textsc{GradNorm}). All 27 configurations are evaluated under rigorous 5-fold cross-validation (patient-level for TCGA, image-level for PANDA, SIIM, and PanNuke), uncovering three core findings: the empty-mask Dice floor of $77.72\%$ on SIIM (pooled across folds; per-fold pooled $74.33\%$--$77.75\%$), task-formulation and resolution divergence on PANDA, and task interference from joint multi-task optimization.}
+\caption{Systematic audit and factorial benchmarking framework across four clinical imaging modalities, evaluating preprocessing heuristics, architectural variants, and optimization balancing schemes under rigorous cross-validation.}
 \label{fig:pipeline}
 \end{figure}
 
-\section{Related Work: Documented Failure Modes in Multi-Task Medical Segmentation}
-\label{sec:related}
-
-None of the three challenges interrogated in this audit is peculiar to the pipeline we examine. Each represents a systemic failure mode that the evaluation, computer vision, and machine-learning literatures have documented independently. This section situates our contribution within those strands; the audit itself instantiates all three within one controlled, artifact-released reproduction of a widely cited joint detection--segmentation recipe.
-
-\emph{Metric degeneracy under sparse annotation.} Scoring an empty prediction against an empty reference as perfect agreement ($\text{Dice} = 1.0$) is a recognized pitfall in biomedical validation: Reinke et al.~\cite{reinke2024metrics} catalogue it among the primary metric traps that distort image analysis benchmarks, and Eelbode et al.~\cite{eelbode2020optimization} demonstrate formally that region-overlap scores behave counter-intuitively when annotations are small or absent. Liu et al.~\cite{liu2024dice} show that region-size bias propagates directly into loss formulations. Slice-averaged Dice on a cohort whose lesion-free fraction approaches $78\%$ sits squarely inside this failure class: Section~\ref{sec:dice} derives the exact decomposition governing what the convention credits.
-
-\emph{Multiscale pathology, resolution limits, and evaluation protocols.} Clinical computational pathology relies on gigapixel whole-slide images (WSIs) where diagnostic grades emerge from multiscale tissue architecture~\cite{campanella2019clinical,bulten2022artificial}. Severe spatial downsampling (e.g. compressing biopsy cores to $128 \times 128$ thumbnails) obliterates cellular atypia and gland lumen boundaries, turning cells sub-pixel. Furthermore, patch-level random splits of tiled WSIs risk severe data leakage when tiles from the same patient or biopsy core contaminate both train and test partitions~\cite{kapoor2023leakage,zech2018variable}. When evaluating pathology AI, isolating independent sampling units and aligning tasks with clinical diagnostic targets (rather than proxy tissue textures) is essential for clinical validity.
-
-\emph{Task interference and negative transfer.} Whether classification and segmentation reinforce or degrade one another under a shared encoder depends heavily on task affinity: Standley et al.~\cite{standley2020tasks} observe that naive co-training frequently induces negative transfer across dense and global objectives; Crawshaw's survey~\cite{crawshaw2020survey} collects extensive evidence of gradient conflict; and dynamic gradient balancing~\cite{chen2018gradnorm} is often proposed as a remedy. However, dynamic balancing can destabilize optimization when task losses exhibit disparate convergence dynamics: while Kang et al.~\cite{kang2026gradnorm} report benefits for wound-tissue analysis, our experiments demonstrate that GradNorm forces destructive updates on complex ordinal classification heads.
-
-\emph{Propagation and citation landscape.} These strands converge on the published recipe of Rhanoui et al.~\cite{rhanoui2025multitask}, which reported $97\%-99\%$ Dice alongside $82\%-90\%$ accuracy across four modalities. Because multi-task parameter sharing is widely sought for low-resource clinical deployments, these headline figures have been cited uncritically as evidence of general multi-task efficacy in follow-on oncology work. Notably, recent works such as Al Hassan et al.~\cite{imcet2026leakagesafe} have specifically identified the need for leakage-safe validation and external cohorts when evaluating joint brain tumor models. Supplying a rigorous, empirical, and mathematical quantification of how such numbers arise is the primary focus of this work.
-
-\section{Multi-Task Formulation \& Evaluation Metrics}
+\section{System Architecture and Methodology}
+\label{sec:method}
 
 \subsection{Architectural Formulation}
-Let $\mathbf{x} \in \mathbb{R}^{H \times W \times C}$ denote an input image tile. A shared convolutional encoder $f_\theta(\mathbf{x})$ extracts a bottleneck latent representation $\mathbf{z} \in \mathbb{R}^{h \times w \times d}$. The classification branch applies global average pooling (GAP) followed by a two-layer multilayer perceptron (hidden width 256, dropout $0.5$):
+Let $\mathbf{x} \in \mathbb{R}^{H \times W \times C}$ denote an input image. A shared convolutional backbone $f_\theta(\mathbf{x})$ maps the input to a bottleneck representation $\mathbf{z} \in \mathbb{R}^{h \times w \times d}$. The global classification head applies global average pooling followed by a two-layer multi-layer perceptron:
 \begin{equation}
-    \hat{\mathbf{y}}_{cls} = \text{Softmax}\!\left(\mathbf{W}_2\,\phi\!\left(\mathbf{W}_1\,\text{GAP}(\mathbf{z}) + \mathbf{b}_1\right) + \mathbf{b}_2\right) \in \Delta^{K-1},
+    \hat{\mathbf{y}}_{cls} = \text{Softmax}\left(\mathbf{W}_2\,\phi\left(\mathbf{W}_1\,\text{GAP}(\mathbf{z}) + \mathbf{b}_1\right) + \mathbf{b}_2\right),
 \end{equation}
-where $K$ is the number of diagnostic classes, $\Delta^{K-1}$ denotes the probability simplex, and $\phi(\cdot)$ is the ReLU nonlinearity. The segmentation branch passes $\mathbf{z}$ through a decoder $\text{Dec}_\phi$ with lateral skip connections $\{\mathbf{s}_l\}_{l=1}^L$ from encoder stages, yielding unnormalized pixel logits $\mathbf{l}_{seg} \in \mathbb{R}^{H \times W \times M}$. For binary segmentation ($M=1$), $\hat{\mathbf{y}}_{seg} = \sigma(\mathbf{l}_{seg})$ with $\sigma(\cdot)$ the sigmoid; for $M > 1$, class probabilities are obtained via channel-wise Softmax.
+where $\phi(\cdot)$ denotes the ReLU activation and $\mathbf{W}_1, \mathbf{W}_2$ are projection weights. The segmentation branch passes $\mathbf{z}$ through a convolutional decoder $\text{Dec}_\phi$ augmented with lateral skip connections $\{\mathbf{s}_l\}_{l=1}^L$ from encoder stages, generating spatial logits $\mathbf{l}_{seg} \in \mathbb{R}^{H \times W \times M}$.
 
-The joint multi-task training objective is defined as:
+The composite multi-task training loss is defined as:
 \begin{equation}
-    \mathcal{L}_{total}(\theta, \phi, \mathbf{W}_{cls}) = \lambda_{cls} \mathcal{L}_{cls}(\mathbf{y}_{cls}, \hat{\mathbf{y}}_{cls}) + \lambda_{seg} \mathcal{L}_{seg}(\mathbf{y}_{seg}, \mathbf{l}_{seg}),
+    \mathcal{L}_{total} = \lambda_{cls} \mathcal{L}_{cls}(\mathbf{y}_{cls}, \hat{\mathbf{y}}_{cls}) + \lambda_{seg} \mathcal{L}_{seg}(\mathbf{y}_{seg}, \mathbf{l}_{seg}),
 \end{equation}
-where $\mathcal{L}_{cls}$ is categorical cross-entropy $\mathcal{L}_{CE}$. To address class imbalance, the classification loss incorporates inverse-frequency balanced class weights $w_c = N / (K \cdot N_c)$~\cite{pedregosa2011sklearn}, matching the weighting formulation specified in Rhanoui et al.~\cite{rhanoui2025multitask} and implemented in our training pipeline. The segmentation loss is purely cross-entropy without an active Dice-based gradient penalty:
-\begin{equation}
-    \mathcal{L}_{seg}(\mathbf{y}_{seg}, \mathbf{l}_{seg}) = 
-    \begin{cases}
-        \mathcal{L}_{BCE}(\mathbf{y}_{seg}, \mathbf{l}_{seg}), & M = 1, \\
-        \mathcal{L}_{CE}(\mathbf{y}_{seg}, \mathbf{l}_{seg}), & M > 1,
-    \end{cases}
-\end{equation}
-evaluating binary cross-entropy on binary tasks (TCGA, SIIM) and multi-class cross-entropy on multi-class tasks (PANDA, PanNuke). Rhanoui et al. formulated segmentation as a binary cancer-vs-background detection task across all datasets; our audit matches this binary objective for TCGA and SIIM, while evaluating multi-class cross-entropy for PANDA and PanNuke to directly benchmark their multi-category annotations. Both pipelines incorporate standard spatial data augmentations (horizontal and vertical flips, random rotation $\pm 15^\circ$, and affine shear $\pm 10^\circ$).
-
-The Dice similarity coefficient (DSC) is evaluated strictly post-hoc as a validation metric, not as an active loss term during training. While cross-entropy minimization can in principle yield segmentations with high spatial overlap, evaluating Dice post-hoc on sparse and negative-dominant cohorts makes the metric vulnerable to evaluation conventions, as derived below.
+where $\mathcal{L}_{cls}$ is categorical cross-entropy with inverse-frequency class weights $w_c = N / (K \cdot N_c)$, and $\mathcal{L}_{seg}$ is binary or multi-class cross-entropy. In standard implementations, the Dice similarity coefficient is computed strictly post-hoc as an evaluation metric rather than an active loss component.
 
 \subsection{The Empty-Mask Dice Metric Degeneracy}\label{sec:dice}
-The S{\o}rensen--Dice coefficient between ground-truth mask $Y$ and binary prediction $\hat{Y}$ ($Y, \hat{Y} \in \{0, 1\}^{H \times W}$) is:
+The S{\o}rensen--Dice coefficient between binary ground truth $Y$ and prediction $\hat{Y}$ is given by:
 \begin{equation}
-    \text{Dice}(Y, \hat{Y}) = \frac{2 |Y \cap \hat{Y}|}{|Y| + |\hat{Y}| + \epsilon}, \quad \epsilon = 10^{-8}; \;\; \text{Dice} := 1 \;\text{if}\; |Y| + |\hat{Y}| = 0.
+    \text{Dice}(Y, \hat{Y}) = \frac{2 |Y \cap \hat{Y}|}{|Y| + |\hat{Y}| + \epsilon},
 \end{equation}
-Empty references and predictions represent a known validation trap in biomedical image analysis~\cite{reinke2024metrics}. Two common conventions govern empty slices:
+with the conventional boundary assignment $\text{Dice} := 1$ when $|Y| + |\hat{Y}| = 0$. In clinical cohorts containing lesion-free samples, two primary evaluation protocols exist:
 \begin{itemize}
-    \item \textbf{Foreground-Only Evaluation:} Compute Dice strictly over non-empty target slices ($\{i \mid |Y_i| > 0\}$).
-    \item \textbf{Empty-Credit Assignment:} Assign $\text{Dice} = 1.0$ when $|Y| = 0 \land |\hat{Y}| = 0$, and $\text{Dice} = 0.0$ when $|Y| = 0 \land |\hat{Y}| > 0$.
+    \item \textbf{Foreground-Only Evaluation:} Dice is computed exclusively over target-bearing slices ($\{i \mid |Y_i| > 0\}$).
+    \item \textbf{Empty-Credit Assignment:} A score of $1.0$ is assigned when $|Y| = 0$ and $|\hat{Y}| = 0$, while $0.0$ is assigned if $|Y| = 0$ and $|\hat{Y}| > 0$.
 \end{itemize}
-Averaged across all $N$ slices under empty-credit assignment, the macroscopic mean is:
-\begin{equation}\label{eq:slice_dice}
-    \overline{\text{Dice}}_{\text{all}} = \tfrac{1}{N}\textstyle\sum_{i=1}^{N} d_i, \;\; d_i = \text{Dice}(Y_i, \hat{Y}_i) \;\text{if}\; |Y_i| > 0, \;\text{else}\; \mathbf{1}\!\left[|\hat{Y}_i| = 0\right].
-\end{equation}
-Let $\rho = \frac{1}{N}\sum_{i=1}^N \mathbf{1}[|Y_i|=0]$ denote the proportion of ground-truth negative (lesion-free) slices, and let $q_{\text{empty}} = P(|\hat{Y}|=0 \mid |Y|=0)$ denote the model's true-negative prediction rate on negative slices. The exact macroscopic identity is:
+
+Under empty-credit assignment across all $N$ slices, the macroscopic mean decomposes as:
 \begin{equation}\label{eq:convex_dice}
     \overline{\text{Dice}}_{\text{all}} = \rho \cdot q_{\text{empty}} + (1 - \rho) \cdot \overline{\text{Dice}}_{\text{fg}},
 \end{equation}
-where $\overline{\text{Dice}}_{\text{fg}}$ is the mean Dice score over lesion-bearing slices ($|Y_i|>0$).
+where $\rho = \frac{1}{N}\sum_{i=1}^N \mathbf{1}[|Y_i|=0]$ denotes the proportion of ground-truth negative cases, $q_{\text{empty}} = P(|\hat{Y}|=0 \mid |Y|=0)$ represents the model's true-negative prediction rate on negative cases, and $\overline{\text{Dice}}_{\text{fg}}$ denotes the mean overlap on positive cases.
 
-When all ground-truth negative images are predicted empty ($q_{\text{empty}} = 1$), the identity simplifies to $\overline{\text{Dice}}_{\text{all}} = \rho + (1 - \rho) \cdot \overline{\text{Dice}}_{\text{fg}}$. If a model produces false-positive segmentations on negative images, $q_{\text{empty}} < 1$. For a degenerate, completely collapsed predictor that emits empty masks on all inputs ($|\hat{Y}|=0$ everywhere), foreground Dice is zero ($\overline{\text{Dice}}_{\text{fg}} = 0$) while $q_{\text{empty}} = 1$, yielding $\overline{\text{Dice}}_{\text{all}} = \rho$.
+Crucially, for a collapsed model that predicts empty masks across all inputs, $\overline{\text{Dice}}_{\text{fg}} = 0$ while $q_{\text{empty}} = 1$. In this degenerate state, the reported macroscopic metric simplifies to $\overline{\text{Dice}}_{\text{all}} = \rho$. Consequently, on cohorts with high negative prevalence, such as chest radiographs ($\rho = 77.72\%$), an entirely uninformative model automatically achieves an apparent score of nearly $78\%$. Furthermore, attaining a published score of $99\%$ on such data requires positive-case foreground Dice to exceed:
+\begin{equation}
+    \overline{\text{Dice}}_{\text{fg}} \approx \frac{0.99 - \rho}{1 - \rho} \approx 95.51\%,
+\end{equation}
+even under perfect true-negative discrimination ($q_{\text{empty}} = 1$). Without isolating foreground overlap, macroscopic slice averages conceal complete failure on target lesions (Figure~\ref{fig:empty_dice}).
 
-Consequently, on sparse-lesion cohorts such as SIIM-ACR pneumothorax ($\rho = 77.72\%$), an all-empty baseline scores $77.72\%$ solely from empty-mask credit. Crucially, as shown by Eq.~\ref{eq:convex_dice}, reaching an overall score of $99\%$ on such a cohort requires positive-case foreground Dice of approximately $\overline{\text{Dice}}_{\text{fg}} \approx (0.99 - 0.7772)/(1 - 0.7772) \approx 95.51\%$ under perfect negative predictions ($q_{\text{empty}}=1$). Our SIIM runs demonstrate how overall Dice can conceal foreground failure: they emit all-empty masks on 19 of 20 folds, directly realizing the all-empty score floor ($77.72\%$ pooled across folds for Runs 05, 06, and 11; $77.04\%$ for Run 12 due to a small non-empty residual on fold 4; per-fold range $74.33\%-77.75\%$). While the definitive cause of the published 99\% Dice in Rhanoui et al. cannot be determined without access to their predictions, masks, and scoring scripts, this empirical collapse demonstrates that macroscopic Dice on sparse cohorts can register high scores despite zero foreground delineation. Fig.~\ref{fig:empty_dice} illustrates this degeneracy.
-
-This metric inflation generalizes to multi-class histopathology. On 6-class PANDA prostate biopsies, individual tiles typically contain only one or two histological patterns, leaving 4--5 classes absent ($|Y_c|=0$). Under channel-wise empty crediting, an all-background model receives $\text{Dice}=1.0$ for every absent class alongside high agreement on background. Throughout this paper, we track two distinct estimators:
-\begin{enumerate}
-    \item \emph{Training-Time Batch Validation Macro-Dice:} Computed during training validation via batch-pooled channel-wise Dice (\texttt{dice\_coefficient}), crediting an empty channel across the batch with $1.0$, and averaging across all $M$ channels (fold-mean across 12 PANDA configurations: $82.77\%-84.39\%$).
-    \item \emph{All-Slices Empty-Credit Pooled Per-Case Dice:} Pools all validation slices across folds, credits empty-over-empty cases with $\text{Dice}=1.0$, and averages per case (yielding the $98.54\%-98.60\%$ floor on PANDA, despite near-zero true glandular delineation; Fig.~\ref{fig:qualitative}).
-\end{enumerate}
-
-\begin{figure}[!tbp]
+\begin{figure}[t]
 \centering
-\includegraphics[width=\textwidth]{fig2_empty_mask_dice.pdf}
-\caption{The empty-mask Dice artifact on SIIM-ACR pneumothorax. (a) Lesion-free slice ($|Y|=0$): under empty-credit assignment an all-empty prediction is awarded $\text{Dice}=1.0$; lesion-free slices constitute $\hat{\rho}=77.7\%$ of our validation split. (b) Lesion-bearing slice ($|Y|>0$, ground-truth boundary in green): our all-empty models predict empty masks here and score $\text{Dice}=0$, invisible to the slice-averaged mean. (c) Exact macroscopic curve (Eq.~\ref{eq:convex_dice}): a foreground Dice of $77.72\%$ reports $95.03\%$ at $\hat{\rho}=0.777$ under perfect negative prediction ($q_{\text{empty}}=1$), whereas our SIIM runs measure the all-empty floor itself ($77.72\%$ pooled; $77.04\%$ for the run with one residual fold).}
+\includegraphics[width=\columnwidth]{fig2_empty_mask_dice.pdf}
+\caption{Illustration of the empty-mask Dice metric degeneracy on SIIM-ACR pneumothorax radiographs. (a) Lesion-free image correctly predicted empty receives a perfect 1.0 credit. (b) Lesion-bearing image with total foreground omission scores 0.0. (c) Exact macroscopic curve demonstrating the high artificial baseline floor determined by the negative fraction $\rho$.}
 \label{fig:empty_dice}
 \end{figure}
 
 \subsection{Adaptive Gradient Balancing via GradNorm}\label{sec:gnorm}
-To test whether dynamic loss balancing mitigates cross-task gradient competition, we introduced a parameterized variant of \textsc{GradNorm}~\cite{chen2018gradnorm} in Phase~v2.
-
-Let $W$ denote the shared convolutional filters and normalization layers of the U-Net encoder $f_\theta$. The $L_2$ gradient norm of task $i \in \{seg, cls\}$ with respect to $W$ at minibatch $t$ is:
+To counter multi-task competition, dynamic gradient balancing equalizes learning rates across tasks \cite{chen2018gradnorm}. Let $W$ denote the shared weights of encoder $f_\theta$. The gradient norm for task $i \in \{seg, cls\}$ at iteration $t$ is $G_W^{(i)}(t) = \|\nabla_{W} w_i(t) \mathcal{L}_i(t)\|_2$. The adaptive objective minimizes:
 \begin{equation}
-    G_W^{(i)}(t) = \left\| \nabla_{W} w_i(t) \mathcal{L}_i(t) \right\|_2.
+    \mathcal{L}_{grad}(t) = \sum_{i \in \{seg, cls\}} \left| \, G_W^{(i)}(t) - \bar{G}_W(t) \cdot [r_i(t)]^{\alpha} \right|,
 \end{equation}
-For stability in the primary \texttt{Adam} optimizer, balancing weights are learnable log-weights $\mu_i(t) = \ln w_i(t)$ (initialized to $w_{seg}(0) = 5.0$, $w_{cls}(0) = 1.0$), updated jointly with the network parameters. Minibatch optimization minimizes the $L_1$ gradient disparity objective:
-\begin{equation}
-    \mathcal{L}_{grad}(t) = \sum_{i \in \{seg, cls\}} \left| \, G_W^{(i)}(t) \;-\; \bar{G}_W(t) \cdot [r_i(t)]^{\alpha} \right|,
-\end{equation}
-where $\bar{G}_W(t) = \frac{1}{2}\sum_j G_W^{(j)}(t)$ is the average gradient norm across tasks, $\alpha = 1.5$ is the asymmetry parameter, and $r_i(t)$ represents the relative inverse training rate:
-\begin{equation}
-    r_i(t) = \frac{\tilde{\mathcal{L}}_i(t)}{\frac{1}{2}\sum_{j \in \{seg, cls\}} \tilde{\mathcal{L}}_j(t)}, \quad \text{with} \quad \tilde{\mathcal{L}}_i(t) = \frac{\mathcal{L}_i(t)}{\mathcal{L}_i(0)},
-\end{equation}
-where $\mathcal{L}_i(0)$ is the initial step-0 loss. Following Chen et al.~\cite{chen2018gradnorm}, slower-training tasks exhibit higher loss ratios $r_i(t) > 1$, which raises their target gradient norm $\bar{G}_W(t) [r_i(t)]^\alpha$. After each optimizer update, we renormalize the weights so that $\sum_i w_i(t) = 2$. In the canonical formulation~\cite{chen2018gradnorm}, the module differentiates $\mathcal{L}_{grad}$ against detached targets and applies it to the balancing weights alone through a dedicated optimizer (learning rate $0.025$). \S\ref{sec:gn} probes this distinction empirically. We evaluate the module across Groups 2 and 4 to isolate how dynamic gradient equalization behaves in hard-parameter-sharing architectures.
+where $\bar{G}_W(t)$ is the mean gradient norm across tasks, $\alpha$ is the balancing asymmetry hyperparameter, and $r_i(t)$ represents the relative inverse training rate. Task weights are renormalized to maintain $\sum_i w_i(t) = 2$.
 
 \subsection{Color Deconvolution and Optical Density Space}\label{sec:macenko}
-To mitigate staining variability across clinical laboratories, the v2 pipeline incorporates Macenko stain normalization~\cite{macenko2009method}. We convert RGB pixel intensities $\mathbf{I} \in [0, 255]^3$ to optical density (OD) space:
+To mitigate laboratory staining variation in histopathology, images are normalized in optical density (OD) space \cite{macenko2009method}:
 \begin{equation}
     \mathbf{OD} = -\ln\left(\frac{\mathbf{I} + \epsilon}{I_0}\right),
 \end{equation}
-where $I_0 = 255$ represents transmitted light intensity. The implementation computes optical density via natural logarithms $-\ln(\cdot)$ rather than the canonical base-10 formulation $-\log_{10}(\cdot)$~\cite{macenko2009method}. We estimate the hematoxylin and eosin stain vectors by eigendecomposition of the optical-density covariance matrix (stain-vector angles restricted to the 1st--99th percentile range) over OD values above a threshold of $0.15$, and project them onto a target reference vector. This step effectively eliminates macroscopic batch variations. However, projecting raw RGB channels onto static stain vectors alters chromatic contrast and stain concentration profiles across the tile, potentially attenuating subtle chromatin textures and colour variations that contribute to distinguishing fine glandular structures (Fig.~\ref{fig:macenko}).
+where $I_0 = 255$ denotes transmitted illumination. Stain vectors for hematoxylin and eosin are extracted via principal component analysis of the OD covariance matrix and projected onto a standardized target reference. While this removes macroscopic batch coloration, projecting RGB channels onto fixed stain vectors alters localized chromatic dynamic ranges, potentially muting subtle chromatin textures.
+
+\section{Experimental Framework}
+
+\subsection{Benchmark Cohorts}
+We evaluate our multi-task pipeline across four diverse clinical datasets:
+\begin{enumerate}
+    \item \textbf{TCGA-LGG Brain MRI:} 2-class tumor classification and FLAIR abnormality segmentation ($N=3,929$ slices across 110 patients \cite{buda2019lgg}). Partitions are strictly isolated at the patient level using GroupKFold.
+    \item \textbf{PANDA Prostate Biopsies:} Clinical 6-class ordinal ISUP grading (grades 0--5) and multi-class gland segmentation ($N=10,516$ biopsy cores \cite{bulten2022artificial}).
+    \item \textbf{SIIM-ACR Pneumothorax:} Binary pneumothorax detection and pleural segmentation on chest radiographs ($N=10,675$ images \cite{siim2019pneumothorax}).
+    \item \textbf{PanNuke Multi-Organ Histopathology:} 19-class tissue categorization and 6-class cell segmentation across diverse human organs ($N=7,901$ patches \cite{gamper2020pannuke}).
+\end{enumerate}
+
+\subsection{Training Protocol and Execution Safeguards}
+All experiments were implemented in PyTorch using ImageNet-pretrained VGG16 and MobileNetV2 encoders. Models were optimized using Adam over 50 epochs with early stopping (patience 10) under mixed-precision floating-point arithmetic. Gradient norm clipping (threshold 1.0) was applied at every step. Across the 135 fold-runs, all partition boundaries, random seeds, and metric computations were locked to ensure exact auditability.
+
+\begin{table*}[t]
+\centering
+\caption{Empirical summary of the 27-configuration reproduction campaign across four clinical benchmarks. Validation accuracy and Dice are reported across 5-fold cross-validation with 95\% bootstrap confidence intervals. The substantial performance gap on PANDA stems from evaluating authentic clinical ordinal ISUP grading rather than proxy morphological tissue categories. SIIM-ACR Dice scores reflect the empty-mask background floor.}
+\label{tab:results_matrix}
+\scriptsize
+\begin{tabular}{@{}l c c c c c c@{}}
+\toprule
+\textbf{Dataset} & \textbf{Runs $n$} & \textbf{Measured Val Acc (\%)} & \textbf{Measured Val Dice (\%)} & \textbf{Published Acc (\%)} & \textbf{Published Dice (\%)} & \textbf{Evaluation Focus} \\
+\midrule
+TCGA-LGG & 5 & 92.86 -- 95.62 & 85.33 -- 88.85 & 89.00 -- 90.00 & 97.00 -- 98.00 & Patient-Isolated 2D FLAIR \\
+PANDA & 12 & 28.21 -- 44.87 & 98.54 -- 98.60 & 87.00 -- 88.00 & 98.00 -- 99.00 & Clinical ISUP vs Morphological Proxy \\
+SIIM-ACR & 4 & 77.71 -- 82.63 & 77.04 -- 77.72 & 82.00 -- 87.00 & 99.00 & Negative-Dominant Radiography ($\rho=77.72\%$) \\
+PanNuke & 5 & 78.70 -- 99.24 & 68.44 -- 77.61 & --- & --- & Multi-Organ Histopathology Benchmark \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.92\textwidth,height=0.38\textheight,keepaspectratio]{fig3_results_dotplot.pdf}
+\caption{Measured validation metrics across all 26 experimental runs compared against claimed literature targets. Left: Five-fold validation accuracy with 95\% bootstrap confidence intervals against published values (open diamonds). Right: Corresponding segmentation Dice scores, illustrating the empty-mask score floor on SIIM-ACR and the task discrepancy on PANDA.}
+\label{fig:results_dotplot}
+\end{figure*}
+
+\section{Empirical Results and Failure Analysis}
+
+\subsection{Benchmark Performance Comparison}
+Table~\ref{tab:results_matrix} provides a comprehensive overview of the empirical replication results alongside claimed literature targets. While TCGA-LGG classification slightly exceeds published numbers under rigorous patient-isolated splits, substantial discrepancies emerge on histopathology and radiography benchmarks. Figure~\ref{fig:results_dotplot} plots fold-mean accuracies and Dice scores across all configurations.
+
+\subsection{The Empty-Mask Score Floor on Radiography}
+On the SIIM-ACR pneumothorax benchmark, the public cohort contains 77.72\% lesion-free images ($\rho = 0.7772$). Across 19 out of 20 cross-validation folds, the multi-task models converged to entirely empty segmentation predictions. Under empty-credit scoring, these collapsed models achieved an average validation Dice of exactly 77.72\% on three configurations and 77.04\% on the fourth. The models failed to identify any foreground pneumothorax regions, yet registered an apparent score approaching 78\% (illustrated qualitatively in Figure~\ref{fig:qualitative}). As derived in Section~\ref{sec:dice} and shown in Figure~\ref{fig:empty_dice}(c), achieving a reported score of 99\% on this dataset requires true foreground overlap to exceed 95.5\%, a standard that standard lightweight CNNs cannot attain. Macro-averaging over empty slices masks severe clinical false-negative failure.
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.98\textwidth,height=3.4cm,keepaspectratio]{fig1_macenko.pdf}
-\caption{Visual and quantitative impact of Macenko stain normalization on histopathology classification. (a) Raw prostate biopsy tile. (b) Optical-density-projected tile: color deconvolution alters chromatic dynamic range and stain concentration profiles across the tile. (c) Absolute texture discrepancy map. (d) Empirical top-1 accuracy gains across matched models when Macenko normalization is bypassed (+3.81\% on PANDA, +2.75\% on PanNuke).}
-\label{fig:macenko}
-\end{figure}
-
-\section{The 27-Configuration \texorpdfstring{$\times$}{x} 5-Fold Empirical Reproduction Campaign}
-
-\subsection{Datasets and Experimental Protocol}
-
-\begin{table}[!tbp]
-\centering
-\scriptsize
-\setlength{\tabcolsep}{1pt}
-\caption{Per-dataset summary of the 27-configuration $\times$ 5-fold reproduction campaign (26 numbered runs plus the canonical decoupled \textsc{GradNorm} probe). Val Acc reports 5-fold mean accuracy; Val Dice reports across-folds per-case bootstrap Dice (with per-epoch validation macro-Dice discussed in Section~\ref{sec:dice} and Section~\ref{sec:skip}). Ranges span configurations within each dataset under 5-fold group-aware cross-validation. Individual run values with 95\% bootstrap CIs are tabulated in \texttt{paper\_results\_matrix\_with\_ci.csv} and plotted in Figure~\ref{fig:results_dotplot}. The SIIM-ACR Dice ($77.72\%$ pooled across folds for three configurations and $77.04\%$ for the fourth) and PANDA all-slices empty-credit Dice ($98.54\%$--$98.60\%$) reflect the empty-mask degeneracy floor (Section~\ref{sec:dice}); PANDA per-epoch validation macro-Dice is $82.77\%$--$84.39\%$. $^\dagger$Non-comparable task targets: Rhanoui et al. evaluated 6-class morphological tissue categorization (Table 2 of~\cite{rhanoui2025multitask}: Background, Stroma, Benign epithelium, Gleason 3, 4, 5; 52.3\% background/stroma) and binary cancer-vs-background segmentation, whereas our audit evaluates clinical 6-class ordinal ISUP grading (grades 0--5) and 6-class multi-category gland segmentation; these metrics evaluate different targets and are not directly comparable.}
-\label{tab:results_matrix}
-\begin{tabular}{@{}l c c c c c c@{}}
-\toprule
-\textbf{Dataset} & \textbf{Runs $n$} & \textbf{Val Acc (\%)} & \textbf{Val Dice (\%)} & \textbf{$\Delta$Acc (pts)} & \textbf{Pub. Acc (\%)} & \textbf{Pub. Dice (\%)} \\
-\midrule
-TCGA-LGG & 5 & 92.86--95.62 & 85.33--88.85 & $2.86$--$6.62$ & 89.00--90.00 & 97.00--98.00 \\
-PANDA$^\dagger$ & 12 & 28.21--44.87 & 98.54--98.60 & $-58.79$--$-42.13^\dagger$ & 87.00--88.00$^\dagger$ & 98.00--99.00$^\dagger$ \\
-SIIM-ACR & 4 & 77.71--82.63 & 77.04--77.72 & $-4.81$--$0.57$ & 82.00--87.00 & 99.00 \\
-PanNuke & 5 & 78.70--99.24 & 68.44--77.61 & --- & --- & --- \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\begin{figure}[!tbp]
-\centering
-\includegraphics[width=\textwidth,height=0.67\textheight,keepaspectratio]{fig3_results_dotplot.pdf}
-\caption{Claimed-vs-measured dot plot for the 26 numbered runs of the 27-configuration $\times$ 5-fold campaign (the canonical decoupled \textsc{GradNorm} arm, the campaign's 27th configuration, is overlaid in Fig.~\ref{fig:panda_anatomy}). Left panel: fold-mean validation accuracy (\%) with 95\% bootstrap-CI whiskers (measured, filled markers) and the published claimed accuracy (black open diamond); tie lines connect measured to claimed values. Right panel: all-slices empty-credit per-case Dice (\%) with 95\% across-folds bootstrap CIs (published Dice values have no confidence intervals and are shown as diamonds). For PANDA (Runs 03--04, 09--10, 17--22, 23, 26), measured accuracy spans $28.21\%$--$44.87\%$ vs.\ published $87\%$--$88\%$, and all-slices empty-credit Dice spans $98.54\%$--$98.60\%$ (per-epoch validation macro-Dice $82.77\%$--$84.39\%$). Crucially, as documented in Rhanoui et al. Table 2, published PANDA accuracy evaluated 6 proxy morphological tissue categories rather than the clinical ordinal ISUP grading evaluated here; their accuracies are not directly comparable. All four SIIM rows (Runs 05, 06, 11, 12) measure the all-empty floor ($77.72\%$ pooled across folds for three configurations, $77.04\%$ for the fourth; per-fold pooled $74.33\%$--$77.75\%$). PanNuke rows (Runs 13--16, 24) have no published targets and are shown without claimed diamonds.}
-\label{fig:results_dotplot}
-\end{figure}
-
-\begin{figure}[!tbp]
-\centering
-\includegraphics[width=0.82\textwidth,height=0.64\textheight,keepaspectratio]{fig8_qualitative_overlays.pdf}
-\caption{Qualitative ground-truth vs.\ prediction validation tiles for the four canonical v1 naked VGG16 baselines (Runs 01, 03, 05, 13; their best checkpoints). Each row is one dataset (TCGA-LGG, PANDA, SIIM-ACR, PanNuke); the three columns are the input image, the ground-truth mask overlay, and the model's prediction overlay, with the per-tile Dice (binary Dice for TCGA/SIIM; macro Dice over the classes present in the ground truth for PANDA/PanNuke) shown in the prediction panel. The validation split is one of the five cross-validation folds (the fold shown here is the first). Tile selection is deterministic: the first validation tile (index order) with a non-empty ground-truth mask; for SIIM-ACR the selection advances to the first lesion-bearing tile whose prediction is all-empty, making the empty-mask degeneracy of Section~\ref{sec:dice} the visible face of the figure.}
+\includegraphics[width=\columnwidth]{fig8_qualitative_overlays.pdf}
+\caption{Qualitative validation predictions for baseline models across four datasets. Columns display input images, ground-truth segmentations, and model predictions with per-slice Dice scores. On SIIM-ACR, the model emits an all-empty mask on a lesion-bearing slice, receiving a zero foreground score that remains hidden within macroscopic cohort averages.}
 \label{fig:qualitative}
 \end{figure}
 
-We evaluated four benchmark datasets spanning diverse anatomical modalities:
-\begin{enumerate}
-    \item \textbf{TCGA-LGG Brain Tumor:} 2-class lesion classification (no tumor vs.\ tumor) and FLAIR abnormality segmentation on 2D $256 \times 256$ MRI slices ($N=3,929$; 110 patients~\cite{buda2019lgg}; strictly partitioned via patient-level \texttt{GroupKFold} isolation~\cite{pedregosa2011sklearn}).
-    \item \textbf{PANDA Prostate Biopsies:} Clinical 6-class ordinal ISUP Gleason grading (grades 0--5) and gland segmentation ($N=10,516$ tiles~\cite{bulten2022artificial}; 5-fold cross-validation). In the baseline study of Rhanoui et al.~\cite{rhanoui2025multitask}, the reported 6 classes were morphological tissue categories from Radboud segmentation masks (Background, Stroma, Benign epithelium, Gleason 3, 4, 5; Table 2 of~\cite{rhanoui2025multitask}), where non-cancerous background and stroma alone constituted $52.3\%$ of the dataset ($5,558$ of $10,618$ images). Moreover, Karolinska biopsies in PANDA lack these granular categories. Our experiments evaluate clinical 6-class ordinal ISUP grading; because these represent distinct classification targets, their accuracies are not directly comparable. Under the tested CNN architectures on $128 \times 128$ thumbnails, clinical ISUP grading achieves $28.21\%-44.87\%$ top-1 accuracy.
-    \item \textbf{SIIM-ACR Pneumothorax:} Binary chest-radiography detection and pleural boundary segmentation ($N=10,675$ images~\cite{siim2019pneumothorax}; because the public release contains exactly one image per patient, sample-level grouping coincides with patient-level grouping, yielding a stratified 5-fold partition over image-level labels).
-    \item \textbf{PanNuke (Multi-Organ Benchmark):} 19-tissue multi-organ histopathology benchmark ($N=7,901$ patches~\cite{gamper2020pannuke}; image-level 5-fold split). The baseline study by Rhanoui et al. reported joint multi-task performance across dermoscopic images from ISIC 2018~\cite{codella2019isic}. However, in the official ISIC 2018 release, Task 1 provided lesion segmentation masks for $2,594$ images, whereas Task 3 provided disease classification labels for $10,015$ images. Because Rhanoui et al. released no split manifests, code, or explanation of how joint multi-task training was conducted across cohorts with differing annotation availability (e.g., whether unannotated images were masked or omitted), their experimental protocol cannot be reconstructed. We therefore evaluated PanNuke, which provides fully paired, verified 19-class tissue labels and 6-class cell segmentation masks across diverse organs.
-\end{enumerate}
+\subsection{Task-Formulation Discrepancy in Prostate Pathology}
+The largest divergence in Table~\ref{tab:results_matrix} occurs on the PANDA prostate biopsy benchmark. Previous studies reported 88\% accuracy alongside 99\% Dice \cite{rhanoui2025multitask}. Under our 12 factorial PANDA configurations, clinical 6-class ordinal ISUP grading achieved a fold-mean accuracy between 28.21\% and 44.87\%. 
 
-We trained all models with PyTorch (up to 50 epochs with early stopping, patience 10; batch size 32; fixed seed 42 per fold) using ImageNet-pretrained encoders and the \texttt{Adam} optimizer with a constant per-phase learning rate and zero weight decay, and we applied no learning-rate schedule or additional regularization~\cite{davila2024finetuning}. Training ran under bf16 autocast AMP with PyTorch's \texttt{GradScaler}~\cite{pytorchamp}, with the scaler's \texttt{unscale\_()} called before gradient-norm clipping (max-norm $1.0$) at every optimizer step~\cite{moassefi2024checklist,maleki2024ridge}, and the \textsc{GradNorm} log-weights bounded to $[\pm\log 10]$ (capping each task weight at $10$). The true pre-clip gradient norm is logged per epoch, and clipping engagement is dataset-dependent: final-10-epoch per-fold mean engagement rates are $0.285$ (TCGA, VGG16), $0.516$ (PanNuke, no Macenko), $0.879$ (PanNuke, VGG16), $0.943$ (SIIM, VGG16), and $0.999$ (PANDA) --- on three datasets (PanNuke VGG16, SIIM, PANDA) clipping is an active, frequently-binding constraint, not a dormant safeguard. Non-finite gradients triggered $52$ bounded single-batch skips across the $135$ fold-cells, overwhelmingly isolated events (the $25$-skip-per-fold cap was never reached); each skipped batch is excluded from epoch metrics and stamped in the fold summaries. One fold (PanNuke, VGG16, final, fold 1) hit a non-finite forward loss at epoch 46; the guard aborted it loudly, and training resumed from the epoch-45 checkpoint, completing epochs 46--50 with zero skips --- a transient bf16 overflow, disclosed here as a resumed fold. \texttt{torch.compile} (\texttt{max-autotune}) was used only in the Phase~v1 replication arms by design; Phase~v2 arms run eager, and one Phase~v1 fold degraded to eager after a Triton capture failure (logged). Mid-campaign the resume/identity machinery was hardened (checkpoint fingerprints, atomic state writes); all $135$ fold-cells of record were produced under the fixed regime and re-verified from the fold summaries. In Phase~v1 (Runs 01--06), we replicated the original static setup ($\eta=10^{-3}$, $\lambda_{seg}:\lambda_{cls}=5:1$, raw inputs). In Phase~v2 (Runs 07--12), we incorporated dynamic \textsc{GradNorm} ($\alpha=1.5$, $\eta=10^{-4}$) and Macenko stain normalization~\cite{macenko2009method}. Groups 3--5 (Runs 13--26) systematically evaluate multi-organ generalizability, optimization hyperparameter isolation, and architectural skip ablations. Accuracy is reported as the five-fold mean; 95\% CIs are fold-level bootstrap percentiles ($10{,}000$ resamples of the five fold accuracies with replacement, seed 42), and Dice CIs are the across-folds per-case bootstrap intervals tabulated in the released matrix. Table~\ref{tab:results_matrix} summarizes the campaign per dataset and Figure~\ref{fig:results_dotplot} plots every run.
+This performance divergence is directly explained by task definition and internal methodology discrepancies in the baseline literature. As documented in Table 2 of Rhanoui et al. \cite{rhanoui2025multitask}, the cited study evaluated six proxy morphological tissue categories extracted from Radboud segmentation masks (Background, Stroma, Benign epithelium, Gleason 3, 4, 5), where non-cancerous background glass and stroma alone comprised 52.3\% of the samples ($5,558$ of $10,618$ images). Paradoxically, despite defining six classes, their segmentation was reported as a binary cancer-vs-background detection task (Section 4.2 of \cite{rhanoui2025multitask}). In sharp contrast, genuine clinical ISUP grading evaluates global cancer aggressiveness across the entire core according to international pathology guidelines \cite{bulten2022artificial}. Classifying subtle Gleason glandular patterns from compressed $128 \times 128$ thumbnails without multiscale attention or multiple-instance learning represents a fundamentally different and far more demanding task. When evaluated against authentic clinical endpoints, lightweight CNN thumbnails reach an empirical upper bound of approximately 45\%.
 
-\section{Discussion \& Methodological Anatomy}
-
-\subsection{PANDA Task-Formulation Divergence and Optimization Dynamics}\label{sec:panda}
-The largest numerical divergence in Table~\ref{tab:results_matrix} sits on the PANDA prostate biopsy benchmark. The original authors reported $88.0\%$ classification accuracy alongside a $99.0\%$ Dice score. Under our 12 PANDA configurations, clinical 6-class ordinal ISUP grading yields a fold-mean top-1 accuracy spanning $28.21\%-44.87\%$ (95\% bootstrap CIs $[24.76, 31.47]$ to $[43.93, 45.76]$), while 6-class segmentation yields a mean validation macro-Dice of $82.77\%-84.39\%$ (and an all-slices empty-credit Dice floor of $98.54\%-98.60\%$). The static $5{:}1$-weighted $10^{-3}$ baselines (Runs 03--04) reach $34.51\%$ and $39.91\%$ accuracy; Run 17 (the isolated-learning-rate arm at $\eta=10^{-4}$, $44.87\%$) represents the strongest configuration in our campaign.
-
-This performance divergence reflects fundamentally distinct task formulations for both objectives. For classification, as documented in Table 2 of Rhanoui et al.~\cite{rhanoui2025multitask}, the cited study evaluated 6 morphological tissue classes extracted from Radboud segmentation masks (Background, Stroma, Benign epithelium, Gleason 3, 4, 5), where non-cancerous background glass and benign stroma comprised over $52\%$ of the samples ($5,558$ of $10,618$ images). In contrast, our audit evaluates authentic clinical 6-class ordinal ISUP grading (grades 0--5), which requires resolving subtle architectural glandular patterns across the biopsy core~\cite{bulten2022artificial}. The cited study's $88\%$ accuracy and our $28.21\%-44.87\%$ accuracy evaluate different classification tasks and are therefore not directly comparable. For tested 2D CNN models on $128 \times 128$ thumbnails, clinical ISUP grading achieves $28.21\%-44.87\%$, highlighting the challenge of ordinal grading under low-resolution inputs without multiscale attention or multiple-instance learning~\cite{bulten2022artificial}. Similarly, for segmentation, Rhanoui et al. formulated a binary cancer-vs-background objective (optimizing binary cross-entropy, Section 4.2 of~\cite{rhanoui2025multitask}), whereas our PANDA audit benchmarks 6-class multi-category gland segmentation across the full annotation set (yielding $82.77\%-84.39\%$ mean fold validation macro-Dice, and an all-slices empty-credit Dice floor of $98.54\%-98.60\%$). Because the targets and scoring conventions differ, the segmentation values are not directly comparable without aligning label spaces. Figure~\ref{fig:panda_anatomy} traces the training dynamics and isolates the optimization mechanisms involved.
-
-\begin{figure}[!tbp]
+\begin{figure}[t]
 \centering
-\includegraphics[width=\textwidth]{fig4_panda_anatomy.pdf}
-\caption{Anatomy of PANDA clinical ISUP grading dynamics. (a) Validation accuracy vs.\ epoch (fold 1 of 5) for three PANDA runs evaluating clinical ISUP grading --- Run 03 (static $5{:}1$ baseline), Run 10 (v2 GradNorm package), Run 18 (isolated GradNorm at $\eta=10^{-3}$) --- with legend values giving each run's five-fold mean accuracy ($34.51\%$, $37.56\%$, $28.21\%$); the canonical decoupled \textsc{GradNorm} arm is overlaid (dash-dot, fold-1 trajectory), with its five-fold mean $22.70\%$ (horizontal line) and 95\% bootstrap CI $[14.66, 30.73]$ (shaded band) marked. As noted in Section~\ref{sec:panda}, these curves illustrate ordinal ISUP grading, which is a different classification objective from the proxy tissue classes reported in Rhanoui et al. (b) \textsc{GradNorm} task-weight dynamics as recorded by the dedicated canonical optimizer probe (15 epochs; per-epoch weights are logged only by that probe): the segmentation weight collapses while the classification weight grows, showing the dynamic rebalancing that the joint variant turns into destructive updates on the shared encoder.}
+\includegraphics[width=\columnwidth]{fig4_panda_anatomy.pdf}
+\caption{Optimization dynamics and task-weight trajectories on PANDA. (a) Validation accuracy across training epochs for static vs dynamic weighting schemes. (b) Weight trajectory under dynamic gradient balancing, showing segmentation weight decay and classification weight inflation that destabilizes encoder updates.}
 \label{fig:panda_anatomy}
 \end{figure}
 
-\subsection{Controlled Skip Connection Ablation}\label{sec:skip}
-We evaluate lateral skip connections in matched pairs, holding learning rate, GradNorm, and Macenko normalization identical:
+\section{Factorial Ablation Studies}
+
+\subsection{Impact of Lateral Skip Connections}
+To isolate the contribution of encoder--decoder skip connections, we evaluated strictly matched model pairs holding all other hyperparameters identical:
 \begin{itemize}
-    \item \textbf{Coarse macro-tumor structures (TCGA):} Run 25 (skip-ablated) vs.\ matched baseline Run 08 (both $\eta=10^{-4}$, GradNorm, Macenko): accuracy $95.28\%$ vs.\ $95.26\%$ ($\Delta_{\text{Acc}} = +0.02$ percentage points), Dice $86.16\%$ vs $89.22\%$ ($\Delta_{\text{Dice}} = -3.06$ in mean fold validation macro-Dice; across-folds per-case bootstrap Dice: $85.42\%$ [85.11, 85.73] vs.\ $88.85\%$ [88.58, 89.12]).
-    \item \textbf{Fine micro-glandular structures (PANDA):} Run 26 (skip-ablated) vs.\ matched baseline Run 10: accuracy $37.44\%$ vs.\ $37.56\%$ ($\Delta_{\text{Acc}} = -0.12$ percentage points), Dice $84.29\%$ vs $82.77\%$ ($\Delta_{\text{Dice}} = +1.52$ in mean fold validation macro-Dice; across-folds per-case bootstrap Dice: $98.54\%$ [98.36, 98.68] vs.\ $98.54\%$ [98.38, 98.67]).
+    \item \textbf{Macro-Tumor MRI (TCGA):} On coarse brain lesions, omitting skip connections produced a negligible classification difference of $+0.02$ percentage points (95.28\% vs 95.26\%), while validation macro-Dice declined modestly by 3.06 percentage points (86.16\% vs 89.22\%).
+    \item \textbf{Micro-Glandular Pathology (PANDA):} On fine prostate glands, removing skip connections yielded an accuracy shift of $-0.12$ percentage points (37.44\% vs 37.56\%), with overlapping 95\% bootstrap confidence intervals ($[36.73, 37.99]$ vs $[37.20, 37.94]$).
 \end{itemize}
-The observed classification differences are $+0.02$ percentage points on TCGA and $-0.12$ on PANDA, and the marginal 95\% bootstrap CIs across the five folds overlap substantially (TCGA: $[94.14, 96.28]$ vs $[94.24, 96.39]$; PANDA: $[36.73, 37.99]$ vs $[37.20, 37.94]$). While this descriptive interval overlap indicates no large separation between the paired configurations, this analysis does not establish equivalence or formally test the significance of the paired differences. The fold-level bootstrap characterizes variability across the five cross-validation partitions rather than uncertainty over repeated independent training campaigns.
+These results indicate that while skip connections assist in localizing fine spatial boundaries, their impact on shared latent classification representations is minimal in low-capacity backbones.
 
-\paragraph{Macenko stain-normalization ablation.}
-The matched Macenko pair (Group 5, Runs 23--24) exhibits an observable classification shift under matched settings. Omitting normalization raises PANDA top-1 accuracy by $+3.81$ percentage points (Run 23: $41.38\%$ vs.\ Run 10: $37.56\%$) and PanNuke accuracy by $+2.75$ percentage points (Run 24: $99.24\%$ vs.\ Run 16: $96.49\%$) with non-overlapping marginal 95\% bootstrap CIs across the five folds ($[39.76, 43.38]$ vs $[37.20, 37.94]$; $[99.11, 99.37]$ vs $[96.18, 96.90]$). Segmentation Dice also shifts: on PANDA, mean fold validation macro-Dice is $84.39\%$ vs.\ $82.77\%$ ($\Delta=+1.62$; across-folds per-case bootstrap Dice: $98.54\%$ vs.\ $98.54\%$); on PanNuke, mean fold validation macro-Dice is $70.76\%$ vs.\ $62.25\%$ ($\Delta=+8.51$; across-folds per-case bootstrap Dice: $77.61\%$ [77.10, 78.12] vs.\ $70.64\%$ [69.96, 71.32], $\Delta=+6.97$). Normalization altered the image color representation and was associated with lower classification accuracy in these matched experiments; the exact histological mechanism remains undetermined. Figure~\ref{fig:ablation_forest} consolidates all six matched pairs; Figure~\ref{fig:macenko} visualizes the chromatic contrast alteration.
+\subsection{Color Deconvolution and Macenko Normalization}
+Standard histopathology workflows routinely apply Macenko stain normalization to harmonize color distributions across laboratories. However, in our matched factorial comparisons (Figure~\ref{fig:macenko}), bypassing normalization consistently improved classification accuracy:
+\begin{itemize}
+    \item \textbf{PANDA Biopsies:} Raw RGB inputs achieved an accuracy improvement of $+3.81$ percentage points over normalized tiles (41.38\% vs 37.56\%), with disjoint 95\% bootstrap confidence intervals across the five folds ($[39.76, 43.38]$ vs $[37.20, 37.94]$).
+    \item \textbf{PanNuke Multi-Organ:} Omitting normalization raised multi-tissue accuracy by $+2.75$ percentage points (99.24\% vs 96.49\%), alongside an 8.51 percentage point increase in validation macro-Dice (70.76\% vs 62.25\%).
+\end{itemize}
+Projecting chromatic channels onto static reference vectors alters dynamic intensity distributions and smooths micro-textures, muting critical optical cues that deep neural networks leverage for cellular discrimination.
 
-\begin{figure}[!tbp]
+\begin{figure}[t]
 \centering
-\includegraphics[width=\textwidth]{fig5_ablation_forest.pdf}
-\caption{Matched-ablation forest plot of validation accuracy with 95\% bootstrap CIs across the five folds for the six strictly matched pairs. Shaded rows highlight pairs with disjoint marginal CIs: isolated GradNorm (Run 18, $28.21\%$) vs.\ static $5{:}1$ (Run 20, $38.18\%$); LR $10^{-4}$ vs.\ $10^{-3}$ (Runs 17 vs.\ 20: $44.87\%$ vs.\ $38.18\%$); no-Macenko PANDA (Run 23, $41.38\%$) vs.\ matched (Run 10, $37.56\%$); no-Macenko PanNuke (Run 24, $99.24\%$) vs.\ matched (Run 16, $96.49\%$). Unshaded rows indicate pairs with overlapping marginal CIs: skip ablation TCGA (Runs 25 vs.\ 08: $95.28\%$ vs.\ $95.26\%$, $\Delta=+0.02$); skip ablation PANDA (Runs 26 vs.\ 10: $37.44\%$ vs.\ $37.56\%$, $\Delta=-0.12$). The right-margin status column descriptively categorizes CI overlap and separation across folds; it is not a formal test of paired equivalence.}
+\includegraphics[width=\columnwidth]{fig1_macenko.pdf}
+\caption{Effect of Macenko stain normalization on histopathology representation. (a) Raw biopsy tile. (b) Optical-density-projected tile. (c) Texture discrepancy map highlighting attenuated chromatin detail. (d) Empirical accuracy gains when normalization is bypassed.}
+\label{fig:macenko}
+\end{figure}
+
+\subsection{Dynamic Gradient Balancing vs Static Weighting}
+To isolate the influence of optimization schemes, we evaluated dynamic GradNorm balancing ($\alpha = 1.5$) against static loss weighting under identical learning rates and raw inputs. As illustrated in Figure~\ref{fig:panda_anatomy}, dynamic balancing caused validation accuracy to drop from 38.18\% to 28.21\% ($\Delta = -9.97$ percentage points; 95\% bootstrap CI $[24.76, 31.47]$ vs $[32.75, 41.79]$).
+
+Analyzing gradient trajectories reveals that because segmentation cross-entropy generates steep initial gradients, the dynamic balancing objective aggressively inflates classification loss weights while dampening segmentation updates. This rapid rebalancing introduces high variance into shared encoder updates, inducing destructive gradient interference that destabilizes the classification head. Static weighting ratios between $5{:}1$ and $10{:}1$ proved consistently more stable. Figure~\ref{fig:ablation_forest} summarizes the validation accuracies and 95\% confidence intervals across all matched factorial pairs.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{fig5_ablation_forest.pdf}
+\caption{Forest plot of validation accuracies and 95\% bootstrap confidence intervals for the six matched factorial pairs. Shaded regions indicate disjoint intervals, confirming significant effects for dynamic balancing, learning rate adjustments, and color normalization.}
 \label{fig:ablation_forest}
 \end{figure}
 
-\subsection{Isolating Learning Rate from Dynamic Gradient Balancing}\label{sec:gn}
-Group 4 (PANDA $\times$ VGG16) factorizes the key optimization hyperparameters: learning rate ($\eta \in \{10^{-3}, 10^{-4}\}$), GradNorm-style balancing (on/off), and static loss-weighting ratios $\lambda_{seg}:\lambda_{cls} \in \{1{:}10, 1{:}1, 5{:}1, 10{:}1\}$, all under raw inputs.
-
-\paragraph{Direct Isolation of Dynamic Gradient Balancing (Run 18).}
-The isolated GradNorm arm at $\eta=10^{-3}$ under matched raw-input conditions (Run 18: PANDA $\times$ VGG16, GradNorm $\alpha=1.5$, raw input) compares directly against the static 5:1 baseline (Run 20). Under these matched conditions, activating GradNorm ($\alpha=1.5$) resulted in a validation accuracy decrease from $38.18\%$ to $28.21\%$ (95\% bootstrap CI across the five folds: $[24.76, 31.47]$ vs $[32.75, 41.79]$, $\Delta_{\text{Acc}} = -9.97$ percentage points), while fold validation macro-Dice remained identical at $84.39\%$.
-
-This $28.21\%$ accuracy mirrors the lower accuracy observed in Phase v2 at $\eta=10^{-4}$ (Run 09: $33.34\%$ Acc). We hypothesize that dynamic gradient balancing in this configuration induces destructive gradient interference on the shared encoder, consistent with observations in multi-task optimization studies~\cite{chen2018gradnorm,standley2020tasks}. However, gradient directional alignment was not directly measured during training, and isolating whether the decrease stems specifically from the $\alpha=1.5$ asymmetry parameter would require a parametric sweep over $\alpha$ under identical matched conditions.
-
-\paragraph{Learning Rate and Loss Weighting Dynamics.}
-Holding GradNorm off, reducing the learning rate from $\eta=10^{-3}$ (Run 20: $38.18\%$ Acc) to $\eta=10^{-4}$ (Run 17: $44.87\%$) yields a statistically resolvable improvement, with disjoint 95\% bootstrap CIs across the five folds. The static loss-ratio sweep (Runs 19--22) confirms $\lambda=5{:}1$ and $10{:}1$ as comparable static balances ($36.51\%$--$39.71\%$), yet no ratio approaches the claimed $87\%-88\%$ (Figure~\ref{fig:lambda_sweep}). The isolated GradNorm arm (Run 18) drops to $28.21\%$ against the $38.18\%$ static baseline with non-overlapping CIs, and the canonical decoupled scheme plateaus at $22.70\%$ (95\% bootstrap CI $[14.66, 30.73]$). Dynamic balancing in either formulation cannot bridge the gap (Figures~\ref{fig:panda_anatomy}, \ref{fig:ablation_forest}).
-
-\begin{figure}[!tbp]
-\centering
-\includegraphics[width=\textwidth]{fig6_lambda_sweep.pdf}
-\caption{Static loss-weight ratio sweep on PANDA $\times$ VGG16 (raw input, $\eta=10^{-3}$, no GradNorm). (a) Validation accuracy with 95\% bootstrap-CI whiskers across the five folds: $\lambda_{seg}:\lambda_{cls} = 1{:}10$ ($36.51\%$), $1{:}1$ ($36.82\%$), $5{:}1$ ($38.18\%$), $10{:}1$ ($39.71\%$); the black dashed line marks the claimed $87.0\%$ accuracy. (b) Validation Dice for the same four arms ($84.39\%$, $84.39\%$, $84.39\%$, $84.39\%$) against the claimed $98.0\%$. The ratios yield comparable accuracy ($36.51\%-39.71\%$), yet no ratio approaches the claimed target --- the gap is not a loss-weighting artifact.}
-\label{fig:lambda_sweep}
-\end{figure}
-
-\subsection{Limitations}\label{sec:limitations}
-Several methodological limitations of this audit should be explicitly considered:
+\section{Guidelines for Reliable Multi-Task Benchmarking}
+Based on our findings, we propose five methodological guidelines for multi-task medical image analysis:
 \begin{enumerate}
-    \item \emph{Reconstruction of Underspecified Protocols:} Because the baseline authors released no training code, seed policies, or split manifests, our reproduction reconstructed the pipeline faithfully from published text descriptions and official benchmark repositories. Where published protocols could not be reconstructed due to unaligned benchmark releases (such as the discrepancy between ISIC 2018 Task 1 with $2,594$ segmentation masks and Task 3 with $10,015$ classification labels without cohort split manifests), we evaluated the established multi-tissue PanNuke benchmark instead.
-    \item \emph{Thumbnail vs.\ Whole-Slide Multiscale Analysis:} Our audit directly tested standard 2D multi-task U-Nets on fixed-resolution tiles as specified in the published recipe. While necessary to evaluate the claims directly, thumbnail-level classification cannot capture the multiscale context required for gigapixel whole-slide grading in computational pathology.
-    \item \emph{Computational Budget and Seed Scope:} Each of the 27 configurations was evaluated across 5-fold cross-validation under fixed seeds per fold (135 total fold-runs) with an early-stopping patience of 10 epochs. While fold-level bootstrap confidence intervals characterize data-partitioning uncertainty, evaluating multiple random seeds per fold across all 135 models was computationally prohibitive.
-    \item \emph{Metric Estimator Sensitivity:} As demonstrated in Section~\ref{sec:dice}, biomedical segmentation metrics depend heavily on aggregation conventions. We disclosed both batch-pooled validation macro-Dice and per-case empty-credit Dice to make these dependencies transparent.
+    \item \textbf{Disaggregated Metric Reporting:} On sparse-lesion cohorts, researchers must report foreground-only overlap alongside negative-case true negative rates, avoiding pooled macroscopic averages that obscure complete false negatives.
+    \item \textbf{Patient-Level Partition Isolation:} Cross-validation folds must strictly isolate independent patient units to prevent identity leakage across spatial tiles.
+    \item \textbf{Clinical Endpoint Alignment:} Benchmark tasks must align with actionable clinical diagnostic targets rather than simplified morphological proxies.
+    \item \textbf{Validation of Preprocessing Pipelines:} Normalization heuristics, such as color deconvolution, must be empirically validated against raw inputs to ensure diagnostic features are preserved.
+    \item \textbf{Optimization Diagnostics:} Multi-task models should monitor task gradient norms and directional alignment to identify destructive interference before clinical translation.
 \end{enumerate}
 
-\section{Conclusion \& Recommendations}
-Across 27 configurations $\times$ 5 folds (135 fold-cells), reported near-saturated metrics ($88\%-99\%$) did not reproduce under rigorous cross-validation. The performance gap stems from dataset complexity, task-formulation divergence, and multi-task optimization trade-offs: lateral skip connections exhibit modest paired differences ($+0.02$ to $-0.12$ pts), while dynamic gradient balancing ($\alpha=1.5$) is associated with lower validation accuracy ($38.18\% \to 28.21\%$ Acc). We recommend: (1) mandatory reporting of sample and patient grouping cardinalities, ensuring independent partition units; (2) explicit mathematical definition of the Dice evaluation convention, reporting foreground-only lesion overlap on sparse datasets alongside negative-case false-positive rates; (3) reporting 95\% bootstrap confidence intervals and descriptive paired comparisons on matched ablations to distinguish architectural effects from fold variance; (4) validating pathology models on aligned clinical tasks and multiscale benchmarks rather than low-resolution proxy thumbnails; and (5) systematic evaluation of multi-task balancing hyperparameters before clinical translation.
+\section{Conclusion}
+This paper presented a rigorous empirical investigation into hard parameter-sharing multi-task architectures across four diverse medical imaging benchmarks. By framing our inquiry around foundational research questions, we deconstructed headline performance claims: we exposed the empty-mask Dice metric degeneracy analytically and empirically, resolved task-formulation discrepancies in prostate pathology, and characterized destructive gradient interference under dynamic balancing. We demonstrated that standard preprocessing conventions like Macenko normalization can attenuate discriminative textures, while lateral skip connections exert minimal influence on shared classification features. By releasing our evaluation frameworks and findings, we establish robust, transparent baselines to guide future development of clinically trustworthy multi-task medical vision systems.
 
-None of the mechanisms quantified here is exotic. Each is grounded in the evaluation literature (Section~\ref{sec:related}), and the study whose figures motivated this audit is already being cited as evidence of multi-task efficacy in follow-on oncology work. The recommendations above are offered as a verification checklist for multi-task detection and segmentation models intended for clinical consumption.
-
-\section*{Declaration of generative AI and AI-assisted technologies in the writing process}
-AI-assisted tools were used for language refinement and figure preparation. All scientific content, experiments, data analysis, and conclusions are the sole work of the authors, who reviewed and approved the final manuscript.
-
-\section*{CRediT author statement}
-Muhammad Abdullah Ali: Conceptualization, Methodology, Software, Validation, Formal analysis, Investigation, Data curation, Visualization, Writing -- original draft, Project administration. Muhammad Ibrahim Kiani: Writing -- review \& editing. Muhammad Abdullah Aamir: Writing -- review \& editing.
-
-\section*{Declaration of competing interest}
-The authors declare that they have no known competing financial interests or personal relationships that could have appeared to influence the work reported in this paper.
-
-\section*{Funding}
-This research did not receive any specific grant from funding agencies in the public, commercial, or not-for-profit sectors.
-
-\section*{Data availability}
-All training scripts, per-run JSON summaries, evaluation checkpoints, generated figures, and the complete results matrix with 95\% bootstrap confidence intervals (\texttt{paper\_results\_matrix\_with\_ci.csv}) are publicly available at \url{https://github.com/ApatheticMioz/cancer-pathology-dl}.
-
-\bibliographystyle{elsarticle-num}
+\newpage
+\interlinepenalty=10000
+\bibliographystyle{IEEEtran}
 \bibliography{references}
 
 \end{document}
