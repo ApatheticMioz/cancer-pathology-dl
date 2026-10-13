@@ -310,7 +310,7 @@ All findings uncovered during peer review and revision are tracked with strict v
 ```bibtex
 @inproceedings{ali2026alldice,
   title     = {All Dice, No Slice: Metric Degeneracy, Evaluation Pitfalls, and Optimization Dynamics in Multi-Task Medical Vision},
-  author    = {Ali, Muhammad Abdullah and Kiani, Muhammad Ibrahim and Aamir, Muhammad Abdullah and {Ul Ain}, Qurat},
+  author    = {Ali, Muhammad Abdullah and Aamir, Muhammad Abdullah and Asghar, Muddassir and Kiani, Muhammad Ibrahim and {Ul Ain}, Qurat},
   booktitle = {Proceedings of the International Conference on Computing, Intelligence and Innovation (ICCII)},
   year      = {2026},
   url       = {https://github.com/ApatheticMioz/cancer-pathology-dl}

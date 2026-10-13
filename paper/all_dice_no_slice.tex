@@ -9,18 +9,19 @@
 \usepackage{tikz}
 \usetikzlibrary{arrows.meta,positioning}
 
-\setlength{\textfloatsep}{7pt plus 1pt minus 2pt}
-\setlength{\floatsep}{7pt plus 1pt minus 2pt}
-\setlength{\dbltextfloatsep}{7pt plus 1pt minus 2pt}
-\setlength{\dblfloatsep}{7pt plus 1pt minus 2pt}
+\setlength{\textfloatsep}{5pt plus 1pt minus 2pt}
+\setlength{\floatsep}{5pt plus 1pt minus 2pt}
+\setlength{\dbltextfloatsep}{5pt plus 1pt minus 2pt}
+\setlength{\dblfloatsep}{5pt plus 1pt minus 2pt}
 \clubpenalty=10000
 \widowpenalty=10000
 
 
 \title{All Dice, No Slice: Metric Degeneracy, Evaluation Pitfalls, and Optimization Dynamics in Multi-Task Medical Vision}
 
-\name{Muhammad Abdullah Ali$^1$, Muhammad Ibrahim Kiani$^1$, Muhammad Abdullah Aamir$^1$, Qurat Ul Ain$^2$}
-\address{$^1$Dept.\ of Data Science, FAST-NUCES, Islamabad, Pakistan \quad $^2$Dept.\ of Computer Science, UET Taxila, Pakistan}
+\name{\begin{tabular}{@{}c@{}}Muhammad Abdullah Ali, Muhammad Abdullah Aamir, Muddassir Asghar,\\
+      Muhammad Ibrahim Kiani, and Qurat-Ul-Ain\sthanks{Corresponding author (senior supervisor): quratul.ain@isb.nu.edu.pk}\end{tabular}}
+\address{Department of Data Science, FAST-NUCES, Islamabad, Pakistan}
 
 \begin{document}
 \ninept
@@ -60,24 +61,64 @@ To answer these questions, we conduct a 27-configuration factorial campaign eval
 \begin{figure}[t]
 \centering
 \begin{tikzpicture}[
-    box/.style={draw, rounded corners=1.5pt, minimum height=0.85cm,
-                align=center, font=\scriptsize, inner sep=2.5pt},
-    arr/.style={-{Stealth[length=1.8mm]}, thick},
-    node distance=3.2mm and 3.2mm
+    scale=0.74, every node/.style={transform shape},
+    modbox/.style={draw=black!70, rounded corners=2.5pt, fill=black!4, align=center, font=\scriptsize, inner sep=3pt, thick},
+    encbox/.style={draw=blue!80!black, rounded corners=2.5pt, fill=blue!8, align=center, font=\scriptsize, inner sep=3pt, thick},
+    headcls/.style={draw=orange!80!black, rounded corners=2.5pt, fill=orange!10, align=center, font=\scriptsize, inner sep=3pt, thick},
+    headseg/.style={draw=teal!80!black, rounded corners=2.5pt, fill=teal!10, align=center, font=\scriptsize, inner sep=3pt, thick},
+    optbox/.style={draw=purple!80!black, rounded corners=2.5pt, fill=purple!8, align=center, font=\scriptsize, inner sep=3.5pt, thick},
+    arr/.style={-{Stealth[length=1.6mm]}, thick, draw=black!75},
+    skiparr/.style={-{Stealth[length=1.6mm]}, dashed, thick, draw=teal!70!black}
 ]
-\node[box, minimum width=2.4cm] (data)
-  {Multi-Modal Cohorts\\TCGA / PANDA /\\SIIM / PanNuke};
-\node[box, right=of data, minimum width=2.5cm] (pre)
-  {Preprocessing Module\\$\pm$ Macenko Norm\\$\pm$ Lateral Skips};
-\node[box, below=of pre, minimum width=2.5cm] (model)
-  {Shared Encoder\\VGG16 / MobileNet\\Dual Cls + Seg Heads};
-\node[box, below=of data, minimum width=2.4cm, fill=black!6] (eval)
-  {Factorial Audit\\27 Configurations\\$\times$ 5 Folds (135 Runs)};
-\draw[arr] (data) -- (pre);
-\draw[arr] (pre) -- (model);
-\draw[arr] (model) -- (eval);
+% Inputs & Preprocessing
+\node[modbox, minimum width=2.1cm] (input) at (0, 2.5) {
+  \textbf{Clinical Inputs $\mathbf{x}$}\\
+  \tiny TCGA $\cdot$ PANDA\\
+  \tiny SIIM $\cdot$ PanNuke\\
+  \tiny $\pm$ Macenko OD Norm
+};
+
+% Shared Encoder
+\node[encbox, minimum width=2.3cm] (enc) at (3.1, 2.5) {
+  \textbf{Shared Encoder $f_\theta$}\\
+  \tiny VGG16 / MobileNet\\
+  \tiny Bottleneck $\mathbf{z} \in \mathbb{R}^{h \times w \times d}$
+};
+
+% Classification Head (top right)
+\node[headcls, minimum width=2.3cm] (cls) at (6.6, 3.55) {
+  \textbf{Classification Head}\\
+  \tiny $\text{GAP} \to \text{MLP} \to \hat{\mathbf{y}}_{cls}$\\
+  \tiny $\mathcal{L}_{cls}$ (CCE Diagnostic)
+};
+
+% Segmentation Decoder (bottom right)
+\node[headseg, minimum width=2.3cm] (seg) at (6.6, 1.45) {
+  \textbf{Segmentation Decoder}\\
+  \tiny $\text{Dec}_\phi \to \mathbf{l}_{seg}$\\
+  \tiny $\mathcal{L}_{seg}$ (BCE/CE Mask)
+};
+
+% Connections from Input to Encoder
+\draw[arr] (input) -- (enc);
+
+% Connections from Encoder to Heads
+\draw[arr] (enc.north east) to[out=30, in=180] (cls.west);
+\draw[arr] (enc.south east) to[out=330, in=180] (seg.west);
+
+% Skip connection
+\draw[skiparr] (enc.south) to[out=270, in=200] node[below, font=\tiny, text=teal!80!black, yshift=1pt] {Lateral Skips $\{\mathbf{s}_l\}$} (seg.south west);
+
+% Loss & Optimization Bar (spanning bottom)
+\node[optbox, minimum width=7.8cm] (opt) at (3.3, 0.0) {
+  \textbf{Multi-Task Optimization \& 27-Configuration Factorial Audit}\\
+  \tiny Static Weighting ($\lambda_{seg}{:}\lambda_{cls}$) vs.\ Dynamic GradNorm ($\mathcal{L}_{grad}$) $\;\vert\;$ 135 Fold-Runs (5-Fold CV)
+};
+
+\draw[arr] (cls.east) to[out=0, in=45] (opt.east);
+\draw[arr] (seg.east) to[out=0, in=15] (opt.east);
 \end{tikzpicture}
-\caption{Systematic audit and factorial benchmarking framework across four clinical imaging modalities, evaluating preprocessing heuristics, architectural variants, and optimization balancing schemes under rigorous cross-validation.}
+\caption{Architectural formulation and factorial audit framework across four clinical imaging modalities, integrating shared feature extraction, dual diagnostic heads with lateral skip pathways, and adaptive optimization balancing under patient-isolated cross-validation.}
 \label{fig:pipeline}
 \end{figure}
 
@@ -174,7 +215,7 @@ PanNuke & 5 & 78.70 -- 99.24 & 68.44 -- 77.61 & --- & --- & Multi-Organ Histopat
 
 \begin{figure*}[t]
 \centering
-\includegraphics[width=0.92\textwidth,height=0.38\textheight,keepaspectratio]{fig3_results_dotplot.pdf}
+\includegraphics[width=0.96\textwidth,height=3.4in,keepaspectratio]{fig3_results_dotplot.pdf}
 \caption{Measured validation metrics across all 26 experimental runs compared against claimed literature targets. Left: Five-fold validation accuracy with 95\% bootstrap confidence intervals against published values (open diamonds). Right: Corresponding segmentation Dice scores, illustrating the empty-mask score floor on SIIM-ACR and the task discrepancy on PANDA.}
 \label{fig:results_dotplot}
 \end{figure*}
@@ -201,7 +242,7 @@ This performance divergence is directly explained by task definition and interna
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=\columnwidth]{fig4_panda_anatomy.pdf}
+\includegraphics[width=0.93\columnwidth]{fig4_panda_anatomy.pdf}
 \caption{Optimization dynamics and task-weight trajectories on PANDA. (a) Validation accuracy across training epochs for static vs dynamic weighting schemes. (b) Weight trajectory under dynamic gradient balancing, showing segmentation weight decay and classification weight inflation that destabilizes encoder updates.}
 \label{fig:panda_anatomy}
 \end{figure}
@@ -226,7 +267,7 @@ Projecting chromatic channels onto static reference vectors alters dynamic inten
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=\columnwidth]{fig1_macenko.pdf}
+\includegraphics[width=0.93\columnwidth]{fig1_macenko.pdf}
 \caption{Effect of Macenko stain normalization on histopathology representation. (a) Raw biopsy tile. (b) Optical-density-projected tile. (c) Texture discrepancy map highlighting attenuated chromatin detail. (d) Empirical accuracy gains when normalization is bypassed.}
 \label{fig:macenko}
 \end{figure}
@@ -254,7 +295,7 @@ Based on our findings, we propose five methodological guidelines for multi-task 
 \end{enumerate}
 
 \section{Conclusion}
-This paper presented a rigorous empirical investigation into hard parameter-sharing multi-task architectures across four diverse medical imaging benchmarks. By framing our inquiry around foundational research questions, we deconstructed headline performance claims: we exposed the empty-mask Dice metric degeneracy analytically and empirically, resolved task-formulation discrepancies in prostate pathology, and characterized destructive gradient interference under dynamic balancing. We demonstrated that standard preprocessing conventions like Macenko normalization can attenuate discriminative textures, while lateral skip connections exert minimal influence on shared classification features. By releasing our evaluation frameworks and findings, we establish robust, transparent baselines to guide future development of clinically trustworthy multi-task medical vision systems.
+This paper presented a systematic empirical investigation into hard parameter-sharing multi-task architectures across four diverse clinical benchmarks. Framing our inquiry around four foundational research questions, we deconstructed headline performance claims: we proved the empty-mask Dice degeneracy analytically and empirically, resolved task-formulation discrepancies in prostate pathology, and characterized destructive gradient interference under dynamic balancing. We demonstrated that standard color deconvolution can attenuate fine discriminative textures, while lateral skip connections exert minimal influence on shared classification representations. Our open evaluation framework and findings provide robust methodological foundations to ensure clinically trustworthy multi-task medical vision systems.
 
 \newpage
 \interlinepenalty=10000

@@ -156,7 +156,7 @@ def _build_fig():
     # would clear the labels for BOTH panels (the original F3 bug that left
     # the y-axis bare).
     fig, (ax_acc, ax_dice) = plt.subplots(
-        1, 2, figsize=(7, 7.5), dpi=300, sharey=True
+        1, 2, figsize=(7.16, 3.85), dpi=300, sharey=True
     )
 
     # --- Per-run row labels on the shared y-axis -----------------------
@@ -167,14 +167,14 @@ def _build_fig():
     # x headroom so markers / CI whiskers / claimed diamonds never clip.
     ax_acc.set_xlim(-2, 105)
     ax_acc.set_xticks([0, 20, 40, 60, 80, 100])
-    ax_acc.set_xlabel("Validation Accuracy (%)", fontweight="bold")
-    ax_acc.set_title("Validation Accuracy (%)", fontweight="bold")
+    ax_acc.set_xlabel("Validation Accuracy (%)", fontweight="bold", fontsize=7.5)
+    ax_acc.set_title("Validation Accuracy (%)", fontweight="bold", fontsize=8)
 
     ax_dice.set_ylim(-0.5, n - 0.5)
     ax_dice.set_xlim(-2, 105)
     ax_dice.set_xticks([0, 20, 40, 60, 80, 100])
-    ax_dice.set_xlabel("Validation Dice (%)", fontweight="bold")
-    ax_dice.set_title("Validation Dice (%)", fontweight="bold")
+    ax_dice.set_xlabel("Validation Dice (%)", fontweight="bold", fontsize=7.5)
+    ax_dice.set_title("Validation Dice (%)", fontweight="bold", fontsize=8)
 
     # --- Group separators (thin horizontal lines) on both panels --------
     for (start, _end, _label) in GROUPS[1:]:
@@ -266,7 +266,7 @@ def _build_fig():
     # --- Layout, then place group labels in the left margin -------------
     # The left margin is widened so the per-run row labels fit, and the
     # group labels are placed to the *left* of the row labels (no overlap).
-    fig.subplots_adjust(left=0.42, right=0.98, top=0.93, bottom=0.12)
+    fig.subplots_adjust(left=0.28, right=0.98, top=0.90, bottom=0.18)
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
     pos = ax_acc.get_position()
@@ -283,7 +283,7 @@ def _build_fig():
         fig.text(row_left - 0.015, y_fig, label, ha="right", va="center",
                  fontweight="bold", fontsize=7, color="black")
 
-    # --- Shared legend (figure-level, lower center) --------------------
+    # --- Shared legend (figure-level, lower center under panels) -------
     handles = []
     for ds in ("TCGA", "PANDA", "SIIM", "PANNUKE"):
         handles.append(Patch(facecolor=style.DATASET_COLORS[ds],
@@ -297,8 +297,8 @@ def _build_fig():
                           label="Claimed (paper)"))
     handles.append(Line2D([], [], color=_CI_GRAY, linewidth=1.0,
                           label="95% CI (across-folds)"))
-    fig.legend(handles=handles, loc="lower center", ncol=4, fontsize=7,
-               bbox_to_anchor=(0.5, 0.01))
+    fig.legend(handles=handles, loc="lower center", ncol=4, fontsize=6.8,
+               bbox_to_anchor=(0.63, 0.012))
 
     return fig, (ax_acc, ax_dice)
 
