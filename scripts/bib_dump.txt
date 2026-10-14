@@ -1,0 +1,217 @@
+Total entries: 36
+#1 [rhanoui2025multitask] (article)
+  Title: Multi-Task Deep Learning for Simultaneous Classification and Segmentation of Cancer Pathologies in Diverse Medical Imaging Modalities
+  Author: Rhanoui, Maryem and Alaoui Belghiti, Khaoula and Mikram, Mounia
+  Venue: Onco
+  Year: 2025, Vol: 5, Number: 3, Pages: 34
+  DOI/URL: 10.3390/onco5030034
+#2 [bulten2022artificial] (article)
+  Title: Artificial intelligence for diagnosis and Gleason grading of prostate cancer: the PANDA challenge
+  Author: Bulten, Wouter and Kartasalo, Kimmo and Chen, Po-Hsuan Cameron and Delahunt, Brett and Pinckaers, Hans and Nagpal, Kunal and Valkonen, Mika and Litjens, Geert and others
+  Venue: Nature Medicine
+  Year: 2022, Vol: 28, Number: 1, Pages: 154--163
+  DOI/URL: 10.1038/s41591-021-01620-2
+#3 [gamper2020pannuke] (inproceedings)
+  Title: PanNuke: An Open Pan-Cancer Histology Dataset for Nuclei Instance Segmentation and Classification
+  Author: Gamper, Jevgenij and Alemi Koohbanani, Navid and Benet, Ksenija and Khuram, Ali and Rajpoot, Nasir
+  Venue: International Conference on Medical Image Computing and Computer-Assisted Intervention (MICCAI)
+  Year: 2019, Vol: 11933, Number: None, Pages: 11--19
+  DOI/URL: 10.1007/978-3-030-23937-4_2
+#4 [chen2018gradnorm] (inproceedings)
+  Title: GradNorm: Gradient normalization for adaptive loss balancing in deep multitask networks
+  Author: Chen, Zhao and Badrinarayanan, Vijay and Lee, Chen-Yu and Rabinovich, Andrew
+  Venue: International Conference on Machine Learning (ICML)
+  Year: 2018, Vol: None, Number: None, Pages: 794--803
+  DOI/URL: None
+#5 [yu2020pcgrad] (inproceedings)
+  Title: Gradient surgery for multi-task learning
+  Author: Yu, Tianhe and Kumar, Saurabh and Gupta, Abhishek and Levine, Sergey and Hausman, Klas and Finn, Chelsea
+  Venue: Advances in Neural Information Processing Systems
+  Year: 2020, Vol: 33, Number: None, Pages: 5824--5836
+  DOI/URL: None
+#6 [reinke2024metrics] (article)
+  Title: Understanding metric-related pitfalls in image analysis validation
+  Author: Reinke, Annika and Tizabi, Minu D and Baumgartner, Michael and Eisenmann, Matthias and others
+  Venue: Nature Methods
+  Year: 2024, Vol: 21, Number: 2, Pages: 182--194
+  DOI/URL: 10.1038/s41592-023-02150-0
+#7 [macenko2009method] (inproceedings)
+  Title: A method for normalizing histology slides for quantitative analysis
+  Author: Macenko, Marc and Niethammer, Marc and Marron, JS and Borland, David and Woosley, John T and Guan, Xiaojun and Schmitt, Charles and Thomas, Nancy E
+  Venue: IEEE International Symposium on Biomedical Imaging (ISBI)
+  Year: 2009, Vol: None, Number: None, Pages: 1107--1110
+  DOI/URL: 10.1109/ISBI.2009.5193250
+#8 [ronneberger2015u] (inproceedings)
+  Title: U-net: Convolutional networks for biomedical image segmentation
+  Author: Ronneberger, Olaf and Fischer, Philipp and Brox, Thomas
+  Venue: Medical Image Computing and Computer-Assisted Intervention (MICCAI)
+  Year: 2015, Vol: None, Number: None, Pages: 234--241
+  DOI/URL: None
+#9 [simonyan2014very] (article)
+  Title: Very deep convolutional networks for large-scale image recognition
+  Author: Simonyan, Karen and Zisserman, Andrew
+  Venue: arXiv preprint arXiv:1409.1556
+  Year: 2014, Vol: None, Number: None, Pages: None
+  DOI/URL: None
+#10 [sandler2018mobilenetv2] (inproceedings)
+  Title: MobileNetV2: Inverted residuals and linear bottlenecks
+  Author: Sandler, Mark and Howard, Andrew and Zhu, Menglong and Zhmoginov, Andrey and Chen, Liang-Chieh
+  Venue: IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)
+  Year: 2018, Vol: None, Number: None, Pages: 4510--4520
+  DOI/URL: None
+#11 [litjens2017survey] (article)
+  Title: A survey on deep learning in medical image analysis
+  Author: Litjens, Geert and Kooi, Thijs and Bejnordi, Babak Ehteshami and Setio, Arnaud Arindra Adiyoso and Ciompi, Francesco and Ghafoorian, Mohsen and Van Der Laak, Jeroen AWM and Van Ginneken, Bram and S{\'a}nchez, Clara I
+  Venue: Medical Image Analysis
+  Year: 2017, Vol: 42, Number: None, Pages: 60--88
+  DOI/URL: None
+#12 [campanella2019clinical] (article)
+  Title: Clinical-grade computational pathology using weakly supervised deep learning on whole slide images
+  Author: Campanella, Gabriele and Hanna, Matthew G and Geneslaw, Luke and Miraflor, Allen and Werneck Krauss Silva, Vitor and Klauschen, Frederick and others
+  Venue: Nature Medicine
+  Year: 2019, Vol: 25, Number: 8, Pages: 1301--1309
+  DOI/URL: None
+#13 [ali2026cancerpathologydl] (misc)
+  Title: Multi-Task Deep Learning in Cancer Pathology: Replication and Empirical Audit
+  Author: Ali, Muhammad Abdullah and Kiani, Muhammad Ibrahim and Aamir, Muhammad Abdullah
+  Venue: \url{https://github.com/ApatheticMioz/cancer-pathology-dl
+  Year: 2026, Vol: None, Number: None, Pages: None
+  DOI/URL: \url{https://github.com/ApatheticMioz/cancer-pathology-dl
+#14 [chen2024uni] (article)
+  Title: Towards a general-purpose foundation model for computational pathology
+  Author: Chen, Richard J and Ding, Tong and Lu, Ming Y and Williamson, Drew FK and Jaume, Guillaume and Chen, Bowen and others
+  Venue: Nature Medicine
+  Year: 2024, Vol: 30, Number: 3, Pages: 850--862
+  DOI/URL: 10.1038/s41591-024-02857-3
+#15 [lu2024conch] (article)
+  Title: A visual-language foundation model for computational pathology
+  Author: Lu, Ming Y and Chen, Bowen and Williamson, Drew FK and Zhao, Melissa and Chow, Aaron K and Ikemura, Kenji and others
+  Venue: Nature Medicine
+  Year: 2024, Vol: 30, Number: 3, Pages: 863--874
+  DOI/URL: 10.1038/s41591-024-02856-4
+#16 [vorontsov2024virchow] (article)
+  Title: A foundation model for clinical-grade computational pathology and rare cancers detection
+  Author: Vorontsov, Eugene and Bozkurt, Alican and Casson, Adam and Shaikovski, George and Zelechowski, Michal and Severson, Kristen and others
+  Venue: Nature Medicine
+  Year: 2024, Vol: 30, Number: 10, Pages: 2924--2935
+  DOI/URL: 10.1038/s41591-024-03141-0
+#17 [buda2019lgg] (article)
+  Title: Association of genomic subtypes of lower-grade gliomas with shape features automatically extracted by a deep learning algorithm
+  Author: Buda, Mateusz and Saha, Ashirbani and Mazurowski, Maciej A
+  Venue: Computers in Biology and Medicine
+  Year: 2019, Vol: 109, Number: None, Pages: 218--225
+  DOI/URL: 10.1016/j.compbiomed.2019.05.002
+#18 [allsbrook2001urologic] (article)
+  Title: Interobserver reproducibility of {Gleason} grading of prostatic carcinoma: urologic pathologists
+  Author: Allsbrook, W. C. and Mangold, K. A. and Johnson, M. H. and Lane, R. B. and Lane, C. G. and Epstein, J. I.
+  Venue: Human Pathology
+  Year: 2001, Vol: 32, Number: 1, Pages: 74--80
+  DOI/URL: 10.1053/hupa.2001.21134
+#19 [allsbrook2001general] (article)
+  Title: Interobserver reproducibility of {Gleason} grading of prostatic carcinoma: general pathologist
+  Author: Allsbrook, W. C. and Mangold, K. A. and Johnson, M. H. and Lane, R. B. and Lane, C. G. and Epstein, J. I.
+  Venue: Human Pathology
+  Year: 2001, Vol: 32, Number: 1, Pages: 81--88
+  DOI/URL: 10.1053/hupa.2001.21135
+#20 [siim2019pneumothorax] (misc)
+  Title: {SIIM-ACR} Pneumothorax Segmentation
+  Author: {Society for Imaging Informatics in Medicine (SIIM) and American College of Radiology (ACR)
+  Venue: \url{https://kaggle.com/competitions/siim-acr-pneumothorax-segmentation
+  Year: 2019, Vol: None, Number: None, Pages: None
+  DOI/URL: \url{https://kaggle.com/competitions/siim-acr-pneumothorax-segmentation
+#21 [eelbode2020optimization] (article)
+  Title: Optimization for Medical Image Segmentation: Theory and Practice When Evaluating with Dice Score or Jaccard Index
+  Author: Eelbode, Tom and Bertels, Jeroen and Berman, Maxim and Vandermeulen, Dirk and Maes, Frederik and Bisschops, Raf and Blaschko, Matthew
+  Venue: IEEE Transactions on Medical Imaging
+  Year: 2020, Vol: 39, Number: 11, Pages: 3679--3690
+  DOI/URL: 10.1109/TMI.2020.3002417
+#22 [liu2024dice] (article)
+  Title: Do we really need dice? The hidden region-size biases of segmentation losses
+  Author: Liu, Bingyuan and Dolz, Jose and Galdran, Adrian and Kobbi, Ridouane and Ben Ayed, Ismail
+  Venue: Medical Image Analysis
+  Year: 2024, Vol: 91, Number: None, Pages: 103015
+  DOI/URL: 10.1016/j.media.2023.103015
+#23 [kapoor2023leakage] (article)
+  Title: Leakage and the reproducibility crisis in machine-learning-based science
+  Author: Kapoor, Sayash and Narayanan, Arvind
+  Venue: Patterns
+  Year: 2023, Vol: 4, Number: 9, Pages: 100804
+  DOI/URL: 10.1016/j.patter.2023.100804
+#24 [zech2018variable] (article)
+  Title: Variable generalization performance of a deep learning model to detect pneumonia in chest radiographs: A cross-sectional study
+  Author: Zech, John R and Badgeley, Marcus A and Liu, Manway and Costa, Anthony B and Titano, Joseph J and Oermann, Eric K
+  Venue: PLoS Medicine
+  Year: 2018, Vol: 15, Number: 11, Pages: e1002683
+  DOI/URL: 10.1371/journal.pmed.1002683
+#25 [standley2020tasks] (inproceedings)
+  Title: Which Tasks Should Be Learned Together in Multi-task Learning?
+  Author: Standley, Trevor and Zamir, Amir and Chen, Dawn and Guibas, Leonidas and Malik, Jitendra and Savarese, Silvio
+  Venue: Proceedings of the 37th International Conference on Machine Learning
+  Year: 2020, Vol: 119, Number: None, Pages: 9120--9132
+  DOI/URL: None
+#26 [crawshaw2020survey] (article)
+  Title: Multi-Task Learning with Deep Neural Networks: A Survey
+  Author: Crawshaw, Michael
+  Venue: arXiv preprint arXiv:2009.09796
+  Year: 2020, Vol: None, Number: None, Pages: None
+  DOI/URL: 10.48550/arXiv.2009.09796
+#27 [imcet2026leakagesafe] (misc)
+  Title: A Leakage-Safe Multi-Task Learning Framework for Joint Brain Tumor Classification and Segmentation with External Validation
+  Author: Al Hassan, Ahmad and Alhawat, Marwan and Kanaan, Mohamad and Abdelkader, Lyn and Diab, Ahmad
+  Venue: IEEE
+  Year: 2026, Vol: None, Number: None, Pages: None
+  DOI/URL: 10.1109/IMCET69180.2026.11503731
+#28 [pedregosa2011sklearn] (article)
+  Title: Scikit-learn: Machine learning in {Python
+  Author: Pedregosa, Fabian and Varoquaux, Ga{\"e}l and Gramfort, Alexandre and Michel, Vincent and Thirion, Bertrand and Grisel, Olivier and Blondel, Mathieu and Prettenhofer, Peter and Weiss, Ron and Dubourg, Vincent and Vanderplas, Jake and Passos, Alexandre and Cournapeau, David and Brucher, Matthieu and Perrot, Matthieu and Duchesnay, {\'E}douard
+  Venue: Journal of Machine Learning Research
+  Year: 2011, Vol: 12, Number: None, Pages: 2825--2830
+  DOI/URL: https://jmlr.org/papers/v12/pedregosa11a.html
+#29 [newcombe1998two] (article)
+  Title: Two-sided confidence intervals for the single proportion: comparison of seven methods
+  Author: Newcombe, Robert G
+  Venue: Statistics in Medicine
+  Year: 1998, Vol: 17, Number: 8, Pages: 857--872
+  DOI/URL: 10.1002/(SICI)1097-0258(19980430)17:8<857::AID-SIM777>3.0.CO;2-E
+#30 [efron1979bootstrap] (article)
+  Title: Bootstrap methods: another look at the jackknife
+  Author: Efron, Bradley
+  Venue: The Annals of Statistics
+  Year: 1979, Vol: 7, Number: 1, Pages: 1--26
+  DOI/URL: None
+#31 [pytorchamp] (misc)
+  Title: {Automatic Mixed Precision (AMP) --- {PyTorch} documentation
+  Author: {PyTorch Team
+  Venue: \url{https://docs.pytorch.org/docs/stable/amp.html
+  Year: 2024, Vol: None, Number: None, Pages: None
+  DOI/URL: \url{https://docs.pytorch.org/docs/stable/amp.html
+#32 [moassefi2024checklist] (article)
+  Title: Checklist for Reproducibility of Deep Learning in Medical Imaging
+  Author: Moassefi, Mana and Singh, Yashbir and Conte, Gian Marco and Khosravi, Bardia and Rouzrokh, Pouria and Vahdati, Sanaz and others
+  Venue: Journal of Imaging Informatics in Medicine
+  Year: 2024, Vol: 37, Number: 4, Pages: 1664--1673
+  DOI/URL: 10.1007/s10278-024-01065-2
+#33 [maleki2024ridge] (article)
+  Title: {RIDGE}: Reproducibility, Integrity, Dependability, Generalizability, and Efficiency Assessment of Medical Image Segmentation Models
+  Author: Maleki, Farhad and Moy, Linda and Forghani, Reza and Ghosh, Tapotosh and Ovens, Katie and Langer, Steve and Rouzrokh, Pouria and Khosravi, Bardia and Ganjizadeh, Ali and Warren, Daniel and Daneshjou, Roxana and Moassefi, Mana and Avval, Atlas Haddadi and Sotardi, Susan and Tenenholtz, Neil and Kitamura, Felipe and Kline, Timothy
+  Venue: Journal of Imaging Informatics in Medicine
+  Year: 2025, Vol: 38, Number: 4, Pages: 2524--2536
+  DOI/URL: 10.1007/s10278-024-01282-9
+#34 [kang2026gradnorm] (article)
+  Title: Development of a multi-task learning framework with {GradNorm} for precise wound tissue analysis
+  Author: Kang, Hyunyoung and Oh, Byungho and Lee, Solam and Chu, YuSung and Kim, Jiye and Yang, Sejung
+  Venue: PLoS ONE
+  Year: 2026, Vol: 21, Number: 2, Pages: e0340258
+  DOI/URL: 10.1371/journal.pone.0340258
+#35 [davila2024finetuning] (article)
+  Title: Comparison of fine-tuning strategies for transfer learning in medical image classification
+  Author: Davila, Ana and Colan, Jacinto and Hasegawa, Yasuhisa
+  Venue: Image and Vision Computing
+  Year: 2024, Vol: 146, Number: None, Pages: 105012
+  DOI/URL: 10.1016/j.imavis.2024.105012
+#36 [codella2019isic] (article)
+  Title: Skin lesion analysis toward melanoma detection 2018: A challenge hosted by the {International Skin Imaging Collaboration (ISIC)
+  Author: Codella, Noel and Rotemberg, Veronica and Tschandl, Philipp and Celebi, M Emre and Dusza, Stephen and Gutman, David and Helba, Brian and Kalloo, Aadi and Liopyris, Konstantinos and Marchetti, Michael and others
+  Venue: arXiv preprint arXiv:1902.03368
+  Year: 2019, Vol: None, Number: None, Pages: None
+  DOI/URL: None
