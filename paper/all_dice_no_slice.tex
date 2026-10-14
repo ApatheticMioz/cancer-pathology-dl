@@ -3,7 +3,7 @@
 \usepackage{amsmath,amssymb,amsfonts}
 \usepackage{graphicx}
 \usepackage{booktabs}
-\usepackage{url}
+\usepackage[hyphens]{url}
 \usepackage{cite}
 \usepackage{microtype}
 
@@ -11,6 +11,7 @@
 \setlength{\floatsep}{7pt plus 2pt minus 2pt}
 \setlength{\dbltextfloatsep}{8pt plus 2pt minus 2pt}
 \setlength{\dblfloatsep}{7pt plus 2pt minus 2pt}
+\setlength{\emergencystretch}{1.5em}
 
 % Optimize LaTeX float placement parameters
 \setcounter{topnumber}{3}
@@ -23,6 +24,44 @@
 \renewcommand{\floatpagefraction}{0.75}
 \renewcommand{\dbltopfraction}{0.90}
 \renewcommand{\dblfloatpagefraction}{0.75}
+
+% Compact reference list (IEEE convention: footnotesize, no inter-item gap)
+\let\oldthebibliography\thebibliography
+\renewcommand{\thebibliography}[1]{\oldthebibliography{#1}\footnotesize\setlength{\itemsep}{0pt}\setlength{\parsep}{0pt}}
+
+% IEEE-style captions: footnotesize text, reduced caption gap (spconf default is 10pt)
+\makeatletter
+\long\def\@makecaption#1#2{%
+ \vskip 4pt
+ \footnotesize
+ \setbox\@tempboxa\hbox{#1. #2}%
+ \ifdim \wd\@tempboxa >\hsize #1. #2\par \else \hbox
+ to\hsize{\hfil\box\@tempboxa\hfil}%
+ \fi}
+\makeatother
+
+% Tighter list spacing
+\usepackage{enumitem}
+\setlist{topsep=2pt,itemsep=1pt,parsep=0pt,partopsep=0pt}
+
+% Tighter display-equation spacing (patched into \small because \ninept
+% aliases \normalsize to \small, which resets these skips on every call)
+\makeatletter
+\g@addto@macro\small{%
+  \setlength{\abovedisplayskip}{4pt plus 2pt minus 1pt}%
+  \setlength{\belowdisplayskip}{4pt plus 2pt minus 1pt}%
+  \setlength{\abovedisplayshortskip}{1pt plus 2pt}%
+  \setlength{\belowdisplayshortskip}{3pt plus 2pt minus 1pt}}
+\makeatother
+
+% Slightly tighter heading skips (spconf inherits article's 3.5ex/2.3ex);
+% spconf's \@sect still controls heading typography.
+\makeatletter
+\renewcommand\section{\@startsection{section}{1}{\z@}%
+  {-2.6ex \@plus -1ex \@minus -.2ex}{1.6ex \@plus .2ex}{}}
+\renewcommand\subsection{\@startsection{subsection}{2}{\z@}%
+  {-2.2ex \@plus -1ex \@minus -.2ex}{1.0ex \@plus .2ex}{}}
+\makeatother
 
 \title{All Dice, No Slice: Metric Degeneracy, Evaluation Pitfalls, and Optimization Dynamics in Multi-Task Medical Vision}
 
@@ -59,7 +98,7 @@ To investigate these phenomena, we perform a controlled factorial benchmark eval
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=\columnwidth]{fig1_pipeline.pdf}
+\includegraphics[width=0.95\columnwidth]{fig1_pipeline.pdf}
 \caption{System architecture and multi-task evaluation framework across four clinical imaging modalities, integrating shared feature extraction, decoupled diagnostic heads with lateral skip connections, and adaptive optimization dynamics under patient-isolated cross-validation.}
 \label{fig:pipeline}
 \end{figure}
@@ -178,7 +217,7 @@ Table~\ref{tab:results_matrix} provides a comprehensive overview of the empirica
 
 On the PanNuke multi-organ benchmark, classification performance exhibits high variance across organ sites (78.70\%--99.24\%), with validation Dice ranging from 68.44\% to 77.61\%. Dense glandular organs (e.g., breast and colon) achieve high tissue classification accuracy, whereas rare stromal and endocrine phenotypes exhibit substantial confusion due to nuclear morphology overlap and wide baseline cell density shifts across organs.
 
-In contrast, striking empirical discrepancies emerge on histopathology and radiography benchmarks. On PANDA prostate biopsies, measured accuracy spans 28.21\%--44.87\% compared to claimed values of ~88\%. On SIIM-ACR pneumothorax radiographs, measured Dice scores cluster tightly around 77.04\%--77.72\%, sharply diverging from reported 99\% overlap. As analyzed below, these divergences do not indicate model underfitting, but rather stem from metric boundary artifacts and fundamental task formulation mismatches.
+In contrast, striking empirical discrepancies emerge on histopathology and radiography benchmarks. On PANDA prostate biopsies, measured accuracy spans 28.21\%--\allowbreak 44.87\% compared to claimed values of $\approx$88\%. On SIIM-ACR pneumothorax radiographs, measured Dice scores cluster tightly around 77.04\%--77.72\%, sharply diverging from reported 99\% overlap. As analyzed below, these divergences do not indicate model underfitting, but rather stem from metric boundary artifacts and fundamental task formulation mismatches.
 
 \subsection{The Empty-Mask Score Floor on Radiography}
 On the SIIM-ACR pneumothorax benchmark, the public cohort contains 77.71\% lesion-free images ($\rho = 0.7771$). Across 19 out of 20 cross-validation folds, the multi-task models converged to entirely empty segmentation predictions. Under empty-credit scoring, these models achieved an average macroscopic validation Dice of 77.04\%--77.72\% purely through true-negative empty-credit assignment, while disaggregated foreground overlap collapsed to $\overline{\text{Dice}}_{\text{fg}} \le 0.17\%$ (Table~\ref{tab:results_matrix}, Figure~\ref{fig:empty_dice}). While our experiments evaluated pure pixel-wise cross-entropy to faithfully replicate standard multi-task baselines, unweighted cross-entropy gradients on sparse targets are rapidly dominated by majority background pixels. Countering this empty-mask collapse on negative-dominant cohorts requires incorporating region-based loss formulations (such as Soft Dice or Focal-Tversky loss) directly into the optimization objective rather than evaluating overlap purely post-hoc.
@@ -186,15 +225,15 @@ On the SIIM-ACR pneumothorax benchmark, the public cohort contains 77.71\% lesio
 As derived in Section~\ref{sec:dice} and illustrated in Figure~\ref{fig:empty_dice}(c), reporting 99\% macroscopic Dice in this regime requires positive-case foreground overlap to exceed 95.51\%, which is exceptionally difficult for lightweight models without dedicated foreground loss reweighting. When models predict empty masks across all test images, the macroscopic metric reduces directly to $\overline{\text{Dice}}_{\text{all}} = \rho$. Consequently, high aggregate scores on negative-dominant medical cohorts can conceal complete clinical failure on target pathology. In emergency radiology triage, an automated screening tool reporting 77.7\% Dice while failing to delineate 100\% of pneumothorax occurrences poses severe diagnostic safety hazards. Reporting disaggregated foreground overlap ($\text{Dice}_{\text{fg}}$) alongside negative-case true negative rates ($q_{\text{empty}}$) is therefore essential to establish clinically meaningful performance.
 
 \subsection{Task-Formulation Discrepancy in Prostate Pathology}
-The divergence observed on the PANDA benchmark (28.21\%--44.87\% measured accuracy versus reported values of ~88\%) illustrates a fundamental distinction in task formulation within computational pathology. In prior multi-task literature \cite{rhanoui2025multitask}, the classification objective was framed as predicting six morphological tissue categories extracted from localized segmentation masks (background, stroma, benign epithelium, and the Gleason 3/4/5 pattern classes), of which the non-lesion background and stroma classes together constituted over 52\% of the sample distribution ($5,558$ of $10,618$ images). In contrast, clinical diagnostic deployment requires whole-biopsy ordinal ISUP grading (Grades 0--5), which reflects overall prognostic tumor aggressiveness across heterogeneous gland architectures \cite{bulten2022artificial}.
+The divergence observed on the PANDA benchmark (28.21\%--44.87\% measured accuracy versus reported values of $\approx$88\%) illustrates a fundamental distinction in task formulation within computational pathology. In prior multi-task literature \cite{rhanoui2025multitask}, the classification objective was framed as predicting six morphological tissue categories extracted from localized segmentation masks (background, stroma, benign epithelium, and the Gleason 3/4/5 pattern classes), of which the non-lesion background and stroma classes together constituted over 52\% of the sample distribution ($5,558$ of $10,618$ images). In contrast, clinical diagnostic deployment requires whole-biopsy ordinal ISUP grading (Grades 0--5), which reflects overall prognostic tumor aggressiveness across heterogeneous gland architectures \cite{bulten2022artificial}.
 
 Histopathologically, distinguishing subtle intermediate Gleason patterns (such as differentiating poorly formed Gleason 4 glands from well-formed Gleason 3 tubules) requires resolving cellular architectural boundaries at sub-micron optical resolution (typically 20$\times$ or 40$\times$ magnification). When whole-core biopsies are downsampled to $128 \times 128$ pixel thumbnails without multiscale tiling, high-power fields, or multiple-instance attention mechanisms, fine glandular features are blurred into coarse texture maps. Under these spatial constraints, compact 2D CNN encoders reach an empirical capacity limit around 45\% accuracy for clinical 6-class ordinal grading.
 
-Notably, despite this classification bottleneck, the multi-class segmentation head simultaneously achieves macroscopic validation Dice scores of 98.54\%--98.60\% (Table~\ref{tab:results_matrix}). This apparent paradox is driven by severe spatial class imbalance and empty-channel metric conventions: across whole-core biopsy thumbnails, background and benign stroma occupy over 90\% of the total pixel area, while individual cores contain at most one or two malignant Gleason grades. Under multi-class macro-averaging, unrepresented pattern channels receive automatic true-negative credit ($1.0$), which together with dominant background overlap inflates macroscopic Dice to ~98.6\% even while fine cribriform gland lumens remain unresolvable at $128 \times 128$. This finding demonstrates that model evaluation in digital pathology must strictly distinguish between localized morphological patch categorizations and authentic patient-level diagnostic endpoints.
+Notably, despite this classification bottleneck, the multi-class segmentation head simultaneously achieves macroscopic validation Dice scores of 98.54\%--98.60\% (Table~\ref{tab:results_matrix}). This apparent paradox is driven by severe spatial class imbalance and empty-channel metric conventions: across whole-core biopsy thumbnails, background and benign stroma occupy over 90\% of the total pixel area, while individual cores contain at most one or two malignant Gleason grades. Under multi-class macro-averaging, unrepresented pattern channels receive automatic true-negative credit ($1.0$), which together with dominant background overlap inflates macroscopic Dice to $\approx$98.6\% even while fine cribriform gland lumens remain unresolvable at $128 \times 128$. This finding demonstrates that model evaluation in digital pathology must strictly distinguish between localized morphological patch categorizations and authentic patient-level diagnostic endpoints.
 
 \begin{figure*}[t]
 \centering
-\includegraphics[width=0.95\textwidth,height=2.75in,keepaspectratio]{fig3_results_dotplot.pdf}
+\includegraphics[width=0.95\textwidth,height=2.5in,keepaspectratio]{fig3_results_dotplot.pdf}
 \caption{Measured validation metrics across all 26 experimental runs compared against claimed literature targets. Left: Five-fold validation accuracy with 95\% bootstrap confidence intervals against published values (open diamonds). Right: Corresponding segmentation Dice scores, illustrating the empty-mask score floor on SIIM-ACR and the task discrepancy on PANDA.}
 \label{fig:results_dotplot}
 \end{figure*}
