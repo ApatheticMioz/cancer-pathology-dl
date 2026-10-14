@@ -153,17 +153,21 @@ To ensure rigorous statistical validation, all benchmarks employ 5-fold cross-va
 \centering
 \caption{Cross-validation performance across four clinical imaging benchmarks under patient-isolated partitions ($K=5$ folds per configuration; reported with 95\% bootstrap confidence intervals). Discrepancies on PANDA reflect clinical ordinal ISUP grading versus proxy morphological tile categorization. On SIIM-ACR, disaggregating foreground Dice reveals that macroscopic scores (77.04\%--77.72\%) mask near-total foreground lesion omission ($\overline{\text{Dice}}_{\text{fg}} \le 0.17\%$).}
 \label{tab:results_matrix}
-\scriptsize
-\begin{tabular}{@{}l c c c c c c c@{}}
+\setlength{\tabcolsep}{4.5pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}l c c c c c c l@{}}
 \toprule
-\textbf{Dataset} & \textbf{Configs} & \textbf{Measured Val Acc (\%)} & \textbf{Measured Macro Dice (\%)} & \textbf{Foreground $\overline{\text{Dice}}_{\text{fg}}$ (\%)} & \textbf{Published Acc (\%)} & \textbf{Published Dice (\%)} & \textbf{Evaluation Focus} \\
+& & \multicolumn{3}{c}{\textbf{Measured Cross-Validation (Ours)}} & \multicolumn{2}{c}{\textbf{Published Targets \cite{rhanoui2025multitask}}} & \\
+\cmidrule(lr){3-5} \cmidrule(lr){6-7}
+\textbf{Dataset} & \textbf{Configs} & \textbf{Val Acc (\%)} & \textbf{Macro Dice (\%)} & $\overline{\text{\textbf{Dice}}}_{\text{\textbf{fg}}}$ \textbf{(\%)} & \textbf{Acc (\%)} & \textbf{Dice (\%)} & \textbf{Evaluation Focus} \\
 \midrule
 TCGA-LGG & 5 & 92.86 -- 95.62 & 85.33 -- 88.85 & 52.62 -- 62.63 & 89.00 -- 90.00 & 97.00 -- 98.00 & Patient-Isolated 2D FLAIR \\
-PANDA & 12 & 28.21 -- 44.87 & 98.54 -- 98.60 & 83.25 -- 83.39 & 87.00 -- 88.00 & 98.00 -- 99.00 & Clinical ISUP vs Morphological Proxy \\
-SIIM-ACR & 4 & 77.71 -- 82.63 & 77.04 -- 77.72 & 0.00 -- 0.17 & 82.00 -- 87.00 & 99.00 & Negative-Dominant Radiography ($\rho=77.71\%$) \\
-PanNuke & 5 & 78.70 -- 99.24 & 68.44 -- 77.61 & 68.44 -- 77.61 & --- & --- & Multi-Organ Histopathology Benchmark \\
+PANDA & 12 & 28.21 -- 44.87 & 98.54 -- 98.60 & 83.25 -- 83.39 & 87.00 -- 88.00 & 98.00 -- 99.00 & Clinical ISUP vs.\ Proxy Morphology \\
+SIIM-ACR & 4 & 77.71 -- 82.63 & 77.04 -- 77.72 & 0.00 -- 0.17 & 82.00 -- 87.00 & 99.00 & Negative-Dominant ($\rho=77.71\%$) \\
+PanNuke & 5 & 78.70 -- 99.24 & 68.44 -- 77.61 & 68.44 -- 77.61 & --- & --- & Multi-Organ Histopathology \\
 \bottomrule
-\end{tabular}
+\end{tabular}%
+}
 \end{table*}
 
 \section{Empirical Results and Diagnostic Analysis}
