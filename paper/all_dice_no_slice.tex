@@ -1,5 +1,4 @@
-\documentclass{article}
-\usepackage{spconf}
+\documentclass[conference,a4paper]{IEEEtran}
 \usepackage{amsmath,amssymb,amsfonts}
 \usepackage{graphicx}
 \usepackage{booktabs}
@@ -7,79 +6,27 @@
 \usepackage{cite}
 \usepackage{microtype}
 
-\setlength{\textfloatsep}{8pt plus 2pt minus 2pt}
-\setlength{\floatsep}{7pt plus 2pt minus 2pt}
-\setlength{\dbltextfloatsep}{8pt plus 2pt minus 2pt}
-\setlength{\dblfloatsep}{7pt plus 2pt minus 2pt}
 \setlength{\emergencystretch}{1.5em}
-
-% Optimize LaTeX float placement parameters
-\setcounter{topnumber}{3}
-\setcounter{bottomnumber}{2}
-\setcounter{totalnumber}{4}
-\setcounter{dbltopnumber}{2}
-\renewcommand{\topfraction}{0.90}
-\renewcommand{\bottomfraction}{0.80}
-\renewcommand{\textfraction}{0.10}
-\renewcommand{\floatpagefraction}{0.75}
-\renewcommand{\dbltopfraction}{0.90}
-\renewcommand{\dblfloatpagefraction}{0.75}
-
-% Compact reference list (IEEE convention: footnotesize, no inter-item gap)
-\let\oldthebibliography\thebibliography
-\renewcommand{\thebibliography}[1]{\oldthebibliography{#1}\footnotesize\setlength{\itemsep}{0pt}\setlength{\parsep}{0pt}}
-
-% IEEE-style captions: footnotesize text, reduced caption gap (spconf default is 10pt)
-\makeatletter
-\long\def\@makecaption#1#2{%
- \vskip 4pt
- \footnotesize
- \setbox\@tempboxa\hbox{#1. #2}%
- \ifdim \wd\@tempboxa >\hsize #1. #2\par \else \hbox
- to\hsize{\hfil\box\@tempboxa\hfil}%
- \fi}
-\makeatother
-
-% Tighter list spacing
-\usepackage{enumitem}
-\setlist{topsep=2pt,itemsep=1pt,parsep=0pt,partopsep=0pt}
-
-% Tighter display-equation spacing (patched into \small because \ninept
-% aliases \normalsize to \small, which resets these skips on every call)
-\makeatletter
-\g@addto@macro\small{%
-  \setlength{\abovedisplayskip}{4pt plus 2pt minus 1pt}%
-  \setlength{\belowdisplayskip}{4pt plus 2pt minus 1pt}%
-  \setlength{\abovedisplayshortskip}{1pt plus 2pt}%
-  \setlength{\belowdisplayshortskip}{3pt plus 2pt minus 1pt}}
-\makeatother
-
-% Slightly tighter heading skips (spconf inherits article's 3.5ex/2.3ex);
-% spconf's \@sect still controls heading typography.
-\makeatletter
-\renewcommand\section{\@startsection{section}{1}{\z@}%
-  {-2.6ex \@plus -1ex \@minus -.2ex}{1.6ex \@plus .2ex}{}}
-\renewcommand\subsection{\@startsection{subsection}{2}{\z@}%
-  {-2.2ex \@plus -1ex \@minus -.2ex}{1.0ex \@plus .2ex}{}}
-\makeatother
 
 \title{All Dice, No Slice: Metric Degeneracy, Evaluation Pitfalls, and Optimization Dynamics in Multi-Task Medical Vision}
 
-\name{\begin{tabular}{@{}c@{}}Muhammad Abdullah Ali, Muhammad Abdullah Aamir, Muddassir Asghar,\\
-      Muhammad Ibrahim Kiani, and Qurat Ul Ain\sthanks{Corresponding author: quratul.ain@isb.nu.edu.pk}\end{tabular}}
-\address{Department of Data Science, FAST-NUCES, Islamabad, Pakistan}
+\author{
+  \IEEEauthorblockN{Muhammad Abdullah Ali, Muhammad Abdullah Aamir, Muddassir Asghar,\\
+  Muhammad Ibrahim Kiani, and Qurat Ul Ain\IEEEauthorrefmark{1}}
+  \IEEEauthorblockA{Department of Data Science, FAST-NUCES, Islamabad, Pakistan\\
+  \IEEEauthorrefmark{1}quratul.ain@isb.nu.edu.pk}
+}
 
 \begin{document}
-\ninept
 \maketitle
 
 \begin{abstract}
 Joint classification and semantic segmentation via hard parameter-sharing networks offer a computationally efficient paradigm for resource-constrained clinical AI deployments. While multi-task models frequently report strong diagnostic accuracy and segmentation overlap, evaluating dual-task systems across diverse imaging modalities involves subtle metric aggregation artifacts, spatial resolution limits, and optimization instability. This paper presents a systematic methodological inquiry across four diverse clinical cohorts---brain tumor MRI, prostate histopathology, chest radiography, and multi-organ histology---under strict patient-isolated cross-validation. We demonstrate analytically and empirically that conventional macroscopic Dice scores create an artificial performance baseline on negative-dominant cohorts that conceals total foreground lesion omission. Furthermore, we show that whole-slide downsampling blurs critical glandular morphology, separating proxy patch categorization from clinical ordinal grading. Evaluating multi-task optimization dynamics reveals that dynamic gradient balancing can induce parameter instability and degrade classification discrimination, while color deconvolution can attenuate discriminative cellular chromatin textures. Finally, we establish practical benchmarking guidelines to ensure reliable and clinically trustworthy translation of multi-task medical vision systems.
 \end{abstract}
 
-\begin{keywords}
+\begin{IEEEkeywords}
 Multi-Task Learning, Medical Image Analysis, Semantic Segmentation, Metric Evaluation, Digital Pathology.
-\end{keywords}
+\end{IEEEkeywords}
 
 \section{Introduction}
 \label{sec:intro}
