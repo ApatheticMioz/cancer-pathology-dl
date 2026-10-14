@@ -33,10 +33,10 @@
 \setlength{\belowdisplayshortskip}{0.5pt plus 1pt}
 
 % Compact reference list within IEEE guidelines
-\def\IEEEbibitemsep{-0.8pt}
+\def\IEEEbibitemsep{-1.0pt}
 \def\BIBdecl{%
-  \fontsize{6.3pt}{7.0pt}\selectfont
-  \setlength{\itemsep}{-0.8pt}%
+  \fontsize{5.8pt}{6.6pt}\selectfont
+  \setlength{\itemsep}{-1.0pt}%
   \setlength{\parsep}{0pt}%
 }
 
@@ -166,7 +166,6 @@ PanNuke & 5 & 78.70 -- 99.24 & 68.44 -- 77.61 & 68.44 -- 77.61 & --- & --- & Mul
 \bottomrule
 \end{tabular}%
 }
-\vspace{-4mm}
 \end{table*}
 
 \subsection{Benchmark Cohorts and Clinical Diagnostic Targets}
@@ -200,7 +199,8 @@ To ensure rigorous statistical validation, all benchmarks employ 5-fold cross-va
 
 \begin{figure*}[t]
 \centering
-\includegraphics[width=0.88\textwidth,height=1.28in,keepaspectratio]{fig3_results_dotplot.pdf}
+\vspace{3.5mm}
+\includegraphics[width=0.98\textwidth,height=1.65in,keepaspectratio]{fig3_results_dotplot.pdf}
 \caption{Measured validation metrics across all 26 experimental runs compared against claimed literature targets. Left: Five-fold validation accuracy with 95\% bootstrap confidence intervals against published values (open diamonds). Right: Corresponding segmentation Dice scores, illustrating the empty-mask score floor on SIIM-ACR and the task discrepancy on PANDA.}
 \label{fig:results_dotplot}
 \vspace{-2mm}
