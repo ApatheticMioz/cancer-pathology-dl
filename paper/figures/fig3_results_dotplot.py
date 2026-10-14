@@ -156,13 +156,13 @@ def _build_fig():
     # would clear the labels for BOTH panels (the original F3 bug that left
     # the y-axis bare).
     fig, (ax_acc, ax_dice) = plt.subplots(
-        1, 2, figsize=(7.16, 3.85), dpi=300, sharey=True
+        1, 2, figsize=(7.16, 3.2), dpi=300, sharey=True
     )
 
     # --- Per-run row labels on the shared y-axis -----------------------
     row_labels = [_short_label(matrix.iloc[i], i + 1) for i in range(n)]
     ax_acc.set_yticks(y_pos)
-    ax_acc.set_yticklabels(row_labels, fontsize=7)
+    ax_acc.set_yticklabels(row_labels, fontsize=6.5)
     ax_acc.set_ylim(-0.5, n - 0.5)
     # x headroom so markers / CI whiskers / claimed diamonds never clip.
     ax_acc.set_xlim(-2, 105)
@@ -268,7 +268,7 @@ def _build_fig():
     # group labels are placed to the *left* of the row labels (no overlap).
     # The bottom margin is set to 0.22 so the figure-level legend sits safely
     # below the x-axis labels with zero overlap.
-    fig.subplots_adjust(left=0.28, right=0.98, top=0.91, bottom=0.22)
+    fig.subplots_adjust(left=0.27, right=0.98, top=0.91, bottom=0.22)
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
     pos = ax_acc.get_position()
@@ -283,7 +283,7 @@ def _build_fig():
         y_frac = (y_center - ylim[0]) / (ylim[1] - ylim[0])
         y_fig = pos.y0 + y_frac * pos.height
         fig.text(row_left - 0.015, y_fig, label, ha="right", va="center",
-                 fontweight="bold", fontsize=7, color="black")
+                 fontweight="bold", fontsize=6.8, color="black")
 
     # --- Shared legend (figure-level, lower center under panels) -------
     handles = []
@@ -299,7 +299,7 @@ def _build_fig():
                           label="Claimed (paper)"))
     handles.append(Line2D([], [], color=_CI_GRAY, linewidth=1.0,
                           label="95% CI (across-folds)"))
-    fig.legend(handles=handles, loc="lower center", ncol=4, fontsize=6.8,
+    fig.legend(handles=handles, loc="lower center", ncol=4, fontsize=6.6,
                bbox_to_anchor=(0.63, 0.02))
 
     return fig, (ax_acc, ax_dice)

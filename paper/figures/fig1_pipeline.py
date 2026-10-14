@@ -51,6 +51,24 @@ def _build_fig():
             {"dataset": "pannuke", "img_rgb": img_pannuke, "gt": None, "seg_classes": 5},
         ]
 
+    # Ensure PANDA tile displays true glandular H&E biopsy tissue rather than empty white slide
+    panda_raw_path = REPO_ROOT / "data" / "PANDA" / "train_images" / "train_images" / "3dab3238ef15a3c5b3d43e0b777073a5.png"
+    panda_mask_path = REPO_ROOT / "data" / "PANDA" / "train_label_masks" / "train_label_masks" / "3dab3238ef15a3c5b3d43e0b777073a5.png"
+    if panda_raw_path.exists():
+        from PIL import Image
+        p_raw = np.array(Image.open(panda_raw_path).convert("RGB"))
+        h, w = p_raw.shape[:2]
+        ch, cw = h // 2, w // 2
+        crop_sz = 160
+        r1, r2 = max(0, ch - crop_sz // 2), min(h, ch + crop_sz // 2)
+        c1, c2 = max(0, cw - crop_sz // 2), min(w, cw + crop_sz // 2)
+        recs[1]["img_rgb"] = np.array(Image.fromarray(p_raw[r1:r2, c1:c2]).resize((128, 128)))
+        if panda_mask_path.exists():
+            p_m = np.array(Image.open(panda_mask_path))
+            if p_m.ndim == 3:
+                p_m = p_m[..., 0]
+            recs[1]["gt"] = np.array(Image.fromarray(p_m[r1:r2, c1:c2]).resize((128, 128), Image.NEAREST))
+
     # Helper: draw rounded container card
     def card(x, y, w, h, bg, border, title="", title_col="#0F172A", title_size=4.9):
         rect = patches.FancyBboxPatch(
@@ -166,19 +184,19 @@ def _build_fig():
     ax.text(68.5, 68.2, r"Lateral Skips $\{\mathbf{s}_l\}_{l=1}^4$",
             fontsize=4.2, fontweight="bold", color="#0D9488", ha="center", va="center", zorder=3)
 
-    # Row 2: Deep Shared Bottleneck Representation (y: 55.4 to 60.4, h: 5.0)
+    # Row 2: Deep Shared Bottleneck Representation (y: 54.0 to 60.6, h: 6.6)
     # Ends at x=71.0, leaving x=71.0 to 98.0 clear for Lateral Skips Channel
     bottle_w = 58.0
     bottle_x = 13.0
-    bottle_y = 55.4
-    bottle_h = 5.0
+    bottle_y = 54.0
+    bottle_h = 6.6
     r_bot = patches.FancyBboxPatch(
         (bottle_x, bottle_y), bottle_w, bottle_h,
         boxstyle="round,pad=0.2,rounding_size=0.7",
         facecolor="#1D4ED8", edgecolor="#1E3A8A", linewidth=0.6, zorder=2
     )
     ax.add_patch(r_bot)
-    ax.text(bottle_x + bottle_w / 2, bottle_y + bottle_h / 2 + 0.5,
+    ax.text(bottle_x + bottle_w / 2, bottle_y + bottle_h / 2 + 1.2,
             r"Shared Bottleneck Representation $\mathbf{z} \in \mathbb{R}^{h \times w \times d}$",
             fontsize=4.2, fontweight="bold", ha="center", va="center", color="#FFFFFF", zorder=3)
     ax.text(bottle_x + bottle_w / 2, bottle_y + bottle_h / 2 - 1.1,
