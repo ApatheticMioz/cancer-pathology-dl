@@ -31,8 +31,25 @@ def _build_fig():
     ax.set_ylim(0, 100)
     ax.axis("off")
 
-    # Load 4 real thumbnails via cached inference runner
-    recs = [_infer(r) for r in _RUNS]
+    # Load 4 real thumbnails via cached inference runner or direct fallback
+    try:
+        recs = [_infer(r) for r in _RUNS]
+    except Exception:
+        import glob
+        from PIL import Image
+        img_tcga = np.array(Image.open(sorted(glob.glob(str(REPO_ROOT / 'data/TCGA/*/*_14.tif')))[0]).convert('RGB').resize((128, 128)))
+        img_panda = np.array(Image.open(sorted(glob.glob(str(REPO_ROOT / 'data/PANDA/preprocessed_macenko_fixed/images/*.png')))[0]).convert('RGB').resize((128, 128)))
+        img_siim = np.array(Image.open(sorted(glob.glob(str(REPO_ROOT / 'data/SIIM/preprocessed/images/*.png')))[0]).convert('RGB').resize((128, 128)))
+        img_pannuke = np.array(Image.open(sorted(glob.glob(str(REPO_ROOT / 'data/PanNuke/preprocessed/images/*.png')))[0]).convert('RGB').resize((128, 128)))
+        mask_path = sorted(glob.glob(str(REPO_ROOT / 'data/PANDA/train_label_masks/train_label_masks/*.png')))[0]
+        mask_raw = np.array(Image.open(mask_path).resize((128, 128), Image.NEAREST))
+        gt_panda = mask_raw[..., 0] if mask_raw.ndim == 3 else mask_raw
+        recs = [
+            {"dataset": "tcga", "img_rgb": img_tcga, "gt": None, "seg_classes": 1},
+            {"dataset": "panda", "img_rgb": img_panda, "gt": gt_panda, "seg_classes": 6},
+            {"dataset": "siim", "img_rgb": img_siim, "gt": None, "seg_classes": 1},
+            {"dataset": "pannuke", "img_rgb": img_pannuke, "gt": None, "seg_classes": 5},
+        ]
 
     # Helper: draw rounded container card
     def card(x, y, w, h, bg, border, title="", title_col="#0F172A", title_size=4.9):
@@ -208,7 +225,7 @@ def _build_fig():
     # =========================================================================
     # Task 1: Classification Head (Left Card, x: 2.0 to 48.5)
     card(2.0, 23.5, 46.5, 24.5, "#FFFBEB", "#D97706",
-         "Task 1: Classification Head", "#92400E", title_size=4.5)
+         "Stage 3: Task 1 (Classification)", "#92400E", title_size=4.3)
 
     ax.text(4.5, 45.4, r"$\text{GAP} \to \text{MLP} \to \hat{\mathbf{y}}_{cls}$",
             fontsize=4.3, fontweight="bold", color="#78350F", va="top")
@@ -242,7 +259,7 @@ def _build_fig():
 
     # Task 2: Segmentation Decoder (Right Card, x: 51.5 to 98.0)
     card(51.5, 23.5, 46.5, 24.5, "#ECFDF5", "#059669",
-         "Task 2: Segmentation Decoder", "#065F46", title_size=4.5)
+         "Stage 3: Task 2 (Segmentation)", "#065F46", title_size=4.3)
 
     ax.text(54.0, 45.4, r"$\text{Dec}_\phi(\mathbf{z}, \{\mathbf{s}_l\}) \to \mathbf{l}_{seg}$",
             fontsize=4.3, fontweight="bold", color="#064E3B", va="top")
@@ -264,7 +281,7 @@ def _build_fig():
         facecolor="#D1FAE5", edgecolor="#059669", linewidth=0.5, zorder=2
     )
     ax.add_patch(loss_box2)
-    ax.text(74.7, 26.1, r"Loss $\mathcal{L}_{seg}$ (Mask CE + Dice)",
+    ax.text(74.7, 26.1, r"Loss $\mathcal{L}_{seg}$ (Mask CE)",
             fontsize=4.2, fontweight="bold", ha="center", va="center", color="#065F46", zorder=3)
 
     # Converging connectors into Stage 4 (Gap from 23.5 down to 18.5: 5.0 units)
