@@ -5,8 +5,40 @@
 \usepackage[hyphens]{url}
 \usepackage{cite}
 \usepackage{microtype}
-
+\setlength{\textfloatsep}{7pt plus 2pt minus 2pt}
+\setlength{\floatsep}{6pt plus 2pt minus 2pt}
+\setlength{\dbltextfloatsep}{7pt plus 2pt minus 2pt}
+\setlength{\dblfloatsep}{6pt plus 2pt minus 2pt}
 \setlength{\emergencystretch}{1.5em}
+
+\def\IEEEiedtopsep{0pt}
+\def\IEEEiednormlabelsep{0.35em}
+\setlength{\IEEEelabelindent}{0pt}
+\setlength{\IEEEilabelindent}{0pt}
+\def\IEEEiedlistdecl{%
+  \setlength{\topsep}{0pt}%
+  \setlength{\itemsep}{0pt}%
+  \setlength{\parsep}{0pt}%
+  \setlength{\partopsep}{0pt}%
+}
+
+\makeatletter
+\def\section{\@startsection{section}{1}{\z@}{1.5ex plus 0.3ex minus 0.2ex}{0.8ex plus 0.2ex minus 0.1ex}{\normalfont\normalsize\centering\scshape}}
+\def\subsection{\@startsection{subsection}{2}{\z@}{1.3ex plus 0.3ex minus 0.2ex}{0.6ex plus 0.2ex minus 0.1ex}{\normalfont\normalsize\itshape}}
+\makeatother
+
+\setlength{\abovedisplayskip}{2.5pt plus 1pt minus 1pt}
+\setlength{\belowdisplayskip}{2.5pt plus 1pt minus 1pt}
+\setlength{\abovedisplayshortskip}{0.5pt plus 1pt}
+\setlength{\belowdisplayshortskip}{0.5pt plus 1pt}
+
+% Compact reference list within IEEE guidelines
+\def\IEEEbibitemsep{-0.8pt}
+\def\BIBdecl{%
+  \fontsize{6.3pt}{7.0pt}\selectfont
+  \setlength{\itemsep}{-0.8pt}%
+  \setlength{\parsep}{0pt}%
+}
 
 \title{All Dice, No Slice: Metric Degeneracy, Evaluation Pitfalls, and Optimization Dynamics in Multi-Task Medical Vision}
 
@@ -45,9 +77,10 @@ To investigate these phenomena, we perform a controlled factorial benchmark eval
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.95\columnwidth]{fig1_pipeline.pdf}
+\includegraphics[width=0.68\columnwidth]{fig1_pipeline.pdf}
 \caption{System architecture and multi-task evaluation framework across four clinical imaging modalities, integrating shared feature extraction, decoupled diagnostic heads with lateral skip connections, and adaptive optimization dynamics under patient-isolated cross-validation.}
 \label{fig:pipeline}
+\vspace{-2mm}
 \end{figure}
 
 \section{System Architecture and Methodology}
@@ -91,9 +124,10 @@ even under perfect true-negative specificity ($q_{\text{empty}} = 1$). Without r
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=\columnwidth]{fig2_empty_mask_dice.pdf}
+\includegraphics[width=0.60\columnwidth]{fig2_empty_mask_dice.pdf}
 \caption{Illustration of the empty-mask Dice metric behavior on SIIM-ACR pneumothorax radiographs. (a) Lesion-free image correctly predicted empty receives 1.0 credit. (b) Lesion-bearing image with total foreground omission scores 0.0. (c) Macroscopic curve demonstrating the baseline floor determined by the negative fraction $\rho$.}
 \label{fig:empty_dice}
+\vspace{-2mm}
 \end{figure}
 
 \subsection{Adaptive Gradient Balancing via GradNorm}\label{sec:gnorm}
@@ -112,6 +146,28 @@ where $I_0 = 255$ denotes transmitted illumination. Stain vectors for hematoxyli
 
 \section{Experimental Framework}
 \label{sec:experiments}
+
+\begin{table*}[t]
+\centering
+\caption{Cross-validation performance across four clinical imaging benchmarks under patient-isolated partitions ($K=5$ folds per configuration; reported with 95\% bootstrap confidence intervals). Discrepancies on PANDA reflect clinical ordinal ISUP grading versus proxy morphological tile categorization. On SIIM-ACR, disaggregating foreground Dice reveals that macroscopic scores (77.04\%--77.72\%) mask near-total foreground lesion omission ($\overline{\text{Dice}}_{\text{fg}} \le 0.17\%$).}
+\label{tab:results_matrix}
+\setlength{\tabcolsep}{4.5pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}l c c c c c c l@{}}
+\toprule
+& & \multicolumn{3}{c}{\textbf{Measured Cross-Validation (Ours)}} & \multicolumn{2}{c}{\textbf{Published Targets \cite{rhanoui2025multitask}}} & \\
+\cmidrule(lr){3-5} \cmidrule(lr){6-7}
+\textbf{Dataset} & \textbf{Configs} & \textbf{Val Acc (\%)} & \textbf{Macro Dice (\%)} & $\overline{\text{\textbf{Dice}}}_{\text{\textbf{fg}}}$ \textbf{(\%)} & \textbf{Acc (\%)} & \textbf{Dice (\%)} & \textbf{Evaluation Focus} \\
+\midrule
+TCGA-LGG & 5 & 92.86 -- 95.62 & 85.33 -- 88.85 & 52.62 -- 62.63 & 89.00 -- 90.00 & 97.00 -- 98.00 & Patient-Isolated 2D FLAIR \\
+PANDA & 12 & 28.21 -- 44.87 & 98.54 -- 98.60 & 83.25 -- 83.39 & 87.00 -- 88.00 & 98.00 -- 99.00 & Clinical ISUP vs.\ Proxy Morphology \\
+SIIM-ACR & 4 & 77.71 -- 82.63 & 77.04 -- 77.72 & 0.00 -- 0.17 & 82.00 -- 87.00 & 99.00 & Negative-Dominant ($\rho=77.71\%$) \\
+PanNuke & 5 & 78.70 -- 99.24 & 68.44 -- 77.61 & 68.44 -- 77.61 & --- & --- & Multi-Organ Histopathology \\
+\bottomrule
+\end{tabular}%
+}
+\vspace{-4mm}
+\end{table*}
 
 \subsection{Benchmark Cohorts and Clinical Diagnostic Targets}
 We conduct our empirical evaluation across four diverse clinical cohorts spanning radiology, magnetic resonance imaging, and digital pathology:
@@ -135,31 +191,20 @@ Joint optimization minimizes the composite loss $\mathcal{L}_{total} = \lambda_{
 \subsection{Cross-Validation Design and Statistical Significance}
 To ensure rigorous statistical validation, all benchmarks employ 5-fold cross-validation with strict patient-isolated grouping. For PanNuke, official cross-institution test folds are preserved. Metric uncertainty is characterized via non-parametric bootstrap resampling ($B = 1000$ iterations) to construct 95\% percentile confidence intervals. We track disaggregated foreground overlap ($\text{Dice}_{\text{fg}}$) alongside empty-credit scores to prevent macroscopic metric inflation across sparse-lesion cohorts.
 
-\begin{table*}[t]
-\centering
-\caption{Cross-validation performance across four clinical imaging benchmarks under patient-isolated partitions ($K=5$ folds per configuration; reported with 95\% bootstrap confidence intervals). Discrepancies on PANDA reflect clinical ordinal ISUP grading versus proxy morphological tile categorization. On SIIM-ACR, disaggregating foreground Dice reveals that macroscopic scores (77.04\%--77.72\%) mask near-total foreground lesion omission ($\overline{\text{Dice}}_{\text{fg}} \le 0.17\%$).}
-\label{tab:results_matrix}
-\setlength{\tabcolsep}{4.5pt}
-\resizebox{\textwidth}{!}{%
-\begin{tabular}{@{}l c c c c c c l@{}}
-\toprule
-& & \multicolumn{3}{c}{\textbf{Measured Cross-Validation (Ours)}} & \multicolumn{2}{c}{\textbf{Published Targets \cite{rhanoui2025multitask}}} & \\
-\cmidrule(lr){3-5} \cmidrule(lr){6-7}
-\textbf{Dataset} & \textbf{Configs} & \textbf{Val Acc (\%)} & \textbf{Macro Dice (\%)} & $\overline{\text{\textbf{Dice}}}_{\text{\textbf{fg}}}$ \textbf{(\%)} & \textbf{Acc (\%)} & \textbf{Dice (\%)} & \textbf{Evaluation Focus} \\
-\midrule
-TCGA-LGG & 5 & 92.86 -- 95.62 & 85.33 -- 88.85 & 52.62 -- 62.63 & 89.00 -- 90.00 & 97.00 -- 98.00 & Patient-Isolated 2D FLAIR \\
-PANDA & 12 & 28.21 -- 44.87 & 98.54 -- 98.60 & 83.25 -- 83.39 & 87.00 -- 88.00 & 98.00 -- 99.00 & Clinical ISUP vs.\ Proxy Morphology \\
-SIIM-ACR & 4 & 77.71 -- 82.63 & 77.04 -- 77.72 & 0.00 -- 0.17 & 82.00 -- 87.00 & 99.00 & Negative-Dominant ($\rho=77.71\%$) \\
-PanNuke & 5 & 78.70 -- 99.24 & 68.44 -- 77.61 & 68.44 -- 77.61 & --- & --- & Multi-Organ Histopathology \\
-\bottomrule
-\end{tabular}%
-}
-\end{table*}
+
 
 \section{Empirical Results and Diagnostic Analysis}
 \label{sec:results}
 
 \subsection{Benchmark Performance Comparison}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.88\textwidth,height=1.28in,keepaspectratio]{fig3_results_dotplot.pdf}
+\caption{Measured validation metrics across all 26 experimental runs compared against claimed literature targets. Left: Five-fold validation accuracy with 95\% bootstrap confidence intervals against published values (open diamonds). Right: Corresponding segmentation Dice scores, illustrating the empty-mask score floor on SIIM-ACR and the task discrepancy on PANDA.}
+\label{fig:results_dotplot}
+\vspace{-2mm}
+\end{figure*}
 Table~\ref{tab:results_matrix} provides a comprehensive overview of the empirical replication results alongside claimed literature targets. Across the four diverse clinical benchmarks, our controlled evaluation reveals sharp differences in reproducibility, metric reliability, and task feasibility. On the TCGA-LGG brain MRI benchmark, measured classification accuracy (92.86\%--95.62\%) exceeds published literature targets under patient-isolated splits, confirming that macro-lesion MRI abnormalities provide robust, high-contrast discriminative features. However, validation Dice scores (85.33\%--88.85\%) remain below claimed 97\%--98\% levels, reflecting true boundary uncertainty in diffuse low-grade gliomas.
 
 On the PanNuke multi-organ benchmark, classification performance exhibits high variance across organ sites (78.70\%--99.24\%), with validation Dice ranging from 68.44\% to 77.61\%. Dense glandular organs (e.g., breast and colon) achieve high tissue classification accuracy, whereas rare stromal and endocrine phenotypes exhibit substantial confusion due to nuclear morphology overlap and wide baseline cell density shifts across organs.
@@ -178,12 +223,7 @@ Histopathologically, distinguishing subtle intermediate Gleason patterns (such a
 
 Notably, despite this classification bottleneck, the multi-class segmentation head simultaneously achieves macroscopic validation Dice scores of 98.54\%--98.60\% (Table~\ref{tab:results_matrix}). This apparent paradox is driven by severe spatial class imbalance and empty-channel metric conventions: across whole-core biopsy thumbnails, background and benign stroma occupy over 90\% of the total pixel area, while individual cores contain at most one or two malignant Gleason grades. Under multi-class macro-averaging, unrepresented pattern channels receive automatic true-negative credit ($1.0$), which together with dominant background overlap inflates macroscopic Dice to $\approx$98.6\% even while fine cribriform gland lumens remain unresolvable at $128 \times 128$. This finding demonstrates that model evaluation in digital pathology must strictly distinguish between localized morphological patch categorizations and authentic patient-level diagnostic endpoints.
 
-\begin{figure*}[t]
-\centering
-\includegraphics[width=0.95\textwidth,height=2.5in,keepaspectratio]{fig3_results_dotplot.pdf}
-\caption{Measured validation metrics across all 26 experimental runs compared against claimed literature targets. Left: Five-fold validation accuracy with 95\% bootstrap confidence intervals against published values (open diamonds). Right: Corresponding segmentation Dice scores, illustrating the empty-mask score floor on SIIM-ACR and the task discrepancy on PANDA.}
-\label{fig:results_dotplot}
-\end{figure*}
+
 
 \section{Factorial Ablation Studies}
 \label{sec:ablations}
