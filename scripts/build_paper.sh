@@ -18,8 +18,7 @@ if [ ! -f "all_dice_no_slice.pdf" ]; then
     exit 1
 fi
 
-echo "==> Verifying page count..."
-PAGE_COUNT=$(pdfinfo all_dice_no_slice.pdf | awk '/^Pages:/ {print $2}')
+PAGE_COUNT=$(/usr/bin/python3 -c "import pypdf; print(len(pypdf.PdfReader('all_dice_no_slice.pdf').pages))")
 echo "    Compiled page count: ${PAGE_COUNT} pages"
 
 # Verify a non-trivial page count (>= 5) to catch degenerate/empty builds.
