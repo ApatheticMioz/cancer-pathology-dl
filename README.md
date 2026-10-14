@@ -1,8 +1,7 @@
 # All Dice, No Slice: Metric Degeneracy, Evaluation Pitfalls, and Optimization Dynamics in Multi-Task Medical Vision
 
-[![Conference](https://img.shields.io/badge/Conference-ICCII%202026-success.svg)](all_dice_no_slice.pdf)
-[![Paper](https://img.shields.io/badge/Manuscript-6pp%20IEEE%20Format-blue.svg)](all_dice_no_slice.pdf)
-[![Audit Manifest](https://img.shields.io/badge/Audit%20Manifest-16%2F16%20Findings%20Closed-success.svg)](paper/AUDIT_MANIFEST.md)
+[![Conference](https://img.shields.io/badge/Conference-ICCII%202026-success.svg)](paper/all_dice_no_slice.pdf)
+[![Paper](https://img.shields.io/badge/Manuscript-6pp%20IEEE%20Format-blue.svg)](paper/all_dice_no_slice.pdf)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 [![PyTorch 2.0+](https://img.shields.io/badge/PyTorch-2.0%2B%20CUDA-ee4c2c.svg)](https://pytorch.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -161,6 +160,8 @@ cancer-pathology-dl/
 ├── run_all_experiments.sh           # Master 26-run orchestrator (3-process parallel concurrency)
 ├── run_smoke_test.sh                # 10-test validation suite for all flag & ablation combinations
 ├── update_env.sh                    # PyTorch / CUDA environment validation
+├── requirements.txt                 # CPU torch wheel (deterministic figure regeneration)
+├── requirements-gpu.txt             # CUDA torch wheel (training campaign)
 ├── src/                             # Core modular ML engine
 │   ├── config.py                    # Hyperparameters, paths, loss weights, and phase schemas
 │   ├── data.py                      # Multi-task dataset parsers, GroupShuffleSplit & GroupKFold
@@ -170,18 +171,23 @@ cancer-pathology-dl/
 │   ├── apply_macenko.py             # Optical density stain decomposition & normalization
 │   ├── checkpoints.py               # Atomic checkpoint management and per-run summary JSONs
 │   ├── aggregate_results.py         # Results aggregator, CSV matrices, and LaTeX table generator
+│   ├── loader_tuning.py            # Dataloader worker / batching tuning utilities
 │   └── utils.py                     # Seed pinning, hardware telemetry, thread-safe logging
 ├── paper/                           # Conference publication package (IEEE spconf.sty format)
 │   ├── all_dice_no_slice.tex        # 6-page conference manuscript source (spconf.sty)
 │   ├── all_dice_no_slice.pdf        # Compiled submission PDF (exactly 6 pages, 0 overfull)
+│   ├── highlights.tex               # Manuscript highlights section
 │   ├── spconf.sty                   # IEEE Signal Processing Society conference style
 │   ├── references.bib               # Curated BibTeX references
-│   ├── AUDIT_MANIFEST.md            # Structured finding ledger (16/16 closed findings)
-│   ├── paper_results_matrix_with_ci.csv # Complete audited 26-run CSV with 95% CIs
+│   ├── paper_results_matrix.csv     # Complete audited 26-run CSV
+│   ├── paper_results_matrix_with_ci.csv # 26-run CSV with 95% CIs
+│   ├── dice_degeneracy_curve.csv    # Empty-mask Dice floor curve data
 │   ├── graphical_abstract.pdf       # 13.2 x 5.3 cm publication banner
 │   ├── graphical_abstract.png       # 300 DPI high-resolution render of the banner
 │   └── figures/                     # Publication figure generation suite
 │       ├── build_all.py             # Master figure builder & assertion verifier
+│       ├── dice_ci.py               # Bootstrap Dice CI computation
+│       ├── fig1_macenko.py          # Figure 1: Macenko stain-normalization tile grid
 │       ├── fig1_pipeline.py         # Figure 1: Pipeline & audit framework
 │       ├── fig2_empty_dice.py       # Figure 2: Hero radiographs (6cm) & empty-mask curve
 │       ├── fig3_results_dotplot.py  # Figure 3: Results dot plot across all 26 runs
@@ -190,9 +196,32 @@ cancer-pathology-dl/
 │       ├── fig6_lambda_sweep.py     # Figure 6: Loss weighting sweep (1:10 to 10:1)
 │       ├── fig8_qualitative.py      # Figure 8: Qualitative Image | GT | Prediction overlays
 │       ├── graphical_abstract.py    # Standalone graphical abstract banner builder
-│       ├── style.py                 # Centralized Elsevier typography & color palette
-│       └── loaders.py               # Safe CSV and checkpoint JSON loaders
-├── checkpoints/                     # Checkpoint summaries (`summary_XX.json`) and model weights
+│       ├── loaders.py               # Safe CSV and checkpoint JSON loaders
+│       └── style.py                 # Centralized Elsevier typography & color palette
+├── scripts/                         # Experiment orchestration, data prep, and test scripts
+│   ├── build_paper.sh               # LaTeX → PDF build & page-count verifier
+│   ├── run_wave.sh                  # Wave-scheduled fold campaign launcher
+│   ├── run_folds.sh                 # 5-fold cross-fold orchestrator
+│   ├── wave_scheduler.py            # Multi-wave scheduling of the fold campaign
+│   ├── prep_siim_full.py            # SIIM-ACR dataset preprocessing
+│   ├── prep_pannuke.py             # PanNuke dataset preprocessing
+│   ├── prepare_empirical_proofs.py # Evidence artifact preparation
+│   ├── run_canonical_gradnorm_panda.py # Canonical GradNorm PANDA probe
+│   ├── run_leakage_study.py         # Patient-leakage diagnostic study
+│   ├── apply_macenko_capped.py      # Capped Macenko normalization variant
+│   ├── bootstrap_dice_ci.py         # Bootstrap CI for Dice scores
+│   ├── compute_wilson_ci.py         # Wilson CI for accuracy
+│   ├── check_tex_csv_consistency.py # LaTeX/CSV numeric consistency checker
+│   ├── assert_artifacts.py          # Artifact existence/assertion checks
+│   ├── macenko_fig1_tile.py         # Figure 1 Macenko tile renderer
+│   ├── prep_siim_fig2_tiles.py      # Figure 2 SIIM tile renderer
+│   ├── numeric_token_diff.py        # Numeric token diff helper
+│   ├── verify_siim_floor.py         # SIIM empty-mask floor verifier
+│   ├── diag_nan.py                  # NaN diagnostics
+│   ├── test_splitter_invariants.py  # Splitter invariance test
+│   └── test_clip_gradnorm_cpu.py    # Clip-GradNorm CPU test
+├── results/                         # Campaign outputs (fold summaries, CI, probe logs)
+│   └── kfold_campaign/             # Per-fold / per-run JSON/CSV summaries
 └── logs/                            # Real-time stdout/stderr execution logs per run
 ```
 
@@ -222,8 +251,8 @@ pip install segmentation-models-pytorch albumentations scikit-learn pandas scipy
 
 > **Environment note (CPU vs GPU torch).** `requirements.txt` pins
 > `torch==2.14.0+cpu` on purpose: it is the wheel used for **figure
-> regeneration** (`paper/generate_figures.py` and the `scripts/*fig*.py`
-> helpers), which must stay deterministic and dependency-light on any
+> regeneration** (the `paper/figures` package, driven by `make figures`),
+> which must stay deterministic and dependency-light on any
 > machine. The **training campaign** (`run_all_experiments.sh`, gated by
 > `run_smoke_test.sh`) needs CUDA — point campaign runs at
 > [`requirements-gpu.txt`](requirements-gpu.txt), which installs the same
@@ -270,7 +299,7 @@ make clean
 
 ## 📜 Audit Manifest & Research Integrity
 
-All findings uncovered during peer review and revision are tracked with strict verification gates in [`paper/AUDIT_MANIFEST.md`](paper/AUDIT_MANIFEST.md). 
+All findings uncovered during peer review and revision are tracked with strict verification gates, summarized below.
 
 | Finding ID | Scope | Description | Gate Resolution |
 | :---: | :--- | :--- | :---: |

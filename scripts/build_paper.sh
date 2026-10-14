@@ -30,7 +30,4 @@ else
     echo "    [PASS] Non-trivial page count (${PAGE_COUNT} pages) for preprint submission."
 fi
 
-echo "==> Copying compiled PDF to repository root (${ROOT_DIR}/all_dice_no_slice.pdf)..."
-cp all_dice_no_slice.pdf "${ROOT_DIR}/all_dice_no_slice.pdf"
-
-echo "==> Build complete: ${ROOT_DIR}/all_dice_no_slice.pdf"
+echo "==> Build complete: ${PAPER_DIR}/all_dice_no_slice.pdf"

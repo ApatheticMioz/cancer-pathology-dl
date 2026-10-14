@@ -52,15 +52,14 @@ smoke_test.log
 *.log
 
 # ============================================================
-# Audit and runtime JSON
+# Runtime JSONL logs (default: ignored). CSV/JSON stay tracked.
+# The canonical gradnorm probe logs are kept (see F-25 below).
 # ============================================================
 *.jsonl
-!results/kfold_campaign/canonical_gradnorm_probe/probe_log.jsonl
-!results/kfold_campaign/dice_ci_summary.csv
+epoch_log.jsonl
 dataset_audit.json
 reproduction_summary.json
 optimized_summary.json
-epoch_log.jsonl
 
 # ============================================================
 # Temporary files
@@ -104,12 +103,12 @@ Desktop.ini
 1. Exposing_the_Limits_of_Deepfake_Detection_using_novel_Facial_mole_attack_A_Perceptual_Black-_Box_Adversarial_Attack_Study.pdf
 *.docx
 
-!all_dice_no_slice.pdf
+# Embedded paper PDFs that are tracked (sole paper PDF + 3 figures + abstract)
 !paper/all_dice_no_slice.pdf
-!paper/fig*.pdf
-!paper/fig*.png
+!paper/fig1_pipeline.pdf
+!paper/fig2_empty_mask_dice.pdf
+!paper/fig3_results_dotplot.pdf
 !paper/graphical_abstract.pdf
-!paper/graphical_abstract.png
 *.aux
 *.out
 *.fls
@@ -206,15 +205,19 @@ GEMINI.md
 .evo/
 
 # ============================================================
-# F-25: results/ (round-2 campaign artifacts) are tracked.
-# The parent dir is NOT ignored, so negations below re-include
-# the per-run epoch logs and per-slice dice dumps that would
-# otherwise be caught by the global *.jsonl / epoch_log.jsonl
-# patterns above.
+# F-25: kfold_campaign raw per-fold / per-run dumps are IGNORED.
+# results/ and kfold_campaign/ are NOT globally ignored, so the
+# JSON/CSV campaign summaries stay tracked by default. Only the
+# raw dump directories (epoch_log.jsonl + per_slice_dice.jsonl,
+# plus untracked checkpoints) are excluded so `git add -A` never
+# re-tracks >70 MB of per-fold logs.
 # ============================================================
-!results/
-!results/kfold_campaign/
-!results/kfold_campaign/*/
-!results/kfold_campaign/*.jsonl
-!results/kfold_campaign/*/epoch_log.jsonl
-!results/kfold_campaign/*/per_slice_dice.jsonl
+.scratch/
+results/kfold_campaign/*_fold*of5/
+results/kfold_campaign/[0-9][0-9]_g*/
+results/kfold_campaign/r31_*/
+results/kfold_campaign/smoke_*/
+# Keep the canonical gradnorm probe runtime logs (negate global *.jsonl)
+!results/kfold_campaign/canonical_gradnorm_probe/
+!results/kfold_campaign/canonical_gradnorm_probe/epoch_log.jsonl
+!results/kfold_campaign/canonical_gradnorm_probe/probe_log.jsonl
